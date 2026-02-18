@@ -1,0 +1,146 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Noto+Sans+KR:wght@300;400;500;600;700&display=swap');
+
+@layer base {
+  :root {
+    /* BloomFi-inspired Lavender/Purple Theme */
+    --background: 260 25% 98%;
+    --foreground: 260 25% 15%;
+    --card: 0 0% 100%;
+    --card-foreground: 260 25% 15%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 260 25% 15%;
+    --primary: 260 60% 55%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 260 30% 94%;
+    --secondary-foreground: 260 60% 40%;
+    --muted: 260 20% 94%;
+    --muted-foreground: 260 15% 45%;
+    --accent: 260 50% 92%;
+    --accent-foreground: 260 60% 35%;
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 260 20% 90%;
+    --input: 260 20% 90%;
+    --ring: 260 60% 55%;
+    --radius: 0.75rem;
+    
+    /* Custom colors */
+    --lavender-50: 260 60% 98%;
+    --lavender-100: 260 50% 95%;
+    --lavender-200: 260 45% 90%;
+    --lavender-300: 260 40% 82%;
+    --lavender-400: 260 50% 68%;
+    --lavender-500: 260 60% 55%;
+    --lavender-600: 260 65% 48%;
+    --lavender-700: 260 70% 40%;
+    --lavender-800: 260 75% 32%;
+    --lavender-900: 260 80% 25%;
+    
+    /* Industry colors */
+    --insurance: 200 80% 50%;
+    --banking: 260 60% 55%;
+    --securities: 320 70% 55%;
+    
+    /* Alert colors */
+    --alert-low: 150 60% 45%;
+    --alert-med: 45 90% 50%;
+    --alert-high: 0 80% 55%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  
+  html {
+    scroll-behavior: smooth;
+  }
+  
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-family: 'Inter', 'Noto Sans KR', -apple-system, BlinkMacSystemFont, sans-serif;
+  }
+}
+
+@layer components {
+  .glass-card {
+    @apply bg-white/80 backdrop-blur-xl border border-white/20 shadow-lg;
+  }
+  
+  .gradient-lavender {
+    background: linear-gradient(135deg, hsl(260 60% 98%) 0%, hsl(260 40% 94%) 100%);
+  }
+  
+  .gradient-primary {
+    background: linear-gradient(135deg, hsl(260 60% 55%) 0%, hsl(280 65% 48%) 100%);
+  }
+  
+  .text-gradient {
+    @apply bg-clip-text text-transparent;
+    background-image: linear-gradient(135deg, hsl(260 60% 55%) 0%, hsl(280 65% 48%) 100%);
+  }
+  
+  .hover-lift {
+    @apply transition-all duration-300 ease-out;
+  }
+  
+  .hover-lift:hover {
+    @apply -translate-y-1 shadow-xl;
+  }
+  
+  .status-badge {
+    @apply inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium;
+  }
+  
+  .metric-card {
+    @apply bg-white rounded-2xl p-6 shadow-sm border border-lavender-100 hover:shadow-md transition-shadow;
+  }
+  
+  .section-title {
+    @apply text-2xl font-semibold text-foreground tracking-tight;
+  }
+  
+  .card-elevated {
+    @apply bg-white rounded-2xl shadow-lg border border-lavender-100/50 overflow-hidden;
+  }
+}
+
+@layer utilities {
+  .animate-fade-in {
+    animation: fadeIn 0.5s ease-out;
+  }
+  
+  .animate-slide-up {
+    animation: slideUp 0.4s ease-out;
+  }
+  
+  .animate-pulse-soft {
+    animation: pulseSoft 2s ease-in-out infinite;
+  }
+  
+  @keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+  
+  @keyframes slideUp {
+    from { 
+      opacity: 0;
+      transform: translateY(20px);
+    }
+    to { 
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+  
+  @keyframes pulseSoft {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.7; }
+  }
+}

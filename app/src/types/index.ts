@@ -1,0 +1,117 @@
+export interface Document {
+  document_id: string;
+  title: string;
+  published_at: string;
+  url: string;
+  category?: string;
+  department?: string;
+  status: 'ingested' | 'parsed' | 'indexed' | 'failed';
+  ingested_at: string;
+  fail_reason?: string;
+}
+
+export interface DocumentListResponse {
+  documents: Document[];
+  total: number;
+  page: number;
+  page_size: number;
+}
+
+export interface IndustryClassification {
+  document_id?: string;
+  label_insurance: number;
+  label_banking: number;
+  label_securities: number;
+  predicted_labels: string[];
+  explanation: string;
+  evidence_chunk_ids: string[];
+}
+
+export interface Citation {
+  chunk_id: string;
+  document_id: string;
+  document_title: string;
+  published_at: string;
+  snippet: string;
+  url: string;
+}
+
+export interface QAResponse {
+  answer: string;
+  summary: string;
+  industry_impact: Record<string, number>;
+  checklist?: any[];
+  citations: Citation[];
+  confidence: number;
+  uncertainty_note?: string;
+}
+
+export interface Topic {
+  topic_id: string;
+  topic_name?: string;
+  topic_summary?: string;
+  time_window_start: string;
+  time_window_end: string;
+  document_count: number;
+  surge_score: number;
+  representative_documents: any[];
+}
+
+export interface Alert {
+  alert_id: string;
+  topic_id: string;
+  topic_name?: string;
+  surge_score: number;
+  severity: 'low' | 'med' | 'high';
+  industries: string[];
+  generated_at: string;
+  status: string;
+}
+
+export interface ChecklistItem {
+  action: string;
+  target?: string;
+  due_date_text?: string;
+  effective_date?: string;
+  scope?: string;
+  penalty?: string;
+  evidence_chunk_id?: string;
+  confidence: number;
+}
+
+export interface ChecklistResponse {
+  checklist_id: string;
+  document_id: string;
+  document_title: string;
+  items: ChecklistItem[];
+  generated_at: string;
+}
+
+export interface CollectionStatus {
+  source_id: string;
+  source_name: string;
+  last_fetch?: string;
+  new_documents_24h: number;
+  total_documents: number;
+  success_rate_7d: number;
+  parsing_failures_24h: number;
+}
+
+export interface DashboardStats {
+  total_documents: number;
+  documents_24h: number;
+  active_alerts: number;
+  high_severity_alerts: number;
+  collection_status: CollectionStatus[];
+  recent_topics: Topic[];
+  quality_metrics?: any;
+}
+
+export interface QualityMetrics {
+  date: string;
+  groundedness: number;
+  hallucination_rate: number;
+  avg_response_time_ms: number;
+  citation_accuracy: number;
+  unanswered_rate: number;
+}

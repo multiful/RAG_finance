@@ -1,0 +1,72 @@
+# FastAPI
+fastapi==0.109.0
+uvicorn[standard]==0.27.0
+python-multipart==0.0.6
+
+# Database
+supabase==2.3.0
+psycopg2-binary==2.9.9
+sqlalchemy==2.0.25
+alembic==1.13.1
+
+# Vector DB
+pgvector==0.2.4
+
+# Redis
+redis==5.0.1
+
+# LLM / OpenAI / LangChain
+openai==1.10.0
+langchain==0.1.4
+langchain-openai==0.0.5
+langchain-community==0.0.16
+
+# LangGraph - Agent Workflow
+langgraph==0.0.24
+langchain-core==0.1.17
+
+# LlamaParse - Document Parsing
+llama-parse==0.1.0
+llama-index==0.9.30
+
+# Ragas - RAG Evaluation
+ragas==0.1.0
+
+# LangSmith - Observability
+langsmith==0.0.83
+
+# RSS / Web Scraping
+feedparser==6.0.11
+requests==2.31.0
+beautifulsoup4==4.12.3
+lxml==5.1.0
+
+# Document Processing
+pypdf==4.0.1
+python-docx==1.1.0
+pdfplumber==0.10.0
+pdf2image==1.17.0
+pytesseract==0.3.10
+
+# ML / NLP / Embeddings
+scikit-learn==1.4.0
+numpy==1.26.3
+pandas==2.2.0
+sentence-transformers==2.2.2
+transformers==4.37.2
+torch==2.1.2
+
+# UMAP for visualization
+umap-learn==0.5.5
+
+# Utilities
+python-dotenv==1.0.0
+pydantic==2.5.3
+pydantic-settings==2.1.0
+tenacity==8.2.3
+httpx==0.26.0
+aiofiles==23.2.1
+
+# Testing
+pytest==7.4.4
+pytest-asyncio==0.23.3
