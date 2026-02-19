@@ -5,20 +5,24 @@ import {
   FileText, 
   AlertTriangle,
   RefreshCw,
-  ExternalLink
+  ExternalLink,
+  AlertCircle
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { getTopics, getAlerts, detectTopics } from '@/lib/api';
-import type { Topic, Alert } from '@/types';
+import type { Topic, Alert as AlertType } from '@/types';
+
 
 export default function TopicMap() {
   const [topics, setTopics] = useState<Topic[]>([]);
-  const [alerts, setAlerts] = useState<Alert[]>([]);
+  const [alerts, setAlerts] = useState<AlertType[]>([]);
   const [loading, setLoading] = useState(true);
   const [detecting, setDetecting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const fetchData = async () => {
     try {
@@ -28,8 +32,10 @@ export default function TopicMap() {
       ]);
       setTopics(topicsData);
       setAlerts(alertsData);
-    } catch (error) {
-      console.error('Error fetching topics:', error);
+      setError(null);
+    } catch (err: any) {
+      console.error('Error fetching topics:', err);
+      setError(err.response?.data?.detail || err.message || '데이터를 불러오는 중 오류가 발생했습니다.');
     } finally {
       setLoading(false);
     }
@@ -41,11 +47,13 @@ export default function TopicMap() {
 
   const handleDetect = async () => {
     setDetecting(true);
+    setError(null);
     try {
       await detectTopics(7);
       await fetchData();
-    } catch (error) {
-      console.error('Error detecting topics:', error);
+    } catch (err: any) {
+      console.error('Error detecting topics:', err);
+      setError(err.response?.data?.detail || err.message || '토픽 탐지 중 오류가 발생했습니다.');
     } finally {
       setDetecting(false);
     }
@@ -88,13 +96,26 @@ export default function TopicMap() {
         </div>
         <Button 
           onClick={handleDetect} 
-          disabled={detecting}
+          disabled={detecting || loading}
           className="gradient-primary text-white"
         >
           <Zap className={`w-4 h-4 mr-2 ${detecting ? 'animate-pulse' : ''}`} />
           {detecting ? '탐지중...' : '토픽 탐지'}
         </Button>
       </div>
+
+      {error && (
+        <Alert variant="destructive" className="bg-red-50 border-red-200">
+          <AlertCircle className="h-4 w-4" />
+          <AlertTitle>오류 발생</AlertTitle>
+          <AlertDescription>
+            {error}
+            <Button variant="outline" size="sm" onClick={() => fetchData()} className="ml-4 h-7 text-xs">
+              다시 시도
+            </Button>
+          </AlertDescription>
+        </Alert>
+      )}
 
       {/* Surging Topics Alert */}
       {alerts.length > 0 && (

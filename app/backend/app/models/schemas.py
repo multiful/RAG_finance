@@ -123,6 +123,7 @@ class QAResponse(BaseModel):
     citations: List[Citation]
     confidence: float
     uncertainty_note: Optional[str] = None
+    answerable: bool = True
 
 
 # ==================== Topic/Alert Models ====================
@@ -211,3 +212,29 @@ class DashboardStats(BaseModel):
     collection_status: List[CollectionStatus]
     recent_topics: List[TopicResponse]
     quality_metrics: Optional[QualityMetrics] = None
+
+
+# ==================== Advanced/Governance Models ====================
+
+class PolicySimulationRequest(BaseModel):
+    """Request for policy comparison simulation."""
+    old_document_id: str
+    new_document_id: str
+
+
+class PolicySimulationResponse(BaseModel):
+    """Response containing policy delta analysis."""
+    added_duties: List[str]
+    removed_restrictions: List[str]
+    modified_requirements: Optional[List[str]] = None
+    risk_level: str  # low | medium | high
+    confidence: float
+
+
+class GovernanceMetricsResponse(BaseModel):
+    """Aggregated governance performance metrics."""
+    avg_groundedness: float
+    avg_citation_accuracy: float
+    avg_hallucination_rate: float
+    sample_size: int
+    last_updated: datetime

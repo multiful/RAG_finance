@@ -40,10 +40,11 @@ export interface QAResponse {
   answer: string;
   summary: string;
   industry_impact: Record<string, number>;
-  checklist?: any[];
+  checklist?: ChecklistItem[];
   citations: Citation[];
   confidence: number;
   uncertainty_note?: string;
+  answerable?: boolean;
 }
 
 export interface Topic {
@@ -54,7 +55,7 @@ export interface Topic {
   time_window_end: string;
   document_count: number;
   surge_score: number;
-  representative_documents: any[];
+  representative_documents: Document[];
 }
 
 export interface Alert {
@@ -104,7 +105,7 @@ export interface DashboardStats {
   high_severity_alerts: number;
   collection_status: CollectionStatus[];
   recent_topics: Topic[];
-  quality_metrics?: any;
+  quality_metrics?: QualityMetrics;
 }
 
 export interface QualityMetrics {

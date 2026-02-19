@@ -135,7 +135,7 @@ class ReasoningEngine:
         """쿼리 확장 (동의어, 관련 용어 추가)."""
         prompt = ChatPromptTemplate.from_messages([
             ("system", "금융정책 검색 쿼리 확장 전문가. 원본 쿼리와 관련된 동의어, 유사 용어를 생성하세요."),
-            ("human", f"쿼리: {query}\n유형: {query_type}\n\n응답 형식: ["확장1", "확장2", ...]")
+            ("human", f'쿼리: {query}\n유형: {query_type}\n\n응답 형식: ["확장1", "확장2", ...]')
         ])
         
         try:

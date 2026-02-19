@@ -10,12 +10,13 @@ import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import { SourceCardGrid } from '@/components/dashboard/SourceCard';
 import { askQuestion } from '@/lib/api';
+import type { Citation } from '@/types';
 
 interface Message {
   id: string;
   type: 'user' | 'assistant';
   content: string;
-  citations?: any[];
+  citations?: Citation[];
   confidence?: number;
   groundedness_score?: number;
   hallucination_flag?: boolean;
@@ -67,7 +68,7 @@ export default function NewQASection() {
       };
 
       setMessages(prev => [...prev, assistantMessage]);
-    } catch (error) {
+    } catch {
       const errorMessage: Message = {
         id: (Date.now() + 1).toString(),
         type: 'assistant',

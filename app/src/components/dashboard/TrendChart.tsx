@@ -38,6 +38,35 @@ interface TrendChartProps {
   chartType?: 'line' | 'bar' | 'bubble';
 }
 
+interface CustomTooltipProps {
+  active?: boolean;
+  payload?: Record<string, unknown>[];
+  label?: string;
+}
+
+const CustomTooltip = ({ active, payload, label }: CustomTooltipProps) => {
+  if (active && payload && payload.length) {
+    const data = payload[0].payload;
+    return (
+      <div className="bg-white p-3 rounded-lg shadow-lg border border-lavender-100">
+        <p className="text-sm font-medium">{label}</p>
+        <p className="text-lg font-bold text-primary">
+          Surge Score: {data.score.toFixed(1)}
+        </p>
+        <p className="text-sm text-muted-foreground">
+          토픽 수: {data.topicCount}
+        </p>
+        {data.topTopic && (
+          <p className="text-xs text-muted-foreground mt-1">
+            주요: {data.topTopic}
+          </p>
+        )}
+      </div>
+    );
+  }
+  return null;
+};
+
 export default function TrendChart({ 
   data, 
   title = "급부상 토픽 트렌드",
@@ -73,6 +102,12 @@ export default function TrendChart({
 
   // 차트 데이터 변환
   const chartData = useMemo(() => {
+    interface GroupedItem {
+      date: string;
+      topics: TopicTrend[];
+      totalScore: number;
+    }
+
     // 날짜별 그룹화
     const grouped = filteredData.reduce((acc, item) => {
       const date = item.date.slice(0, 10);
@@ -82,9 +117,9 @@ export default function TrendChart({
       acc[date].topics.push(item);
       acc[date].totalScore += item.surge_score;
       return acc;
-    }, {} as Record<string, any>);
+    }, {} as Record<string, GroupedItem>);
 
-    return Object.values(grouped).map((g: any) => ({
+    return Object.values(grouped).map((g) => ({
       date: g.date,
       score: g.totalScore,
       topicCount: g.topics.length,
@@ -97,30 +132,6 @@ export default function TrendChart({
     if (score >= 75) return '#ef4444'; // red-500
     if (score >= 50) return '#f59e0b'; // amber-500
     return '#10b981'; // emerald-500
-  };
-
-  // 커스텀 툴팁
-  const CustomTooltip = ({ active, payload, label }: any) => {
-    if (active && payload && payload.length) {
-      const data = payload[0].payload;
-      return (
-        <div className="bg-white p-3 rounded-lg shadow-lg border border-lavender-100">
-          <p className="text-sm font-medium">{label}</p>
-          <p className="text-lg font-bold text-primary">
-            Surge Score: {data.score.toFixed(1)}
-          </p>
-          <p className="text-sm text-muted-foreground">
-            토픽 수: {data.topicCount}
-          </p>
-          {data.topTopic && (
-            <p className="text-xs text-muted-foreground mt-1">
-              주요: {data.topTopic}
-            </p>
-          )}
-        </div>
-      );
-    }
-    return null;
   };
 
   return (

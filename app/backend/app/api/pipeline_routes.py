@@ -17,7 +17,7 @@ tracer = get_tracer()
 
 # ============ Phase A: Data Ingestion Routes ============
 
-@router.post("/pipeline/ingest/{document_id}")
+@router.post("/ingest/{document_id}")
 async def ingest_document(document_id: str, background_tasks: BackgroundTasks):
     """Run full ingestion pipeline for a document.
     
@@ -36,29 +36,88 @@ async def ingest_document(document_id: str, background_tasks: BackgroundTasks):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.post("/pipeline/collect")
+@router.post("/collect")
 async def trigger_collection(background_tasks: BackgroundTasks):
-    """Trigger scheduled RSS collection (runs 4 times/day)."""
+    """Trigger scheduled RSS collection (runs 4 times/day) with job tracking."""
     try:
-        background_tasks.add_task(pipeline.run_scheduled_collection)
+        from app.services.job_tracker import job_tracker
+        job_id = job_tracker.create_job()
+        if not job_id:
+            raise HTTPException(status_code=503, detail="Redis connection failed. Job tracking unavailable.")
+        
+        background_tasks.add_task(pipeline.run_scheduled_collection, job_id=job_id)
         
         return {
             "message": "Collection started",
+            "job_id": job_id,
+            "status": "running",
             "timestamp": datetime.now().isoformat()
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.get("/pipeline/status/{document_id}")
+@router.post("/retry-failed")
+async def retry_failed_documents(background_tasks: BackgroundTasks):
+    """Retry processing for all failed documents."""
+    try:
+        db = pipeline.collector.db
+        result = db.table("documents").select("document_id").eq("status", "failed").execute()
+        
+        doc_ids = [d["document_id"] for d in (result.data or [])]
+        
+        if not doc_ids:
+            return {"message": "No failed documents found"}
+            
+        async def process_batch(ids):
+            for doc_id in ids:
+                await pipeline.run_full_pipeline(doc_id)
+                
+        background_tasks.add_task(process_batch, doc_ids)
+        
+        return {
+            "message": f"Retry started for {len(doc_ids)} documents",
+            "document_ids": doc_ids
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/index-pending")
+async def index_pending_documents(background_tasks: BackgroundTasks):
+    """Process all documents with 'ingested' status."""
+    try:
+        db = pipeline.collector.db
+        result = db.table("documents").select("document_id").eq("status", "ingested").execute()
+        
+        doc_ids = [d["document_id"] for d in (result.data or [])]
+        
+        if not doc_ids:
+            return {"message": "No pending documents found"}
+            
+        async def process_batch(ids):
+            for doc_id in ids:
+                await pipeline.run_full_pipeline(doc_id)
+                
+        background_tasks.add_task(process_batch, doc_ids)
+        
+        return {
+            "message": f"Processing started for {len(doc_ids)} pending documents",
+            "document_ids": doc_ids
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/status/{document_id}")
 async def get_ingestion_status(document_id: str):
     """Get document ingestion status."""
     try:
         db = pipeline.collector.db
         
         doc = db.table("documents").select("*").eq("document_id", document_id).execute()
-        chunks = db.table("chunks").select("count", count="exact").eq("document_id", document_id).execute()
-        embeddings = db.table("embeddings").select("count", count="exact").eq("chunk_id", 
+        chunks = db.table("chunks").select("*", count="exact").eq("document_id", document_id).execute()
+        embeddings = db.table("embeddings").select("*", count="exact").eq("chunk_id", 
             db.table("chunks").select("chunk_id").eq("document_id", document_id)
         ).execute()
         
@@ -82,23 +141,23 @@ async def get_ingestion_status(document_id: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.get("/pipeline/stats")
+@router.get("/stats")
 async def get_pipeline_stats():
     """Get ingestion pipeline statistics."""
     try:
         db = pipeline.collector.db
         
         # Document counts by status
-        total = db.table("documents").select("count", count="exact").execute()
-        ingested = db.table("documents").select("count", count="exact").eq("status", "ingested").execute()
-        parsed = db.table("documents").select("count", count="exact").eq("status", "parsed").execute()
-        indexed = db.table("documents").select("count", count="exact").eq("status", "indexed").execute()
-        failed = db.table("documents").select("count", count="exact").eq("status", "failed").execute()
+        total = db.table("documents").select("*", count="exact").execute()
+        ingested = db.table("documents").select("*", count="exact").eq("status", "ingested").execute()
+        parsed = db.table("documents").select("*", count="exact").eq("status", "parsed").execute()
+        indexed = db.table("documents").select("*", count="exact").eq("status", "indexed").execute()
+        failed = db.table("documents").select("*", count="exact").eq("status", "failed").execute()
         
         # Recent documents (24h)
         from datetime import timedelta
         since = datetime.now() - timedelta(hours=24)
-        recent = db.table("documents").select("count", count="exact").gte(
+        recent = db.table("documents").select("*", count="exact").gte(
             "ingested_at", since.isoformat()
         ).execute()
         

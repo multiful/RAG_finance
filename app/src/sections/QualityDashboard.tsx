@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { 
   Shield, 
   CheckCircle2, 
@@ -9,11 +9,15 @@ import {
   Clock,
   FileText,
   AlertOctagon,
-  RefreshCw
+  RefreshCw,
+  AlertCircle
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
+import { Button } from '@/components/ui/button';
+import { Skeleton } from '@/components/ui/skeleton';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { getQualityMetrics } from '@/lib/api';
 import type { QualityMetrics } from '@/types';
 
@@ -25,9 +29,10 @@ interface MetricCardProps {
   icon: React.ElementType;
   trend?: 'up' | 'down' | 'neutral';
   description: string;
+  loading?: boolean;
 }
 
-function MetricCard({ title, value, target, unit, icon: Icon, trend, description }: MetricCardProps) {
+function MetricCard({ title, value, target, unit, icon: Icon, trend, description, loading }: MetricCardProps) {
   const getTrendIcon = () => {
     switch (trend) {
       case 'up':
@@ -55,9 +60,13 @@ function MetricCard({ title, value, target, unit, icon: Icon, trend, description
               {getTrendIcon()}
             </div>
             <div className="flex items-baseline gap-2 mt-2">
-              <p className={`text-3xl font-bold ${getStatusColor()}`}>
-                {value.toFixed(1)}{unit}
-              </p>
+              {loading ? (
+                <Skeleton className="h-9 w-24" />
+              ) : (
+                <p className={`text-3xl font-bold ${getStatusColor()}`}>
+                  {value.toFixed(1)}{unit}
+                </p>
+              )}
               <span className="text-sm text-muted-foreground">
                 / {target}{unit}
               </span>
@@ -70,7 +79,7 @@ function MetricCard({ title, value, target, unit, icon: Icon, trend, description
         </div>
         <div className="mt-4">
           <Progress 
-            value={(value / target) * 100} 
+            value={loading ? 0 : (value / target) * 100} 
             className="h-2"
           />
         </div>
@@ -82,114 +91,113 @@ function MetricCard({ title, value, target, unit, icon: Icon, trend, description
 export default function QualityDashboard() {
   const [metrics, setMetrics] = useState<QualityMetrics | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  const fetchMetrics = async () => {
+  const fetchMetrics = useCallback(async (isSilent = false) => {
+    if (!isSilent) setLoading(true);
     try {
       const data = await getQualityMetrics(7);
       setMetrics(data);
-    } catch (error) {
-      console.error('Error fetching quality metrics:', error);
+      setError(null);
+    } catch (err) {
+      console.error('Error fetching quality metrics:', err);
+      if (!isSilent) setError('품질 지표를 불러오는 중 오류가 발생했습니다.');
     } finally {
-      setLoading(false);
+      if (!isSilent) setLoading(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
     fetchMetrics();
-  }, []);
+    const interval = setInterval(() => fetchMetrics(true), 15000); // 15s polling
+    return () => clearInterval(interval);
+  }, [fetchMetrics]);
 
-  if (loading) {
+  if (error && !metrics) {
     return (
-      <div className="flex items-center justify-center h-96">
-        <RefreshCw className="w-8 h-8 animate-spin text-primary" />
+      <div className="p-8">
+        <Alert variant="destructive">
+          <AlertCircle className="h-4 w-4" />
+          <AlertTitle>Error</AlertTitle>
+          <AlertDescription>
+            {error}
+            <Button variant="outline" size="sm" onClick={() => fetchMetrics()} className="ml-4">
+              다시 시도
+            </Button>
+          </AlertDescription>
+        </Alert>
       </div>
     );
   }
 
-  const mockHighRiskResponses = [
-    {
-      id: '1',
-      question: '보험사 신규 상품 승인 절차는?',
-      issue: '근거 문서 불일치',
-      severity: 'high',
-      timestamp: '2024-01-15 14:30',
-    },
-    {
-      id: '2',
-      question: '은행권 대출금리 산정 기준',
-      issue: '환각 가능성',
-      severity: 'medium',
-      timestamp: '2024-01-15 13:45',
-    },
-    {
-      id: '3',
-      question: '증권사 수수료 변경 공시 기한',
-      issue: '불확실한 답변',
-      severity: 'low',
-      timestamp: '2024-01-15 12:20',
-    },
-  ];
-
   return (
     <div className="space-y-6 animate-fade-in">
       {/* Header */}
-      <div>
-        <h2 className="section-title">품질/리스크 평가</h2>
-        <p className="text-muted-foreground mt-1">
-          RAG 시스템 품질 메트릭스 및 환각 모니터링
-        </p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="section-title">품질/리스크 평가</h2>
+          <p className="text-muted-foreground mt-1">
+            RAG 시스템 품질 메트릭스 및 환각 모니터링
+          </p>
+        </div>
+        {loading && metrics && <RefreshCw className="w-4 h-4 animate-spin text-muted-foreground" />}
       </div>
 
       {/* Key Metrics */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         <MetricCard
           title="근거일치율 (Groundedness)"
-          value={metrics?.groundedness || 0.87}
+          value={metrics?.groundedness || 0}
           target={0.9}
           unit=""
           icon={CheckCircle2}
           trend="up"
           description="답변의 근거 문서 일치 비율"
+          loading={loading && !metrics}
         />
 
         <MetricCard
           title="환각률 (Hallucination)"
-          value={(metrics?.hallucination_rate || 0.08) * 100}
+          value={(metrics?.hallucination_rate || 0) * 100}
           target={5}
           unit="%"
           icon={AlertTriangle}
           trend="down"
-          description="문서에 없는 정보 생성 비율 (낮을수록 좋음)"
+          description="문서에 없는 정보 생성 비율"
+          loading={loading && !metrics}
         />
 
         <MetricCard
           title="인용 정확도"
-          value={(metrics?.citation_accuracy || 0.92) * 100}
+          value={(metrics?.citation_accuracy || 0) * 100}
           target={95}
           unit="%"
           icon={FileText}
           trend="up"
           description="인용 문서의 정확성"
+          loading={loading && !metrics}
         />
 
         <MetricCard
           title="평균 응답 시간"
-          value={(metrics?.avg_response_time_ms || 2500) / 1000}
+          value={(metrics?.avg_response_time_ms || 0) / 1000}
           target={3}
           unit="s"
           icon={Clock}
           trend="up"
           description="질문부터 답변까지 소요 시간"
+          loading={loading && !metrics}
         />
 
         <MetricCard
           title="미응답률"
-          value={(metrics?.unanswered_rate || 0.05) * 100}
+          value={(metrics?.unanswered_rate || 0) * 100}
           target={5}
           unit="%"
           icon={XCircle}
           trend="down"
           description="근거 부족으로 답변 불가 비율"
+          loading={loading && !metrics}
         />
 
         <Card className="card-elevated bg-gradient-to-br from-primary/5 to-primary/10">
@@ -200,20 +208,24 @@ export default function QualityDashboard() {
               </div>
               <div>
                 <p className="text-sm text-muted-foreground">종합 품질 점수</p>
-                <p className="text-3xl font-bold text-primary">
-                  {Math.round(
-                    ((metrics?.groundedness || 0.87) * 0.4 +
-                     (1 - (metrics?.hallucination_rate || 0.08)) * 0.3 +
-                     (metrics?.citation_accuracy || 0.92) * 0.3) * 100
-                  )}
-                </p>
+                {loading && !metrics ? (
+                  <Skeleton className="h-9 w-16 mt-1" />
+                ) : (
+                  <p className="text-3xl font-bold text-primary">
+                    {Math.round(
+                      ((metrics?.groundedness || 0) * 0.4 +
+                       (1 - (metrics?.hallucination_rate || 0)) * 0.3 +
+                       (metrics?.citation_accuracy || 0) * 0.3) * 100
+                    )}
+                  </p>
+                )}
               </div>
             </div>
             <Progress 
               value={
-                ((metrics?.groundedness || 0.87) * 0.4 +
-                 (1 - (metrics?.hallucination_rate || 0.08)) * 0.3 +
-                 (metrics?.citation_accuracy || 0.92) * 0.3) * 100
+                ((metrics?.groundedness || 0) * 0.4 +
+                 (1 - (metrics?.hallucination_rate || 0)) * 0.3 +
+                 (metrics?.citation_accuracy || 0) * 0.3) * 100
               } 
               className="h-3"
             />
@@ -234,79 +246,38 @@ export default function QualityDashboard() {
         </CardHeader>
         <CardContent>
           <div className="space-y-3">
-            {mockHighRiskResponses.map((item) => (
-              <div 
-                key={item.id}
-                className="flex items-center gap-4 p-4 bg-muted/50 rounded-xl"
-              >
-                <Badge 
-                  className={`
-                    ${item.severity === 'high' ? 'bg-red-100 text-red-700' : ''}
-                    ${item.severity === 'medium' ? 'bg-amber-100 text-amber-700' : ''}
-                    ${item.severity === 'low' ? 'bg-blue-100 text-blue-700' : ''}
-                  `}
-                >
-                  {item.severity === 'high' ? '고위험' : 
-                   item.severity === 'medium' ? '중위험' : '저위험'}
-                </Badge>
-                <div className="flex-1">
-                  <p className="font-medium">{item.question}</p>
-                  <p className="text-sm text-muted-foreground mt-1">
-                    이슈: {item.issue}
-                  </p>
-                </div>
-                <div className="text-right text-sm text-muted-foreground">
-                  {item.timestamp}
-                </div>
+            {loading && !metrics ? (
+              [1, 2, 3].map(i => <Skeleton key={i} className="h-16 w-full rounded-xl" />)
+            ) : (
+              <div className="py-8 text-center text-muted-foreground italic">
+                검토가 필요한 고위험 답변이 없습니다.
               </div>
-            ))}
+            )}
           </div>
         </CardContent>
       </Card>
 
       {/* System Status */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <Card className="card-elevated">
-          <CardContent className="p-6">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-full bg-emerald-100 flex items-center justify-center">
-                <CheckCircle2 className="w-5 h-5 text-emerald-600" />
+        {[
+          { label: 'RAG 엔진', status: '정상 운영중' },
+          { label: '벡터 DB', status: '연결 정상' },
+          { label: 'LLM API', status: '응답 정상' }
+        ].map((item, i) => (
+          <Card key={i} className="card-elevated">
+            <CardContent className="p-6">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-full bg-emerald-100 flex items-center justify-center">
+                  <CheckCircle2 className="w-5 h-5 text-emerald-600" />
+                </div>
+                <div>
+                  <p className="text-sm text-muted-foreground">{item.label}</p>
+                  <p className="font-medium text-emerald-600">{item.status}</p>
+                </div>
               </div>
-              <div>
-                <p className="text-sm text-muted-foreground">RAG 엔진</p>
-                <p className="font-medium text-emerald-600">정상 운영중</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="card-elevated">
-          <CardContent className="p-6">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-full bg-emerald-100 flex items-center justify-center">
-                <CheckCircle2 className="w-5 h-5 text-emerald-600" />
-              </div>
-              <div>
-                <p className="text-sm text-muted-foreground">벡터 DB</p>
-                <p className="font-medium text-emerald-600">연결 정상</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="card-elevated">
-          <CardContent className="p-6">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-full bg-emerald-100 flex items-center justify-center">
-                <CheckCircle2 className="w-5 h-5 text-emerald-600" />
-              </div>
-              <div>
-                <p className="text-sm text-muted-foreground">LLM API</p>
-                <p className="font-medium text-emerald-600">응답 정상</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+            </CardContent>
+          </Card>
+        ))}
       </div>
     </div>
   );

@@ -18,7 +18,6 @@ from ragas.metrics import (
     answer_relevancy,
     context_precision,
     context_recall,
-    context_entity_recall,
     answer_similarity,
     answer_correctness
 )
