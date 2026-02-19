@@ -1,7 +1,7 @@
 """Topic surge detection service."""
 import numpy as np
 from typing import List, Dict, Any, Optional
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from collections import defaultdict
 import json
 
@@ -97,6 +97,7 @@ class TopicDetector:
         # Similarity matrix
         similarity_matrix = np.zeros((n, n))
         for i in range(n):
+            similarity_matrix[i][i] = 1.0
             for j in range(i+1, n):
                 sim = self._cosine_similarity(
                     doc_embeddings[doc_ids[i]],
@@ -105,9 +106,15 @@ class TopicDetector:
                 similarity_matrix[i][j] = sim
                 similarity_matrix[j][i] = sim
         
+        # Debug similarity stats
+        upper_tri = similarity_matrix[np.triu_indices(n, k=1)]
+        if len(upper_tri) > 0:
+            print(f"DEBUG: Similarity matrix stats - Mean: {np.mean(upper_tri):.4f}, Max: {np.max(upper_tri):.4f}, Min: {np.min(upper_tri):.4f}")
+            print(f"DEBUG: Document count: {n}, Potential pairs: {len(upper_tri)}")
+        
         # Hierarchical clustering (simplified)
         clusters = []
-        threshold = 0.82 # Increased threshold for tighter clusters
+        threshold = 0.65 # Relaxed from 0.75
         visited = set()
         
         for i in range(n):
@@ -123,6 +130,7 @@ class TopicDetector:
                     visited.add(j)
             
             if len(cluster) >= min_cluster_size:
+                print(f"DEBUG: Found cluster of size {len(cluster)} around doc {i}")
                 cluster_docs = [doc_ids[idx] for idx in cluster]
                 
                 # Calculate centroid
@@ -136,6 +144,9 @@ class TopicDetector:
                     "centroid": centroid,
                     "size": len(cluster)
                 })
+            else:
+                if len(cluster) > 1:
+                    print(f"DEBUG: Discarded cluster of size {len(cluster)} (min_size={min_cluster_size})")
         
         print(f"Detected {len(clusters)} clusters.")
         return clusters
@@ -187,15 +198,19 @@ class TopicDetector:
     ) -> List[TopicResponse]:
         """Detect surging topics in recent period."""
         
-        end_date = datetime.now()
+        end_date = datetime.now(timezone.utc)
         start_date = end_date - timedelta(days=days)
         prev_start = start_date - timedelta(days=days)
         
+        print(f"DEBUG: Current UTC time: {end_date.isoformat()}")
+        print(f"DEBUG: Clustering window: {start_date.isoformat()} ~ {end_date.isoformat()}")
+        
         # Current period clusters
-        current_clusters = await self.cluster_documents(start_date, end_date)
+        current_clusters = await self.cluster_documents(start_date, end_date, min_cluster_size=2)
+        print(f"DEBUG: Clusters detected: {len(current_clusters)}")
         
         # Previous period clusters (for comparison)
-        prev_clusters = await self.cluster_documents(prev_start, start_date)
+        prev_clusters = await self.cluster_documents(prev_start, start_date, min_cluster_size=2)
         
         topics = []
         

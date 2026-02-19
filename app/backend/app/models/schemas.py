@@ -122,6 +122,8 @@ class QAResponse(BaseModel):
     checklist: Optional[List[Dict[str, Any]]] = None
     citations: List[Citation]
     confidence: float
+    groundedness_score: float = 0.0
+    citation_coverage: float = 0.0
     uncertainty_note: Optional[str] = None
     answerable: bool = True
 
@@ -138,6 +140,12 @@ class TopicResponse(BaseModel):
     document_count: int
     surge_score: float
     representative_documents: List[Dict[str, Any]]
+
+
+class TopicListResponse(BaseModel):
+    """List of detected topics."""
+    topics: List[TopicResponse]
+    topics_detected: int
 
 
 class AlertResponse(BaseModel):
@@ -222,13 +230,23 @@ class PolicySimulationRequest(BaseModel):
     new_document_id: str
 
 
-class PolicySimulationResponse(BaseModel):
+class PolicyDiffItem(BaseModel):
+    """Individual change item in a policy diff."""
+    clause: str
+    change_type: str  # added | modified | removed
+    description: str
+    risk_level: str  # high | medium | low
+    impacted_process: str
+
+
+class PolicyDiffResponse(BaseModel):
     """Response containing policy delta analysis."""
-    added_duties: List[str]
-    removed_restrictions: List[str]
-    modified_requirements: Optional[List[str]] = None
-    risk_level: str  # low | medium | high
-    confidence: float
+    old_doc_title: str
+    new_doc_title: str
+    changes: List[PolicyDiffItem]
+    overall_risk: str
+    summary: str
+    generated_at: datetime
 
 
 class GovernanceMetricsResponse(BaseModel):

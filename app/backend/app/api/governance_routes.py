@@ -1,7 +1,7 @@
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Query
 from app.models.schemas import (
     PolicySimulationRequest, 
-    PolicySimulationResponse, 
+    PolicyDiffResponse, 
     GovernanceMetricsResponse
 )
 from datetime import datetime
@@ -56,7 +56,7 @@ async def daily_job(background_tasks: BackgroundTasks):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-@router.post("/policy/simulate", response_model=PolicySimulationResponse)
+@router.post("/policy/simulate", response_model=PolicyDiffResponse)
 async def simulate_policy(req: PolicySimulationRequest):
     """Simulate impact of policy changes between two documents."""
     try:

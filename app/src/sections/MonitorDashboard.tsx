@@ -140,60 +140,29 @@ export default function MonitorDashboard() {
   }
 
   return (
-    <div className="space-y-6 animate-fade-in">
-      {statusMessage && (
-        <Alert variant={statusMessage.type === 'success' ? 'default' : 'destructive'} 
-               className={statusMessage.type === 'success' ? 'border-emerald-500 bg-emerald-50 text-emerald-700' : ''}>
-          <AlertCircle className="h-4 w-4" />
-          <AlertTitle>{statusMessage.type === 'success' ? '성공' : '알림'}</AlertTitle>
-          <AlertDescription className="flex justify-between items-center">
-            {statusMessage.text}
-            {statusMessage.type === 'warning' && (
-              <Button size="sm" variant="outline" onClick={() => handleRunJob('collect')} className="ml-4">
-                다시 시도
-              </Button>
-            )}
-          </AlertDescription>
-        </Alert>
-      )}
-
-      {jobProgress && (
-        <Card className="border-primary/50 bg-primary/5">
-          <CardContent className="pt-6">
-            <div className="flex justify-between items-center mb-2">
-              <div className="flex items-center gap-2">
-                <RefreshCw className="w-4 h-4 animate-spin text-primary" />
-                <span className="font-semibold capitalize text-primary">{jobProgress.stage}</span>
-              </div>
-              <span className="text-sm font-medium">{jobProgress.progress}%</span>
-            </div>
-            <Progress value={jobProgress.progress} className="h-2 mb-2" />
-            <p className="text-sm text-muted-foreground">{jobProgress.message}</p>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Header */}
-      <div className="flex items-center justify-between">
+    <div className="space-y-8 max-w-6xl mx-auto">
+      {/* Header with quick actions */}
+      <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
         <div>
-          <h2 className="section-title">실시간 수집 모니터</h2>
-          <p className="text-muted-foreground mt-1">
-            금융위원회 RSS 기반 최신 문서 수집 현황
+          <h2 className="text-3xl font-bold tracking-tight text-slate-900">수집 현황 모니터</h2>
+          <p className="text-slate-500 mt-2 text-lg">
+            금융위원회 RSS 기반 실시간 데이터 인제스천 상태
           </p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-3">
           <Button 
             variant="outline"
-            onClick={() => handleRunJob('collect')} 
-            disabled={collecting || loading}
+            onClick={() => fetchData()} 
+            disabled={loading}
+            className="border-slate-200 text-slate-600 font-semibold h-11 px-5 rounded-xl hover:bg-slate-50"
           >
-            <RefreshCw className={`w-4 h-4 mr-2 ${collecting && jobProgress?.stage === 'collecting' ? 'animate-spin' : ''}`} />
-            RSS 동기화
+            <RefreshCw className={`w-4 h-4 mr-2 ${loading && !collecting ? 'animate-spin' : ''}`} />
+            새로고침
           </Button>
           <Button 
             onClick={() => handleRunJob('pipeline')} 
             disabled={collecting || loading}
-            className="gradient-primary text-white"
+            className="gradient-primary text-white font-bold h-11 px-6 rounded-xl shadow-lg shadow-primary/20"
           >
             <TrendingUp className={`w-4 h-4 mr-2 ${collecting && jobProgress?.stage !== 'collecting' ? 'animate-spin' : ''}`} />
             전체 파이프라인 실행
@@ -201,127 +170,198 @@ export default function MonitorDashboard() {
         </div>
       </div>
 
-      {/* Stats Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        {[
-          { label: '총 문서 수', value: stats?.total_documents, icon: Database, color: 'text-primary', bg: 'bg-primary/10' },
-          { label: '24시간 신규', value: stats?.documents_24h, icon: TrendingUp, color: 'text-emerald-600', bg: 'bg-emerald-100' },
-          { label: '활성 경보', value: stats?.active_alerts, icon: AlertTriangle, color: 'text-amber-600', bg: 'bg-amber-100' },
-          { label: '고위험 경보', value: stats?.high_severity_alerts, icon: AlertTriangle, color: 'text-red-600', bg: 'bg-red-100' },
-        ].map((item, i) => (
-          <Card key={i} className="card-elevated">
-            <CardContent className="p-6">
-              <div className="flex items-center justify-between">
+      {statusMessage && (
+        <Alert variant={statusMessage.type === 'success' ? 'default' : 'destructive'} 
+               className={`animate-in slide-in-from-top-4 duration-500 border-none shadow-md ${statusMessage.type === 'success' ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-700'}`}>
+          <AlertCircle className="h-4 w-4" />
+          <AlertTitle className="font-bold">{statusMessage.type === 'success' ? '성공' : '알림'}</AlertTitle>
+          <AlertDescription className="font-medium">
+            {statusMessage.text}
+          </AlertDescription>
+        </Alert>
+      )}
+
+      {jobProgress && (
+        <Card className="border-none shadow-xl shadow-primary/10 bg-white overflow-hidden">
+          <div className="h-1.5 w-full bg-slate-100">
+            <div 
+              className="h-full bg-primary transition-all duration-500 ease-out" 
+              style={{ width: `${jobProgress.progress}%` }}
+            />
+          </div>
+          <CardContent className="pt-6 pb-6 px-8">
+            <div className="flex justify-between items-center mb-4">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
+                  <RefreshCw className="w-5 h-5 animate-spin text-primary" />
+                </div>
                 <div>
-                  <p className="text-sm text-muted-foreground">{item.label}</p>
+                  <span className="text-sm font-bold uppercase tracking-wider text-primary">{jobProgress.stage}</span>
+                  <p className="text-slate-500 font-medium text-sm">{jobProgress.message}</p>
+                </div>
+              </div>
+              <span className="text-2xl font-black text-slate-900">{jobProgress.progress}%</span>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Stats Grid */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+        {[
+          { label: '총 수집 문서', value: stats?.total_documents, icon: Database, color: 'text-indigo-600', bg: 'bg-indigo-50' },
+          { label: '24시간 신규', value: stats?.documents_24h, icon: TrendingUp, color: 'text-emerald-600', bg: 'bg-emerald-50' },
+          { label: '활성 경보', value: stats?.active_alerts, icon: AlertTriangle, color: 'text-amber-600', bg: 'bg-amber-50' },
+          { label: '고위험 경보', value: stats?.high_severity_alerts, icon: AlertCircle, color: 'text-rose-600', bg: 'bg-rose-50' },
+        ].map((item, i) => (
+          <Card key={i} className="border-none shadow-sm bg-white hover:shadow-md transition-shadow duration-300 rounded-2xl">
+            <CardContent className="p-6">
+              <div className="flex items-center justify-between mb-4">
+                <div className={`w-12 h-12 rounded-2xl ${item.bg} flex items-center justify-center`}>
+                  <item.icon className={`w-6 h-6 ${item.color}`} />
+                </div>
+                <div className="flex flex-col items-end">
+                  <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">{item.label}</p>
                   {loading && !stats ? (
-                    <Skeleton className="h-9 w-20 mt-1" />
+                    <Skeleton className="h-8 w-16 mt-1 rounded-lg" />
                   ) : (
-                    <p className={`text-3xl font-bold mt-1 ${item.color}`}>
+                    <p className={`text-2xl font-black mt-1 text-slate-900`}>
                       {item.value?.toLocaleString() || 0}
                     </p>
                   )}
                 </div>
-                <div className={`w-12 h-12 rounded-xl ${item.bg} flex items-center justify-center`}>
-                  <item.icon className={`w-6 h-6 ${item.color}`} />
-                </div>
+              </div>
+              <div className="h-1 w-full bg-slate-50 rounded-full overflow-hidden">
+                <div className={`h-full ${item.bg.replace('bg-', 'text-').replace('50', '500').replace('text-', 'bg-')} opacity-60`} style={{ width: '60%' }} />
               </div>
             </CardContent>
           </Card>
         ))}
       </div>
 
-      {/* Collection Status */}
-      <Card className="card-elevated">
-        <CardHeader>
-          <CardTitle className="text-lg flex items-center gap-2">
-            <RefreshCw className="w-5 h-5 text-primary" />
-            수집 소스 상태
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-4">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        {/* Collection Status */}
+        <div className="lg:col-span-2 space-y-6">
+          <div className="flex items-center justify-between px-2">
+            <h3 className="text-xl font-bold text-slate-900 flex items-center gap-2">
+              <RefreshCw className="w-5 h-5 text-primary" />
+              수집 채널 상태
+            </h3>
+            <Badge variant="outline" className="bg-white border-slate-200 text-slate-500 font-bold">
+              {stats?.collection_status?.length || 0} Active Channels
+            </Badge>
+          </div>
+          
+          <div className="grid grid-cols-1 gap-4">
             {loading && !stats ? (
-              [1, 2, 3, 4].map(i => <Skeleton key={i} className="h-20 w-full rounded-xl" />)
+              [1, 2, 3, 4].map(i => <Skeleton key={i} className="h-24 w-full rounded-2xl" />)
             ) : (
               stats?.collection_status?.map((source) => (
-                <div key={source.source_id} className="flex items-center gap-4 p-4 bg-muted/50 rounded-xl">
-                  <div className="flex-1">
-                    <div className="flex items-center gap-2">
-                      <span className="font-medium">{source.source_name}</span>
-                      <Badge variant="outline" className="text-xs">
-                        {source.source_id}
-                      </Badge>
-                    </div>
-                    <div className="flex items-center gap-4 mt-2 text-sm text-muted-foreground">
-                      <span>총 {source.total_documents.toLocaleString()}건</span>
-                      <span>24h +{source.new_documents_24h}건</span>
-                    </div>
-                  </div>
-                  <div className="text-right">
-                    <div className="text-sm font-medium">성공률</div>
-                    <div className="text-lg font-semibold text-emerald-600">
-                      {source.success_rate_7d.toFixed(1)}%
-                    </div>
-                  </div>
-                  <div className="w-32">
-                    <Progress value={source.success_rate_7d} className="h-2" />
-                  </div>
-                </div>
-              ))
-            )}
-          </div>
-        </CardContent>
-      </Card>
+                <Card key={source.source_id} className="border-none shadow-sm bg-white hover:shadow-md transition-all duration-300 rounded-2xl group">
+                  <CardContent className="p-6">
+                    <div className="flex items-center gap-6">
+                      <div className="w-14 h-14 rounded-2xl bg-slate-50 flex flex-col items-center justify-center border border-slate-100 group-hover:bg-primary/5 group-hover:border-primary/10 transition-colors">
+                        <span className="text-[10px] font-black text-slate-400 uppercase tracking-tighter">FID</span>
+                        <span className="text-sm font-black text-slate-900">{source.source_id}</span>
+                      </div>
+                      
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-1">
+                          <h4 className="font-bold text-slate-900">{source.source_name}</h4>
+                          {source.new_documents_24h > 0 && (
+                            <Badge className="bg-emerald-500 hover:bg-emerald-600 text-[10px] font-black py-0 h-4 uppercase">New</Badge>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-4 text-xs font-bold text-slate-400">
+                          <span className="flex items-center gap-1"><Database className="w-3 h-3" /> {source.total_documents.toLocaleString()} Total</span>
+                          <span className="flex items-center gap-1 text-emerald-500"><TrendingUp className="w-3 h-3" /> +{source.new_documents_24h} Today</span>
+                        </div>
+                      </div>
 
-      {/* Recent Documents */}
-      <Card className="card-elevated">
-        <CardHeader>
-          <CardTitle className="text-lg flex items-center gap-2">
-            <FileText className="w-5 h-5 text-primary" />
-            최근 24시간 수집 문서
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-3">
-            {loading && recentDocs.length === 0 ? (
-              [1, 2, 3].map(i => <Skeleton key={i} className="h-16 w-full rounded-xl" />)
-            ) : recentDocs.length === 0 ? (
-              <p className="text-center text-muted-foreground py-8">
-                최근 수집된 문서가 없습니다
-              </p>
-            ) : (
-              recentDocs.slice(0, 10).map((doc) => (
-                <div 
-                  key={doc.document_id} 
-                  className="flex items-center gap-4 p-4 hover:bg-muted/50 rounded-xl transition-colors"
-                >
-                  {getStatusIcon(doc.status)}
-                  <div className="flex-1 min-w-0">
-                    <p className="font-medium truncate">{doc.title}</p>
-                    <div className="flex items-center gap-3 mt-1 text-sm text-muted-foreground">
-                      <span>{new Date(doc.published_at).toLocaleDateString('ko-KR')}</span>
-                      <span>{doc.category}</span>
-                      {doc.department && (
-                        <span>{doc.department}</span>
-                      )}
+                      <div className="hidden md:flex flex-col items-end gap-1.5">
+                        <div className="flex items-center gap-2">
+                          <span className="text-[10px] font-black text-slate-400 uppercase">Health Score</span>
+                          <span className={`text-sm font-black ${source.success_rate_7d > 90 ? 'text-emerald-500' : 'text-amber-500'}`}>
+                            {source.success_rate_7d.toFixed(1)}%
+                          </span>
+                        </div>
+                        <div className="w-32 h-1.5 bg-slate-50 rounded-full overflow-hidden border border-slate-100">
+                          <div 
+                            className={`h-full transition-all duration-1000 ${source.success_rate_7d > 90 ? 'bg-emerald-500' : 'bg-amber-500'}`} 
+                            style={{ width: `${source.success_rate_7d}%` }} 
+                          />
+                        </div>
+                      </div>
                     </div>
-                  </div>
-                  {getStatusBadge(doc.status)}
-                  <a 
-                    href={doc.url} 
-                    target="_blank" 
-                    rel="noopener noreferrer"
-                    className="text-primary hover:underline text-sm"
-                  >
-                    원문보기
-                  </a>
-                </div>
+                  </CardContent>
+                </Card>
               ))
             )}
           </div>
-        </CardContent>
-      </Card>
+        </div>
+
+        {/* Recent Documents */}
+        <div className="space-y-6">
+          <div className="flex items-center justify-between px-2">
+            <h3 className="text-xl font-bold text-slate-900 flex items-center gap-2">
+              <FileText className="w-5 h-5 text-primary" />
+              실시간 피드
+            </h3>
+            <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">Last 24h</span>
+          </div>
+          
+          <Card className="border-none shadow-sm bg-white rounded-3xl overflow-hidden">
+            <CardContent className="p-0">
+              <div className="divide-y divide-slate-50">
+                {loading && recentDocs.length === 0 ? (
+                  [1, 2, 3, 4, 5].map(i => (
+                    <div key={i} className="p-5 flex gap-4">
+                      <Skeleton className="h-10 w-10 rounded-xl flex-shrink-0" />
+                      <div className="space-y-2 flex-1">
+                        <Skeleton className="h-4 w-full" />
+                        <Skeleton className="h-3 w-2/3" />
+                      </div>
+                    </div>
+                  ))
+                ) : recentDocs.length === 0 ? (
+                  <div className="py-20 flex flex-col items-center justify-center text-center px-6">
+                    <div className="w-16 h-16 rounded-3xl bg-slate-50 flex items-center justify-center mb-4">
+                      <FileText className="w-8 h-8 text-slate-300" />
+                    </div>
+                    <p className="text-slate-400 font-bold text-sm uppercase tracking-wider">No updates found</p>
+                  </div>
+                ) : (
+                  recentDocs.slice(0, 8).map((doc) => (
+                    <div 
+                      key={doc.document_id} 
+                      className="p-5 flex items-start gap-4 hover:bg-slate-50/50 transition-colors group cursor-pointer"
+                    >
+                      <div className={`w-10 h-10 rounded-xl flex-shrink-0 flex items-center justify-center border transition-colors ${
+                        doc.status === 'indexed' ? 'bg-emerald-50 border-emerald-100 text-emerald-500' : 'bg-slate-50 border-slate-100 text-slate-400'
+                      }`}>
+                        {doc.status === 'indexed' ? <CheckCircle2 className="w-5 h-5" /> : <Clock className="w-5 h-5" />}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="font-bold text-sm text-slate-900 line-clamp-1 group-hover:text-primary transition-colors">{doc.title}</p>
+                        <div className="flex items-center gap-2 mt-1.5">
+                          <span className="text-[10px] font-black text-slate-400 uppercase tracking-tighter bg-slate-50 px-1.5 py-0.5 rounded border border-slate-100">{doc.category}</span>
+                          <span className="text-[10px] font-bold text-slate-400">{new Date(doc.published_at).toLocaleDateString('ko-KR')}</span>
+                        </div>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+              <div className="p-4 bg-slate-50/50 border-t border-slate-50 text-center">
+                <Button variant="ghost" className="text-xs font-black uppercase tracking-widest text-slate-400 hover:text-primary">
+                  View Full History
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      </div>
     </div>
   );
+
 }

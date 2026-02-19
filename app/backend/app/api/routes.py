@@ -1,7 +1,7 @@
 """Main API routes (legacy + new combined)."""
 from fastapi import APIRouter, HTTPException, Query, BackgroundTasks
 from typing import List, Optional
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import logging
 import traceback
 
@@ -10,7 +10,7 @@ from app.models.schemas import (
     DocumentListResponse, DocumentResponse,
     QARequest, QAResponse,
     IndustryClassificationRequest, IndustryClassificationResponse,
-    TopicResponse, AlertResponse,
+    TopicResponse, TopicListResponse, AlertResponse,
     ChecklistRequest, ChecklistResponse,
     DashboardStats, QualityMetrics
 )
@@ -303,7 +303,7 @@ async def get_document_industry_classification(document_id: str):
 
 # ==================== Topic/Alert Routes ====================
 
-@router.get("/topics", response_model=List[TopicResponse])
+@router.get("/topics", response_model=TopicListResponse)
 async def list_topics(
     days: int = Query(7, ge=1, le=30),
     detect: bool = Query(False)
@@ -316,7 +316,7 @@ async def list_topics(
         else:
             # Get from database
             db = topic_detector.db
-            since = datetime.now() - timedelta(days=days)
+            since = datetime.now(timezone.utc) - timedelta(days=days)
             
             result = db.table("topics").select("*").gte(
                 "time_window_start", since.isoformat()
@@ -362,7 +362,7 @@ async def list_topics(
                         representative_documents=rep_docs
                     ))
         
-        return topics
+        return TopicListResponse(topics=topics, topics_detected=len(topics))
     
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -405,12 +405,12 @@ async def list_alerts(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.post("/topics/detect")
+@router.post("/topics/detect", response_model=TopicListResponse)
 async def detect_topics(days: int = Query(7, ge=1, le=30)):
     """Manually trigger topic detection."""
     try:
         topics = await topic_detector.detect_surging_topics(days)
-        return {"topics_detected": len(topics), "topics": topics}
+        return TopicListResponse(topics=topics, topics_detected=len(topics))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -433,7 +433,7 @@ async def generate_checklist(request: ChecklistRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.get("/documents/{document_id}/checklist")
+@router.get("/documents/{document_id}/checklist", response_model=ChecklistResponse)
 async def get_document_checklist(document_id: str):
     """Get checklist for a document."""
     try:
@@ -489,7 +489,7 @@ async def get_dashboard_stats():
         ).eq("severity", "high").execute()
         
         # Recent topics
-        since = datetime.now() - timedelta(days=7)
+        since = datetime.now(timezone.utc) - timedelta(days=7)
         topics_result = db.table("topics").select("*").gte(
             "time_window_start", since.isoformat()
         ).order("created_at", desc=True).limit(5).execute()
@@ -514,8 +514,9 @@ async def get_dashboard_stats():
         sources_records = db.table("sources").select("*").in_("fid", settings.FSC_RSS_FIDS).execute()
         
         # Pre-calculate 24h/7d timestamps
-        since_24h = (datetime.now() - timedelta(hours=24)).isoformat()
-        since_7d = (datetime.now() - timedelta(days=7)).isoformat()
+        now_utc = datetime.now(timezone.utc)
+        since_24h = (now_utc - timedelta(hours=24)).isoformat()
+        since_7d = (now_utc - timedelta(days=7)).isoformat()
 
         for source_rec in (sources_records.data or []):
             source_id = source_rec["source_id"]
@@ -542,7 +543,7 @@ async def get_dashboard_stats():
             sources.append({
                 "source_id": fid,
                 "source_name": source_rec.get("name"),
-                "last_fetch": datetime.now(),
+                "last_fetch": now_utc,
                 "new_documents_24h": recent.count if hasattr(recent, 'count') else 0,
                 "total_documents": source_docs.count if hasattr(source_docs, 'count') else 0,
                 "success_rate_7d": success_rate,
@@ -594,7 +595,7 @@ async def get_quality_metrics(days: int = Query(7, ge=1, le=30)):
         # This would be calculated from qa_logs in production
         # For now, return mock data
         return QualityMetrics(
-            date=datetime.now(),
+            date=datetime.now(timezone.utc),
             groundedness=0.87,
             hallucination_rate=0.08,
             avg_response_time_ms=2500,
