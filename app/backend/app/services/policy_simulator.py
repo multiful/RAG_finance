@@ -3,7 +3,8 @@ import json
 from typing import List, Dict, Any
 from app.core.config import settings
 from app.core.database import get_db
-from app.models.schemas import PolicySimulationResponse
+from datetime import datetime
+from app.models.schemas import PolicyDiffResponse, PolicyDiffItem
 import openai
 
 class PolicySimulator:
@@ -13,55 +14,82 @@ class PolicySimulator:
         self.db = get_db()
         self.openai_client = openai.AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
 
-    async def simulate(self, old_doc_id: str, new_doc_id: str) -> PolicySimulationResponse:
+    async def simulate(self, old_doc_id: str, new_doc_id: str) -> PolicyDiffResponse:
         """Analyze differences between two policy documents."""
-        # 1. Fetch chunks for both
-        old_chunks = await self._get_doc_text(old_doc_id)
-        new_chunks = await self._get_doc_text(new_doc_id)
+        # 1. Fetch metadata and content
+        old_doc = self.db.table("documents").select("title").eq("document_id", old_doc_id).execute()
+        new_doc = self.db.table("documents").select("title").eq("document_id", new_doc_id).execute()
         
-        if not old_chunks or not new_chunks:
-            return PolicySimulationResponse(
-                added_duties=[],
-                removed_restrictions=[],
-                modified_requirements=["Document content not found"],
-                risk_level="unknown",
-                confidence=0.0
+        old_text = await self._get_doc_text(old_doc_id)
+        new_text = await self._get_doc_text(new_doc_id)
+        
+        old_title = old_doc.data[0]["title"] if old_doc.data else "Old Policy"
+        new_title = new_doc.data[0]["title"] if new_doc.data else "New Policy"
+
+        if not old_text or not new_text:
+            return PolicyDiffResponse(
+                old_doc_title=old_title,
+                new_doc_title=new_title,
+                changes=[],
+                overall_risk="low",
+                summary="문서 내용을 찾을 수 없습니다.",
+                generated_at=datetime.now()
             )
 
         # 2. LLM Analysis
-        prompt = f"""Compare the following two policy documents and identify regulatory changes.
+        prompt = f"""Compare the two financial policy documents and create a detailed regulatory impact map.
+Find EXACT changes in clauses, duties, and restrictions.
 
-OLD POLICY (Summary):
-{old_chunks[:3000]}
+OLD DOCUMENT: {old_title}
+CONTENT: {old_text[:4000]}
 
-NEW POLICY (Summary):
-{new_chunks[:3000]}
+NEW DOCUMENT: {new_title}
+CONTENT: {new_text[:4000]}
 
-Output JSON:
+Output EXACT JSON:
 {{
-  "added_duties": ["List of new obligations"],
-  "removed_restrictions": ["List of lifted bans"],
-  "modified_requirements": ["List of requirements that were changed"],
-  "risk_level": "low/medium/high",
-  "confidence": 0.0-1.0
+  "changes": [
+    {{
+      "clause": "조항 번호 또는 제목",
+      "change_type": "added/modified/removed",
+      "description": "변경 내용 요약 (한국어)",
+      "risk_level": "high/medium/low",
+      "impacted_process": "영향을 받는 업무 프로세스"
+    }}
+  ],
+  "overall_risk": "high/medium/low",
+  "summary": "전체 변경사항 요약 (한국어)"
 }}
 """
         try:
             response = await self.openai_client.chat.completions.create(
                 model=settings.OPENAI_MODEL,
-                messages=[{"role": "user", "content": prompt}],
+                messages=[
+                    {"role": "system", "content": "당신은 금융 규제 준수(Compliance) 분석가입니다."},
+                    {"role": "user", "content": prompt}
+                ],
                 temperature=0.1,
                 response_format={"type": "json_object"}
             )
             data = json.loads(response.choices[0].message.content)
-            return PolicySimulationResponse(**data)
+            
+            return PolicyDiffResponse(
+                old_doc_title=old_title,
+                new_doc_title=new_title,
+                changes=[PolicyDiffItem(**item) for item in data.get("changes", [])],
+                overall_risk=data.get("overall_risk", "low"),
+                summary=data.get("summary", ""),
+                generated_at=datetime.now()
+            )
         except Exception as e:
-            return PolicySimulationResponse(
-                added_duties=[],
-                removed_restrictions=[],
-                modified_requirements=[f"Error: {str(e)}"],
-                risk_level="unknown",
-                confidence=0.0
+            print(f"Policy Diff Error: {e}")
+            return PolicyDiffResponse(
+                old_doc_title=old_title,
+                new_doc_title=new_title,
+                changes=[],
+                overall_risk="low",
+                summary=f"분석 중 오류 발생: {str(e)}",
+                generated_at=datetime.now()
             )
 
     async def _get_doc_text(self, doc_id: str) -> str:

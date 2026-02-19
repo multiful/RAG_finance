@@ -208,6 +208,25 @@ class VectorStore:
             print(f"Fallback search fatal error: {e}")
             return []
     
+    def _normalize_scores(self, results: List[SearchResult]) -> List[SearchResult]:
+        """Normalize scores to [0, 1] using Min-Max scaling."""
+        if not results:
+            return []
+        
+        scores = [r.similarity for r in results]
+        min_s = min(scores)
+        max_s = max(scores)
+        
+        if max_s == min_s:
+            for r in results:
+                r.similarity = 1.0 if max_s > 0 else 0.0
+            return results
+            
+        for r in results:
+            r.similarity = (r.similarity - min_s) / (max_s - min_s)
+            
+        return results
+
     async def hybrid_search(
         self,
         query: str,
@@ -215,6 +234,7 @@ class VectorStore:
         top_k: int = 10,
         vector_weight: float = 0.7,
         keyword_weight: float = 0.3,
+        similarity_threshold: float = 0.3, # Minimum normalized similarity
         filters: Optional[Dict[str, Any]] = None
     ) -> List[SearchResult]:
         """Hybrid search combining vector and keyword search.
@@ -225,22 +245,27 @@ class VectorStore:
             top_k: Number of results
             vector_weight: Weight for vector scores (0-1)
             keyword_weight: Weight for keyword scores (0-1)
+            similarity_threshold: Drop results below this
             filters: Optional metadata filters
             
         Returns:
             List of search results sorted by combined score
         """
-        # Run both searches in parallel
+        # 1. Run searches in parallel
         vector_results = await self.similarity_search(
-            query_embedding, top_k * 2, filters
+            query_embedding, top_k * 3, filters
         )
         keyword_results = await self.bm25_search(
-            query, top_k * 2, filters
+            query, top_k * 3, filters
         )
+        
+        # 2. Normalize scores for each set
+        vector_results = self._normalize_scores(vector_results)
+        keyword_results = self._normalize_scores(keyword_results)
         
         print(f"DEBUG: Hybrid combining {len(vector_results)} vector vs {len(keyword_results)} keyword results.")
         
-        # Combine results using Reciprocal Rank Fusion (RRF)
+        # 3. Combine results using Reciprocal Rank Fusion (RRF)
         combined = self._reciprocal_rank_fusion(
             vector_results,
             keyword_results,
@@ -248,8 +273,13 @@ class VectorStore:
             keyword_weight
         )
         
-        print(f"DEBUG: Hybrid combined count: {len(combined)}")
-        return combined[:top_k]
+        # 4. Filter by threshold
+        # RRF scores are usually low, so we normalize the final scores again for the threshold
+        final_results = self._normalize_scores(combined)
+        filtered = [r for r in final_results if r.similarity >= similarity_threshold]
+        
+        print(f"DEBUG: Hybrid filtered {len(final_results)} -> {len(filtered)} results (threshold={similarity_threshold})")
+        return filtered[:top_k]
     
     def _reciprocal_rank_fusion(
         self,

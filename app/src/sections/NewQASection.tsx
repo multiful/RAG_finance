@@ -1,13 +1,26 @@
-/**
- * New QA Section with SourceCard integration.
- */
 import { useState, useRef, useEffect } from 'react';
-import { Send, Loader2, AlertTriangle, CheckCircle2 } from 'lucide-react';
+import {
+  Send,
+  Loader2,
+  AlertTriangle,
+  CheckCircle2,
+  FileText,
+  Search,
+  Info,
+  Radar,
+} from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+  SheetDescription,
+} from '@/components/ui/sheet';
 import { SourceCardGrid } from '@/components/dashboard/SourceCard';
 import { askQuestion } from '@/lib/api';
 import type { Citation } from '@/types';
@@ -19,6 +32,7 @@ interface Message {
   citations?: Citation[];
   confidence?: number;
   groundedness_score?: number;
+  citation_coverage?: number;
   hallucination_flag?: boolean;
   timestamp: Date;
 }
@@ -27,7 +41,8 @@ export default function NewQASection() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
-  const [selectedCitation, setSelectedCitation] = useState<number | null>(null);
+  const [selectedCitation, setSelectedCitation] = useState<Citation | null>(null);
+  const [inspectorOpen, setInspectorOpen] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const scrollToBottom = () => {
@@ -49,199 +64,394 @@ export default function NewQASection() {
       timestamp: new Date(),
     };
 
-    setMessages(prev => [...prev, userMessage]);
+    setMessages((prev) => [...prev, userMessage]);
     setInput('');
     setLoading(true);
 
     try {
       const response = await askQuestion({ question: userMessage.content });
-      
+
       const assistantMessage: Message = {
         id: (Date.now() + 1).toString(),
         type: 'assistant',
         content: response.answer,
         citations: response.citations,
         confidence: response.confidence,
-        groundedness_score: 0.87, // Mock for now
-        hallucination_flag: false,
+        groundedness_score: response.groundedness_score,
+        citation_coverage: response.citation_coverage,
+        hallucination_flag: (response.confidence ?? 0) < 0.4,
         timestamp: new Date(),
       };
 
-      setMessages(prev => [...prev, assistantMessage]);
+      setMessages((prev) => [...prev, assistantMessage]);
     } catch {
       const errorMessage: Message = {
         id: (Date.now() + 1).toString(),
         type: 'assistant',
-        content: '죄송합니다. 답변을 생성하는 중 오류가 발생했습니다.',
+        content: '죄송합니다. 근거 문서를 분석하는 중 오류가 발생했습니다.',
         timestamp: new Date(),
       };
-      setMessages(prev => [...prev, errorMessage]);
+      setMessages((prev) => [...prev, errorMessage]);
     } finally {
       setLoading(false);
     }
   };
 
+  const openInspector = (citation: Citation) => {
+    setSelectedCitation(citation);
+    setInspectorOpen(true);
+  };
+
+  const lastAssistant =
+    messages.length > 0 && messages[messages.length - 1].type === 'assistant'
+      ? messages[messages.length - 1]
+      : null;
+
   return (
-    <div className="h-[calc(100vh-120px)] grid grid-cols-1 lg:grid-cols-5 gap-6">
-      {/* Chat Area */}
-      <div className="lg:col-span-3 flex flex-col gap-4">
+    <div className="h-[calc(100vh-140px)] max-w-6xl mx-auto flex flex-col gap-6">
+      {/* Header */}
+      <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
         <div>
-          <h2 className="section-title">RAG 질의응답</h2>
-          <p className="text-muted-foreground text-sm">
-            근거 인용형 AI 답변 - 문서 기반 정확한 정보 제공
+          <h2 className="text-3xl font-bold tracking-tight text-slate-900">
+            Q&amp;A Workspace
+          </h2>
+          <p className="text-slate-500 mt-2 text-lg">
+            금융정책 문서 기반 인공지능 분석 및 근거 기반 답변
           </p>
         </div>
+      </div>
 
-        <Card className="flex-1 flex flex-col card-elevated">
-          <CardContent className="flex-1 overflow-y-auto p-4 space-y-4">
-            {messages.length === 0 ? (
-              <div className="h-full flex flex-col items-center justify-center text-center p-8">
-                <div className="w-16 h-16 rounded-2xl gradient-primary flex items-center justify-center mb-4">
-                  <Send className="w-7 h-7 text-white" />
+      <div className="flex-1 grid grid-cols-1 lg:grid-cols-5 gap-8 overflow-hidden">
+        {/* Chat Area */}
+        <div className="lg:col-span-3 flex flex-col gap-4 overflow-hidden">
+          <Card className="flex-1 flex flex-col border-none shadow-xl shadow-slate-200/50 bg-white rounded-[2rem] overflow-hidden">
+            <CardContent className="flex-1 overflow-y-auto p-6 space-y-6 scrollbar-hide">
+              {messages.length === 0 ? (
+                <div className="h-full flex flex-col items-center justify-center text-center p-8">
+                  <div className="w-20 h-20 rounded-[2.5rem] bg-indigo-50 flex items-center justify-center mb-8 shadow-inner">
+                    <Send className="w-8 h-8 text-indigo-500" />
+                  </div>
+                  <h3 className="text-xl font-black text-slate-900 mb-3">
+                    무엇을 도와드릴까요?
+                  </h3>
+                  <p className="text-slate-500 font-medium max-w-xs mb-10 leading-relaxed">
+                    최신 금융 정책과 규제에 대해 질문하시면 근거 문서와 함께 답변해
+                    드립니다.
+                  </p>
+                  <div className="grid grid-cols-1 gap-3 w-full max-w-md">
+                    {[
+                      '금소법 시행에 따른 보험사 대응 의무',
+                      '가계부채 관리를 위한 DSR 규제 강화 방안',
+                      'ESG 공시 의무화 로드맵 요약',
+                    ].map((q) => (
+                      <button
+                        key={q}
+                        onClick={() => setInput(q)}
+                        className="px-6 py-4 bg-slate-50 border border-slate-100 rounded-2xl text-sm font-bold text-slate-600 hover:bg-white hover:border-primary hover:text-primary hover:shadow-lg hover:shadow-primary/5 transition-all text-left flex items-center gap-3 group"
+                        type="button"
+                      >
+                        <div className="w-2 h-2 rounded-full bg-slate-200 group-hover:bg-primary transition-colors" />
+                        {q}
+                      </button>
+                    ))}
+                  </div>
                 </div>
-                <h3 className="text-lg font-medium mb-2">금융정책에 대해 질문하세요</h3>
-                <p className="text-muted-foreground text-sm max-w-md mb-6">
-                  모든 답변은 근거 문서와 함께 제시됩니다.
-                </p>
-                <div className="flex flex-wrap gap-2 justify-center">
-                  {[
-                    '보험사 납입면제 제도 변경사항은?',
-                    '은행권 가계대출 규제 최신 동향',
-                    '증권사 CMA 금리 인상 관련 공지'
-                  ].map((q) => (
-                    <button
-                      key={q}
-                      onClick={() => setInput(q)}
-                      className="px-4 py-2 bg-muted rounded-full text-sm hover:bg-primary/10 hover:text-primary transition-colors"
+              ) : (
+                messages.map((message) => (
+                  <div
+                    key={message.id}
+                    className={`flex ${
+                      message.type === 'user' ? 'justify-end' : 'justify-start'
+                    } animate-in slide-in-from-bottom-2 duration-300`}
+                  >
+                    <div
+                      className={`max-w-[90%] rounded-[2rem] p-6 ${
+                        message.type === 'user'
+                          ? 'bg-slate-900 text-white shadow-xl shadow-slate-200'
+                          : 'bg-white border border-slate-100 shadow-lg shadow-slate-100'
+                      }`}
                     >
-                      {q}
-                    </button>
-                  ))}
+                      {message.type === 'assistant' && (
+                        <div className="space-y-4">
+                          {/* Quality Metrics */}
+                          <div className="flex items-center gap-4 pb-4 border-b border-slate-50">
+                            <div className="flex items-center gap-2">
+                              <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                                Groundedness
+                              </span>
+                              <Badge
+                                className={`px-2 py-0 border-none font-black text-[10px] ${
+                                  (message.groundedness_score ?? 0) >= 0.7
+                                    ? 'bg-emerald-50 text-emerald-600'
+                                    : 'bg-amber-50 text-amber-600'
+                                }`}
+                              >
+                                {(((message.groundedness_score ?? 0) * 100) as number).toFixed(0)}%
+                              </Badge>
+                            </div>
+
+                            <div className="flex items-center gap-2">
+                              <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                                Confidence
+                              </span>
+                              <div className="w-16 h-1 bg-slate-50 rounded-full overflow-hidden">
+                                <div
+                                  className="h-full bg-indigo-500"
+                                  style={{
+                                    width: `${(message.confidence ?? 0) * 100}%`,
+                                  }}
+                                />
+                              </div>
+                            </div>
+
+                            {message.hallucination_flag && (
+                              <Badge
+                                variant="destructive"
+                                className="bg-rose-50 text-rose-600 border-none font-black text-[10px] px-2 py-0"
+                              >
+                                <AlertTriangle className="w-3 h-3 mr-1" />
+                                Integrity Warning
+                              </Badge>
+                            )}
+
+                            {!message.hallucination_flag &&
+                              (message.confidence ?? 0) >= 0.7 && (
+                                <Badge className="bg-emerald-50 text-emerald-600 border-none font-black text-[10px] px-2 py-0">
+                                  <CheckCircle2 className="w-3 h-3 mr-1" />
+                                  Verified
+                                </Badge>
+                              )}
+                          </div>
+
+                          {/* Answer */}
+                          <div className="text-base font-medium leading-relaxed text-slate-800 whitespace-pre-wrap">
+                            {message.content}
+                          </div>
+
+                          {/* Citations Preview */}
+                          {message.citations && message.citations.length > 0 && (
+                            <div className="pt-4 border-t border-slate-50">
+                              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3">
+                                Evidence Chain ({message.citations.length})
+                              </p>
+                              <div className="flex flex-wrap gap-2">
+                                {message.citations.map((citation, idx) => (
+                                  <button
+                                    key={citation.chunk_id}
+                                    onClick={() => openInspector(citation)}
+                                    className="text-[10px] font-bold px-3 py-1.5 bg-slate-50 text-slate-500 rounded-lg hover:bg-primary/10 hover:text-primary transition-all border border-slate-100 flex items-center gap-2"
+                                    type="button"
+                                  >
+                                    <FileText className="w-3 h-3" />
+                                    [{idx + 1}] {citation.document_title.slice(0, 15)}...
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {message.type === 'user' && (
+                        <p className="font-bold text-base">{message.content}</p>
+                      )}
+                    </div>
+                  </div>
+                ))
+              )}
+
+              <div ref={messagesEndRef} />
+            </CardContent>
+
+            {/* Input */}
+            <div className="p-6 bg-slate-50/50 border-t border-slate-50">
+              <form onSubmit={handleSubmit} className="flex gap-3 relative">
+                <Input
+                  value={input}
+                  onChange={(e) => setInput(e.target.value)}
+                  placeholder="금융 정책에 대해 물어보세요..."
+                  disabled={loading}
+                  className="flex-1 h-14 pl-6 pr-16 bg-white border-slate-200 rounded-2xl shadow-sm focus-visible:ring-primary font-medium"
+                />
+                <Button
+                  type="submit"
+                  disabled={loading || !input.trim()}
+                  className="absolute right-2 top-2 h-10 w-10 p-0 gradient-primary text-white rounded-xl shadow-lg shadow-primary/20"
+                >
+                  {loading ? (
+                    <Loader2 className="w-5 h-5 animate-spin" />
+                  ) : (
+                    <Send className="w-5 h-5" />
+                  )}
+                </Button>
+              </form>
+              <p className="text-center text-[10px] font-bold text-slate-400 mt-3 uppercase tracking-widest">
+                Production-grade RAG | Evidence-Chain Enforcement Enabled
+              </p>
+            </div>
+          </Card>
+        </div>
+
+        {/* Info Panel */}
+        <div className="lg:col-span-2 flex flex-col gap-6 overflow-hidden">
+          <div className="flex items-center justify-between px-2">
+            <h3 className="text-xl font-bold text-slate-900 flex items-center gap-2">
+              <Info className="w-5 h-5 text-primary" />
+              Session Insights
+            </h3>
+          </div>
+
+          <div className="flex-1 overflow-y-auto pr-2 space-y-4">
+            {lastAssistant ? (
+              <div className="space-y-6 animate-in fade-in duration-500">
+                <Card className="border-none shadow-sm bg-indigo-900 text-white rounded-3xl p-6">
+                  <h4 className="text-xs font-black uppercase tracking-widest mb-4 opacity-60">
+                    Response Quality
+                  </h4>
+                  <div className="space-y-4">
+                    <div>
+                      <div className="flex justify-between text-[10px] font-bold mb-1">
+                        <span>CITATION COVERAGE</span>
+                        <span>
+                          {(((lastAssistant.citation_coverage ?? 0) * 100) as number).toFixed(0)}%
+                        </span>
+                      </div>
+                      <Progress
+                        value={(lastAssistant.citation_coverage ?? 0) * 100}
+                        className="h-1 bg-white/10"
+                      />
+                    </div>
+
+                    <div>
+                      <div className="flex justify-between text-[10px] font-bold mb-1">
+                        <span>GROUNDEDNESS SCORE</span>
+                        <span>
+                          {(((lastAssistant.groundedness_score ?? 0) * 100) as number).toFixed(0)}%
+                        </span>
+                      </div>
+                      <Progress
+                        value={(lastAssistant.groundedness_score ?? 0) * 100}
+                        className="h-1 bg-white/10"
+                      />
+                    </div>
+                  </div>
+                </Card>
+
+                <div className="space-y-4">
+                  <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest px-2">
+                    References
+                  </h4>
+
+                  <SourceCardGrid
+                    citations={
+                      lastAssistant.citations?.map((c, i) => ({
+                        ...c,
+                        index: i + 1,
+                      })) || []
+                    }
+                    onSelect={(idx) => {
+                      const cit = lastAssistant.citations?.[idx - 1];
+                      if (cit) openInspector(cit);
+                    }}
+                  />
                 </div>
               </div>
             ) : (
-              messages.map((message) => (
-                <div
-                  key={message.id}
-                  className={`flex ${message.type === 'user' ? 'justify-end' : 'justify-start'}`}
-                >
-                  <div
-                    className={`max-w-[90%] rounded-2xl p-4 ${
-                      message.type === 'user'
-                        ? 'bg-primary text-primary-foreground'
-                        : 'bg-white border border-lavender-100 shadow-sm'
-                    }`}
-                  >
-                    {message.type === 'assistant' && (
-                      <div className="space-y-3">
-                        {/* Quality Metrics */}
-                        <div className="flex items-center gap-3 pb-3 border-b border-lavender-100">
-                          <div className="flex items-center gap-2">
-                            <span className="text-xs text-muted-foreground">근거일치:</span>
-                            <Badge className={message.groundedness_score && message.groundedness_score >= 0.8 ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}>
-                              {((message.groundedness_score || 0) * 100).toFixed(0)}%
-                            </Badge>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <span className="text-xs text-muted-foreground">신뢰도:</span>
-                            <Progress value={(message.confidence || 0) * 100} className="w-16 h-1.5" />
-                          </div>
-                          {message.hallucination_flag && (
-                            <Badge variant="destructive" className="text-xs">
-                              <AlertTriangle className="w-3 h-3 mr-1" />
-                              환각 의심
-                            </Badge>
-                          )}
-                        </div>
-
-                        {/* Answer */}
-                        <div className="text-sm leading-relaxed whitespace-pre-wrap">
-                          {message.content}
-                        </div>
-
-                        {/* Citations Preview */}
-                        {message.citations && message.citations.length > 0 && (
-                          <div className="pt-3 border-t border-lavender-100">
-                            <p className="text-xs text-muted-foreground mb-2">
-                              근거 문서 ({message.citations.length}개)
-                            </p>
-                            <div className="flex flex-wrap gap-2">
-                              {message.citations.slice(0, 3).map((citation) => (
-                                <button
-                                  key={citation.chunk_id}
-                                  onClick={() => setSelectedCitation(citation.index)}
-                                  className="text-xs px-2 py-1 bg-lavender-100 text-primary rounded-full hover:bg-primary/20 transition-colors"
-                                >
-                                  [{citation.index}] {citation.document_title.slice(0, 20)}...
-                                </button>
-                              ))}
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    )}
-                    {message.type === 'user' && <p>{message.content}</p>}
-                  </div>
+              <Card className="h-full border-2 border-dashed border-slate-200 bg-slate-50/50 rounded-[2rem] flex flex-col items-center justify-center text-center p-10">
+                <div className="w-20 h-20 rounded-3xl bg-white shadow-sm flex items-center justify-center mb-6">
+                  <Search className="w-10 h-10 text-slate-200" />
                 </div>
-              ))
+                <h4 className="text-lg font-bold text-slate-900 mb-2">
+                  근거 분석 대기 중
+                </h4>
+                <p className="text-slate-500 font-medium">
+                  질문을 입력하면 답변 생성에 사용된 핵심 문서 조각들과 품질 지표가 여기에
+                  표시됩니다.
+                </p>
+              </Card>
             )}
-            <div ref={messagesEndRef} />
-          </CardContent>
-
-          {/* Input */}
-          <div className="p-4 border-t">
-            <form onSubmit={handleSubmit} className="flex gap-2">
-              <Input
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                placeholder="질문을 입력하세요..."
-                disabled={loading}
-                className="flex-1"
-              />
-              <Button 
-                type="submit" 
-                disabled={loading || !input.trim()}
-                className="gradient-primary text-white"
-              >
-                {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
-              </Button>
-            </form>
           </div>
-        </Card>
+        </div>
       </div>
 
-      {/* Sources Panel */}
-      <div className="lg:col-span-2">
-        <div className="mb-4">
-          <h3 className="font-medium">근거 문서</h3>
-          <p className="text-sm text-muted-foreground">
-            {messages.length > 0 && messages[messages.length - 1].type === 'assistant'
-              ? `${messages[messages.length - 1].citations?.length || 0}개 문서 참조`
-              : '질문에 대한 근거 문서가 여기에 표시됩니다'
-            }
-          </p>
-        </div>
+      {/* Source Inspector Sheet */}
+      <Sheet open={inspectorOpen} onOpenChange={setInspectorOpen}>
+        <SheetContent className="sm:max-w-xl w-full p-0 border-l border-slate-200 rounded-l-[3rem]">
+          {selectedCitation && (
+            <div className="h-full flex flex-col">
+              <SheetHeader className="p-8 border-b border-slate-100 bg-slate-50/50">
+                <div className="flex items-center gap-3 mb-4">
+                  <div className="w-10 h-10 rounded-xl bg-slate-900 flex items-center justify-center shadow-lg">
+                    <FileText className="w-5 h-5 text-white" />
+                  </div>
+                  <Badge
+                    variant="outline"
+                    className="border-slate-200 text-slate-500 font-bold uppercase tracking-tighter"
+                  >
+                    Document Source
+                  </Badge>
+                </div>
 
-        <div className="space-y-3 overflow-y-auto max-h-[calc(100vh-200px)]">
-          {messages.length > 0 && 
-           messages[messages.length - 1].type === 'assistant' &&
-           messages[messages.length - 1].citations ? (
-            <SourceCardGrid
-              citations={messages[messages.length - 1].citations?.map((c, i) => ({
-                ...c,
-                index: i + 1
-              })) || []}
-              selectedIndex={selectedCitation || undefined}
-              onSelect={setSelectedCitation}
-            />
-          ) : (
-            <div className="text-center py-12 text-muted-foreground">
-              <CheckCircle2 className="w-12 h-12 mx-auto mb-4 opacity-30" />
-              <p className="text-sm">질문을 입력하면<br />근거 문서가 표시됩니다</p>
+                <SheetTitle className="text-2xl font-black text-slate-900 leading-tight">
+                  {selectedCitation.document_title}
+                </SheetTitle>
+
+                <SheetDescription className="text-slate-500 font-medium flex items-center gap-2 mt-2">
+                  Published at{' '}
+                  {new Date(selectedCitation.published_at).toLocaleDateString()}
+                </SheetDescription>
+              </SheetHeader>
+
+              <div className="flex-1 overflow-y-auto p-8 space-y-8 scrollbar-hide">
+                <section>
+                  <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4">
+                    Retrieved Context Chunk
+                  </h4>
+                  <div className="bg-slate-50 rounded-[2rem] p-8 border border-slate-100 text-slate-800 leading-relaxed font-medium whitespace-pre-wrap">
+                    {selectedCitation.snippet}
+                  </div>
+                </section>
+
+                <section className="space-y-4">
+                  <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                    Metadata
+                  </h4>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="p-4 rounded-2xl bg-white border border-slate-100 shadow-sm">
+                      <p className="text-[9px] font-black text-slate-400 uppercase">
+                        Chunk ID
+                      </p>
+                      <p className="text-xs font-bold text-slate-700 truncate">
+                        {selectedCitation.chunk_id}
+                      </p>
+                    </div>
+                    <div className="p-4 rounded-2xl bg-white border border-slate-100 shadow-sm">
+                      <p className="text-[9px] font-black text-slate-400 uppercase">
+                        Document ID
+                      </p>
+                      <p className="text-xs font-bold text-slate-700 truncate">
+                        {selectedCitation.document_id}
+                      </p>
+                    </div>
+                  </div>
+                </section>
+
+                <div className="pt-8 border-t border-slate-100">
+                  <Button
+                    variant="outline"
+                    className="w-full h-14 rounded-2xl border-slate-200 text-slate-600 font-black text-sm hover:bg-slate-50 flex items-center gap-3"
+                    onClick={() => window.open(selectedCitation.url, '_blank')}
+                    type="button"
+                  >
+                    원문 문서 보기 (금융위원회)
+                    <Radar className="w-4 h-4" />
+                  </Button>
+                </div>
+              </div>
             </div>
           )}
-        </div>
-      </div>
+        </SheetContent>
+      </Sheet>
     </div>
   );
 }

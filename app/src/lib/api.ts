@@ -146,12 +146,12 @@ export const getDocumentIndustry = async (documentId: string): Promise<IndustryC
 export const getTopics = async (params?: {
   days?: number;
   detect?: boolean;
-}): Promise<Topic[]> => {
+}): Promise<{ topics: Topic[]; topics_detected: number }> => {
   const response = await api.get('/topics', { params });
   return response.data;
 };
 
-export const detectTopics = async (days: number = 7) => {
+export const detectTopics = async (days: number = 7): Promise<{ topics: Topic[]; topics_detected: number }> => {
   const response = await api.post('/topics/detect', null, { params: { days } });
   return response.data;
 };

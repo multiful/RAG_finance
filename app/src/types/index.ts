@@ -43,6 +43,8 @@ export interface QAResponse {
   checklist?: ChecklistItem[];
   citations: Citation[];
   confidence: number;
+  groundedness_score: number;
+  citation_coverage: number;
   uncertainty_note?: string;
   answerable?: boolean;
 }

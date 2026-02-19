@@ -63,7 +63,10 @@ class ChecklistService:
             "model_version": "v1"
         }).execute()
         
-        checklist_id = checklist_result.data[0]["checklist_id"] if checklist_result.data else ""
+        # Correctly extract checklist_id from result data
+        checklist_id = ""
+        if checklist_result.data and len(checklist_result.data) > 0:
+            checklist_id = checklist_result.data[0]["checklist_id"]
         
         # Save items
         for item in items:
@@ -72,7 +75,7 @@ class ChecklistService:
                 "action": item.action,
                 "target": item.target,
                 "due_date_text": item.due_date_text,
-                "effective_date": item.effective_date,
+                "effective_date": item.effective_date.isoformat() if item.effective_date else None,
                 "scope": item.scope,
                 "penalty": item.penalty,
                 "evidence_chunk_id": item.evidence_chunk_id,
@@ -130,12 +133,14 @@ class ChecklistService:
             )
             
             content = response.choices[0].message.content
+            print(f"DEBUG: Checklist LLM Response: {content}")
             
             # Extract JSON
             json_match = re.search(r'\{.*\}', content, re.DOTALL)
             if json_match:
                 data = json.loads(json_match.group())
                 checklist_data = data.get("checklist", [])
+                print(f"DEBUG: Extracted {len(checklist_data)} items")
                 
                 items = []
                 for item_data in checklist_data:

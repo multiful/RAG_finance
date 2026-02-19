@@ -1,6 +1,3 @@
-from dotenv import load_dotenv
-load_dotenv()
-
 """Main FastAPI application with Phase A/B Architecture."""
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware

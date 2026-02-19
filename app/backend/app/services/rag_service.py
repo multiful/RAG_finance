@@ -51,179 +51,138 @@ class RAGService:
         self,
         query: str,
         chunks: List[Dict[str, Any]]
-    ) -> tuple[bool, str]:
-        """Check if query can be answered from retrieved chunks."""
+    ) -> tuple[bool, str, float]:
+        """Check if query can be answered from retrieved chunks.
+        Returns (can_answer, reason, consistency_score)."""
         if not chunks:
-            return False, "검색된 문서가 없습니다."
+            return False, "검색된 문서가 없습니다.", 0.0
         
-        combined_text = " ".join([c["chunk_text"] for c in chunks[:3]])
+        # Filter chunks by minimum similarity if available (similarity is from hybrid search RRF)
+        # For RRF, scores are usually small, but let's assume if we have hits, we proceed
+        # and let the LLM judge consistency.
         
-        check_prompt = f"""Query: {query}
+        combined_text = "\n\n".join([f"[{i+1}] {c['chunk_text']}" for i, c in enumerate(chunks[:5])])
+        
+        check_prompt = f"""당신은 금융 정책 질의응답 검증관입니다.
+질문: {query}
 
-Retrieved text: {combined_text[:1000]}
+참고 문서 내용:
+{combined_text[:2000]}
 
-Can this query be answered from the retrieved text? Answer only YES or NO with brief reason."""
+규칙:
+1. 제공된 문서 내용만으로 질문에 대해 구체적인 답변이 가능하면 'YES'라고 하세요.
+2. 문서에 관련 내용이 없거나 부족하면 'NO'라고 하고 이유를 짧게 쓰세요.
+3. 답변의 근거가 되는 문서 번호를 나열하세요. (예: YES [1, 2])
+
+출력 형식: [YES/NO] [이유] [근거번호]"""
 
         try:
             response = await self.openai_client.chat.completions.create(
-                model="gpt-3.5-turbo",
+                model="gpt-4o-mini", # Use mini for cheaper checks
                 messages=[{"role": "user", "content": check_prompt}],
                 temperature=0,
-                max_tokens=100
+                max_tokens=150
             )
             
             content = response.choices[0].message.content.upper()
             if "YES" in content:
-                return True, ""
+                # Estimate consistency score based on how many chunks were useful
+                cited_count = len(re.findall(r'\[\d+\]', content))
+                consistency = min(1.0, cited_count / 2.0) # Assume 2 chunks is a solid answer
+                return True, "", consistency
             else:
-                return False, "검색된 문서에서 답을 찾을 수 없습니다."
+                return False, "검색된 문서에서 구체적인 답을 찾을 수 없습니다. (근거 부족)", 0.0
         
         except Exception:
-            return True, ""  # Default to allowing
+            return True, "", 0.5  # Fallback to allowing
     
-    async def _generate_answer(
+    async def _calculate_scores(
         self,
-        query: str,
-        chunks: List[Dict[str, Any]]
-    ) -> Dict[str, Any]:
-        """Generate grounded answer with citations."""
+        answer: str,
+        chunks: List[Dict[str, Any]],
+        consistency_score: float
+    ) -> tuple[float, float, float]:
+        """Calculate grounding and confidence scores.
         
-        # Prepare context
-        context_parts = []
-        for i, chunk in enumerate(chunks):
-            context_parts.append(
-                f"[출처 {i+1}] {chunk['document_title']} ({chunk['published_at'][:10]})\n"
-                f"{chunk['chunk_text']}\n"
-            )
+        Returns (grounding_score, confidence_score, citation_coverage).
+        """
+        # 1. Calculate Citation Coverage
+        # Check how many [출처 N] or [1], [2] exist in the answer
+        citations_found = set(re.findall(r'\[(?:출처\s*)?(\d+)\]', answer))
+        unique_citations = len(citations_found)
         
-        context = "\n".join(context_parts)
+        # citation_coverage = ratio of chunks actually used
+        citation_coverage = min(1.0, unique_citations / max(1, len(chunks)))
         
-        # Generate answer with structured output
-        system_prompt = """당신은 금융정책 전문가입니다. 제공된 문서만을 기반으로 답변하세요.
+        # 2. Calculate Evidence Strength
+        cited_similarities = []
+        for idx_str in citations_found:
+            try:
+                idx = int(idx_str) - 1
+                if 0 <= idx < len(chunks):
+                    cited_similarities.append(chunks[idx].get("similarity", 0.5))
+            except ValueError:
+                continue
+        
+        evidence_strength = sum(cited_similarities) / len(cited_similarities) if cited_similarities else 0.0
+        
+        # 3. Grounding Score (0-100)
+        # Combination of consistency score (LLM check), coverage and evidence strength
+        grounding = (0.5 * consistency_score + 0.3 * evidence_strength + 0.2 * citation_coverage) * 100
+        
+        # 4. Confidence Score (0-100)
+        # Factor in ambiguity penalty
+        ambiguity_markers = ["불확실", "추측", "가능성이 있음", "확인되지 않음"]
+        ambiguity_penalty = 20 if any(m in answer for m in ambiguity_markers) else 0
+        confidence = max(0.0, grounding - ambiguity_penalty)
+        
+        return round(grounding, 1), round(confidence, 1), round(citation_coverage, 2)
 
-답변 형식:
-1. 요약 (3줄 이내)
-2. 업권 영향 (보험/은행/증권별 영향도 0-1)
-3. 체크리스트 (의무/기한/대상)
-4. 근거 인용 (문서명/발행일)
-5. 불확실성 표시 (근거 불충분 시)
-
-중요: 문서에 없는 정보는 추측하지 말고 "확인되지 않음"으로 표시하세요."""
-
-        user_prompt = f"""질문: {query}
-
-참고 문서:
-{context}
-
-위 문서만을 기반으로 구조화된 답변을 제공하세요."""
-
-        try:
-            response = await self.openai_client.chat.completions.create(
-                model=settings.OPENAI_MODEL,
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt}
-                ],
-                temperature=0.3,
-                max_tokens=1500
-            )
-            
-            answer_text = response.choices[0].message.content
-            
-            # Parse structured output
-            return self._parse_structured_answer(answer_text, chunks)
-            
-        except Exception as e:
-            return {
-                "answer": f"답변 생성 중 오류: {str(e)}",
-                "summary": "오류 발생",
-                "industry_impact": {},
-                "checklist": [],
-                "uncertainty": "시스템 오류"
-            }
-    
-    def _parse_structured_answer(
-        self,
-        answer_text: str,
-        chunks: List[Dict[str, Any]]
-    ) -> Dict[str, Any]:
-        """Parse structured answer from LLM output with robust numeric handling."""
-        result = {
-            "answer": answer_text,
-            "summary": "",
-            "industry_impact": {"INSURANCE": 0.0, "BANKING": 0.0, "SECURITIES": 0.0},
-            "checklist": [],
-            "uncertainty_note": None
+    async def _expand_query(self, query: str) -> str:
+        """Expand query with financial synonyms and related terms."""
+        expansion_map = {
+            "금소법": "금융소비자보호법",
+            "가출법": "가계대출 규제",
+            "바젤3": "자본적정성 규제 바젤III",
+            "ESG": "ESG 공시 의무화 환경 사회 지배구조",
+            "가상자산": "가상자산 이용자 보호법 암호화폐 코인",
+            "금리": "기준금리 예금금리 대출금리",
+            "부채": "가계부채 기업부채 부채비율",
+            "보험": "보험업법 지급여력비율 K-ICS",
+            "은행": "은행법 유동성 커버리지 비율 LCR",
+            "증권": "자본시장법 금융투자업"
         }
         
-        def safe_float(val_str: Any) -> float:
-            """Robustly converts inputs to float in range [0, 1]."""
-            if val_str is None:
-                return 0.0
-            try:
-                s = str(val_str).strip().replace(',', '.')
-                match = re.search(r"[-+]?\d*\.\d+|\d+", s)
-                if not match:
-                    return 0.0
-                val = float(match.group())
-                return max(0.0, min(1.0, val))
-            except (ValueError, TypeError):
-                return 0.0
-
-        # 1. Extract Summary
-        lines = [l.strip() for l in answer_text.split("\n") if l.strip()]
-        summary_lines = []
-        for line in lines:
-            if "요약" in line or len(summary_lines) > 0:
-                clean = re.sub(r'요약|[*:#]', '', line).strip()
-                if clean:
-                    summary_lines.append(clean)
-            if len(summary_lines) >= 3:
-                break
+        expanded = query
+        for short, full in expansion_map.items():
+            if short in query and full not in query:
+                expanded += f" ({full})"
         
-        if summary_lines:
-            result["summary"] = " ".join(summary_lines)
-        else:
-            result["summary"] = " ".join(lines[:3]) if lines else "No summary available"
-
-        # 2. Extract Industry Impact
-        industry_map = {"보험": "INSURANCE", "은행": "BANKING", "증권": "SECURITIES"}
-        for kor_name, eng_key in industry_map.items():
-            pattern = rf"{kor_name}.*?([0-9.,]+)"
-            match = re.search(pattern, answer_text)
-            if match:
-                result["industry_impact"][eng_key] = safe_float(match.group(1))
-
-        # 3. Extract Uncertainty Note
-        uncertainty_markers = ["확인되지 않음", "불확실", "추가 확인 필요", "근거 없음", "시스템 오류"]
-        for marker in uncertainty_markers:
-            if marker in answer_text:
-                result["uncertainty_note"] = marker
-                break
-
-        return result
+        return expanded
 
     async def answer_question(self, request: QARequest) -> QAResponse:
         """Main RAG pipeline: Embedding -> Hybrid Search -> Rerank -> LLM -> Parse."""
         start_time = datetime.now()
         
-        # 1. Get query embedding
-        query_embedding = await self._get_embedding(request.question)
+        # 0. Query Expansion
+        expanded_query = await self._expand_query(request.question)
+        print(f"DEBUG: Expanded query: '{request.question}' -> '{expanded_query}'")
         
-        # 2. Hybrid Search
+        # 1. Get query embedding
+        query_embedding = await self._get_embedding(expanded_query)
+        
+        # 2. Hybrid Search (RRF)
         filters = {}
         if request.date_from:
             filters["date_from"] = request.date_from.isoformat()
         
         search_results = await self.vector_store.hybrid_search(
-            query=request.question,
+            query=expanded_query,
             query_embedding=query_embedding,
             top_k=settings.TOP_K_RETRIEVAL,
             filters=filters
         )
         
-        print(f"DEBUG: Retrieval returned {len(search_results)} chunks.")
-
         # 3. Optional Reranking
         if settings.ENABLE_RERANKING:
             reranked_results = await self.vector_store.rerank(
@@ -232,7 +191,6 @@ Can this query be answered from the retrieved text? Answer only YES or NO with b
                 top_k=settings.TOP_K_RERANK
             )
         else:
-            print("DEBUG: Reranking disabled. Using top retrieval hits.")
             reranked_results = search_results[:settings.TOP_K_RERANK]
         
         reranked_chunks = [
@@ -248,21 +206,33 @@ Can this query be answered from the retrieved text? Answer only YES or NO with b
             for r in reranked_results
         ]
         
-        if not reranked_chunks:
+        # 4. Answerability Guardrail
+        can_answer, reason, consistency = await self._check_answerability(request.question, reranked_chunks)
+        
+        if not can_answer:
             return QAResponse(
-                answer="죄송합니다. 관련 문서를 찾을 수 없습니다.",
-                summary="검색 결과 없음",
+                answer=f"죄송합니다. {reason}\n\n질문을 더 구체적으로 입력하시거나 다른 키워드로 시도해 주세요.",
+                summary="답변 불가",
                 industry_impact={"INSURANCE": 0.0, "BANKING": 0.0, "SECURITIES": 0.0},
                 checklist=[],
                 citations=[],
                 confidence=0.0,
-                uncertainty_note="검색된 정보가 없습니다."
+                groundedness_score=0.0,
+                uncertainty_note=reason,
+                answerable=False
             )
         
-        # 4. Generate Answer
+        # 5. Generate Answer
         answer_data = await self._generate_answer(request.question, reranked_chunks)
         
-        # 5. Build Citations
+        # 6. Calculate Real Scores
+        grounding_score, confidence_score, coverage = await self._calculate_scores(
+            answer_data["answer"], 
+            reranked_chunks,
+            consistency
+        )
+        
+        # 7. Build Citations
         citations = [
             Citation(
                 chunk_id=chunk["chunk_id"],
@@ -275,17 +245,10 @@ Can this query be answered from the retrieved text? Answer only YES or NO with b
             for chunk in reranked_chunks
         ]
         
-        # 6. Parse and Return
+        # 8. Parse structured data
         structured_data = self._parse_structured_answer(answer_data["answer"], reranked_chunks)
         
-        # Determine if answerable
-        # If the answer contains common "I don't know" phrases, mark as not answerable
-        unanswerable_phrases = ["확인되지 않음", "정보가 없습니다", "답변을 찾을 수 없습니다", "명시되어 있지 않습니다"]
-        answerable = not any(phrase in structured_data["answer"] for phrase in unanswerable_phrases)
-        if structured_data.get("uncertainty_note"):
-            answerable = False
-
-        # 7. Async Logging to qa_logs
+        # 9. Async Logging to qa_logs
         try:
             from fastapi.encoders import jsonable_encoder
             latency_ms = int((datetime.now() - start_time).total_seconds() * 1000)
@@ -294,6 +257,9 @@ Can this query be answered from the retrieved text? Answer only YES or NO with b
                 "retrieved_chunk_ids": [chunk["chunk_id"] for chunk in reranked_chunks],
                 "answer": structured_data["answer"],
                 "citations": citations,
+                "grounding_score": grounding_score,
+                "confidence_score": confidence_score,
+                "citation_coverage": coverage,
                 "latency_ms": latency_ms
             })).execute()
         except Exception as log_err:
@@ -305,9 +271,11 @@ Can this query be answered from the retrieved text? Answer only YES or NO with b
             industry_impact=structured_data["industry_impact"],
             checklist=structured_data.get("checklist", []),
             citations=citations,
-            confidence=0.85 if len(citations) > 0 else 0.0,
+            confidence=confidence_score / 100.0,
+            groundedness_score=grounding_score / 100.0,
+            citation_coverage=coverage,
             uncertainty_note=structured_data.get("uncertainty_note"),
-            answerable=answerable
+            answerable=True
         )
 
     async def stream_answer(self, request: QARequest):
@@ -366,7 +334,7 @@ Can this query be answered from the retrieved text? Answer only YES or NO with b
         yield f"data: {json.dumps({'type': 'citations', 'citations': citations})}\n\n"
         
         # 5. Answerability Guardrail
-        can_answer, reason = await self._check_answerability(request.question, reranked_chunks)
+        can_answer, reason, consistency = await self._check_answerability(request.question, reranked_chunks)
         if not can_answer:
             yield f"data: {json.dumps({'type': 'error', 'content': reason})}\n\n"
             return
@@ -411,6 +379,18 @@ Can this query be answered from the retrieved text? Answer only YES or NO with b
             
             # 7. Final structured data
             final_data = self._parse_structured_answer(full_answer, reranked_chunks)
+            
+            # Calculate real metrics for streaming too
+            grounding_score, confidence_score, coverage = await self._calculate_scores(
+                full_answer, 
+                reranked_chunks,
+                consistency
+            )
+            
+            final_data["groundedness_score"] = grounding_score / 100.0
+            final_data["confidence"] = confidence_score / 100.0
+            final_data["citation_coverage"] = coverage
+            
             unanswerable_phrases = ["확인되지 않음", "정보가 없습니다", "답변을 찾을 수 없습니다", "명시되어 있지 않습니다"]
             final_data["answerable"] = not any(phrase in final_data["answer"] for phrase in unanswerable_phrases)
             if final_data.get("uncertainty_note"):

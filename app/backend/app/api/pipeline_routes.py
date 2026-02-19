@@ -1,7 +1,7 @@
 """Pipeline API Routes - Phase A/B Architecture."""
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Query
 from typing import Optional
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 
 from app.pipeline.ingestion import get_ingestion_pipeline
 from app.serving.query_engine import get_query_engine
@@ -51,7 +51,7 @@ async def trigger_collection(background_tasks: BackgroundTasks):
             "message": "Collection started",
             "job_id": job_id,
             "status": "running",
-            "timestamp": datetime.now().isoformat()
+            "timestamp": datetime.now(timezone.utc).isoformat()
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -155,8 +155,7 @@ async def get_pipeline_stats():
         failed = db.table("documents").select("*", count="exact").eq("status", "failed").execute()
         
         # Recent documents (24h)
-        from datetime import timedelta
-        since = datetime.now() - timedelta(hours=24)
+        since = datetime.now(timezone.utc) - timedelta(hours=24)
         recent = db.table("documents").select("*", count="exact").gte(
             "ingested_at", since.isoformat()
         ).execute()
@@ -193,7 +192,7 @@ async def process_query(data: dict):
             raise HTTPException(status_code=400, detail="Query is required")
         
         # Trace with LangSmith
-        start_time = datetime.now()
+        start_time = datetime.now(timezone.utc)
         
         # Process query
         result = await query_engine.process_query(

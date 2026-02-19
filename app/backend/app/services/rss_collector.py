@@ -203,7 +203,7 @@ class RSSCollector:
     
     async def get_recent_documents(self, hours: int = 24) -> List[Dict[str, Any]]:
         """Get documents from last N hours."""
-        since = datetime.now() - timedelta(hours=hours)
+        since = datetime.now(timezone.utc) - timedelta(hours=hours)
         
         result = self.db.table("documents").select("*").gte(
             "ingested_at", since.isoformat()
@@ -217,13 +217,13 @@ class RSSCollector:
         total = self.db.table("documents").select("*", count="exact").execute()
         
         # Last 24 hours
-        since_24h = datetime.now() - timedelta(hours=24)
+        since_24h = datetime.now(timezone.utc) - timedelta(hours=24)
         recent_24h = self.db.table("documents").select("*", count="exact").gte(
             "ingested_at", since_24h.isoformat()
         ).execute()
         
         # Last 7 days success rate
-        since_7d = datetime.now() - timedelta(days=7)
+        since_7d = datetime.now(timezone.utc) - timedelta(days=7)
         week_data = self.db.table("documents").select("status").gte(
             "ingested_at", since_7d.isoformat()
         ).execute()

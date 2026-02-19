@@ -29,7 +29,7 @@ class JobTracker:
     def create_job(self, stage: str = "collecting") -> str:
         if not self.is_available():
             print("❌ Cannot create job: Redis is unavailable")
-            return "fallback-job-id" # Still return a string to avoid crashes
+            return "fallback-job-id"
             
         job_id = str(uuid.uuid4())
         job_data = {
@@ -45,12 +45,22 @@ class JobTracker:
             "message": f"Job started: {stage}"
         }
         try:
-            self.redis.setex(f"{self.prefix}{job_id}", self.expiry, json.dumps(job_data))
-            self.redis.set(f"{self.prefix}latest", job_id)
+            key = f"{self.prefix}{job_id}"
+            latest_key = f"{self.prefix}latest"
+            
+            print(f"DEBUG: Creating job {job_id} at key {key}")
+            self.redis.setex(key, self.expiry, json.dumps(job_data))
+            self.redis.setex(latest_key, self.expiry, job_id)
+            
+            # Verify immediately
+            verify = self.redis.get(key)
+            if not verify:
+                print(f"⚠️ WARNING: Job {job_id} was NOT found immediately after setex!")
+            
             return job_id
         except Exception as e:
             print(f"Redis error in create_job: {e}")
-            return job_id # Return the ID anyway, UI will handle 404 or missing data
+            return job_id
 
     def update_job(self, job_id: str, status: Optional[str] = None, count: Optional[int] = None, 
                    message: str = "", stage: Optional[str] = None, progress: Optional[float] = None,
@@ -58,8 +68,10 @@ class JobTracker:
         if not self.is_available():
             return
             
+        key = f"{self.prefix}{job_id}"
         data = self.get_job(job_id)
         if not data:
+            print(f"⚠️ WARNING: Tried to update non-existent job {job_id} at key {key}")
             return
         
         if status: data["status"] = status

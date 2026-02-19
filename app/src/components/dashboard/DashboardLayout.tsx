@@ -1,7 +1,8 @@
 /**
- * DashboardLayout: 좌측 메뉴 + 우측 콘텐츠 대시보드 레이아웃.
+ * DashboardLayout: Premium SaaS-style layout with sidebar and top header.
  */
 import { useState } from 'react';
+import { NavLink, useLocation } from 'react-router-dom';
 import { 
   BarChart3, 
   Search,
@@ -11,186 +12,218 @@ import {
   X,
   Settings,
   Database,
-  TrendingUp
+  TrendingUp,
+  Bell,
+  User,
+  RefreshCw,
+  LayoutDashboard,
+  Radar,
+  Activity
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 
 interface NavItem {
   id: string;
+  path: string;
   label: string;
   icon: React.ElementType;
   badge?: number;
 }
 
 const navItems: NavItem[] = [
-  { id: 'monitor', label: '수집 현황', icon: Database },
-  { id: 'topics', label: '이슈맵/경보', icon: TrendingUp, badge: 3 },
-  { id: 'qa', label: 'RAG 질의응답', icon: Search },
-  { id: 'checklist', label: '체크리스트', icon: CheckSquare },
-  { id: 'quality', label: '품질 평가', icon: Shield },
+  { id: 'monitor', path: '/monitoring', label: 'Ingestion Health', icon: LayoutDashboard },
+  { id: 'radar', path: '/radar', label: 'Issue Radar', icon: Radar, badge: 3 },
+  { id: 'qa', path: '/workspace/qa', label: 'Q&A Workspace', icon: Search },
+  { id: 'checklist', path: '/workspace/checklist', label: 'Compliance Hub', icon: CheckSquare },
+  { id: 'quality', path: '/observability', label: 'RAG Observability', icon: Activity },
 ];
 
 interface DashboardLayoutProps {
-  activeSection: string;
-  onSectionChange: (section: string) => void;
   children: React.ReactNode;
 }
 
 export default function DashboardLayout({ 
-  activeSection, 
-  onSectionChange,
   children 
 }: DashboardLayoutProps) {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const location = useLocation();
+
+  const activeItem = navItems.find(item => item.path === location.pathname);
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-lavender-50 via-white to-lavender-100">
+    <div className="min-h-screen bg-slate-50/50 flex">
       {/* Desktop Sidebar */}
       <aside 
         className={`
-          fixed left-0 top-0 z-40 h-screen bg-white border-r border-lavender-100
-          transition-all duration-300 hidden lg:block
+          fixed left-0 top-0 z-40 h-screen bg-white border-r border-slate-200
+          transition-all duration-300 hidden lg:flex flex-col
           ${sidebarOpen ? 'w-64' : 'w-20'}
         `}
       >
         {/* Logo */}
-        <div className="h-16 flex items-center justify-between px-4 border-b border-lavender-100">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl gradient-primary flex items-center justify-center flex-shrink-0">
+        <div className="h-16 flex items-center px-6 border-b border-slate-100">
+          <div className="flex items-center gap-3 overflow-hidden">
+            <div className="w-9 h-9 rounded-lg gradient-primary flex items-center justify-center flex-shrink-0 shadow-sm">
               <BarChart3 className="w-5 h-5 text-white" />
             </div>
             {sidebarOpen && (
-              <div>
-                <h1 className="font-semibold text-sm">FSC Policy RAG</h1>
-                <p className="text-xs text-muted-foreground">금융정책 분석</p>
+              <div className="whitespace-nowrap">
+                <h1 className="font-bold text-sm tracking-tight text-slate-900">FSC Policy RAG</h1>
+                <p className="text-[10px] uppercase tracking-wider font-semibold text-slate-400">Analysis Platform</p>
               </div>
             )}
           </div>
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => setSidebarOpen(!sidebarOpen)}
-            className="h-8 w-8"
-          >
-            {sidebarOpen ? <X className="w-4 h-4" /> : <Menu className="w-4 h-4" />}
-          </Button>
         </div>
 
         {/* Navigation */}
-        <nav className="p-3 space-y-1">
+        <nav className="flex-1 p-4 space-y-1.5 overflow-y-auto">
           {navItems.map((item) => {
             const Icon = item.icon;
-            const isActive = activeSection === item.id;
             
             return (
-              <button
+              <NavLink
                 key={item.id}
-                onClick={() => onSectionChange(item.id)}
-                className={`
-                  w-full flex items-center gap-3 px-3 py-3 rounded-xl
-                  transition-all duration-200
+                to={item.path}
+                className={({ isActive }) => `
+                  w-full flex items-center gap-3 px-3 py-2.5 rounded-lg
+                  transition-all duration-200 group
                   ${isActive 
-                    ? 'bg-primary/10 text-primary' 
-                    : 'text-muted-foreground hover:bg-muted hover:text-foreground'
+                    ? 'bg-slate-900 text-white shadow-md shadow-slate-200' 
+                    : 'text-slate-500 hover:bg-slate-50 hover:text-slate-900'
                   }
                 `}
               >
-                <Icon className="w-5 h-5 flex-shrink-0" />
-                {sidebarOpen && (
+                {({ isActive }) => (
                   <>
-                    <span className="flex-1 text-left text-sm font-medium">
-                      {item.label}
-                    </span>
-                    {item.badge && (
-                      <Badge variant="default" className="h-5 min-w-5 px-1 text-xs">
-                        {item.badge}
-                      </Badge>
+                    <Icon className={`w-5 h-5 flex-shrink-0 ${isActive ? 'text-white' : 'text-slate-400 group-hover:text-slate-600'}`} />
+                    {sidebarOpen && (
+                      <>
+                        <span className="flex-1 text-left text-sm font-medium">
+                          {item.label}
+                        </span>
+                        {item.badge && !isActive && (
+                          <Badge variant="secondary" className="bg-slate-100 text-slate-600 border-none h-5 px-1.5 text-[10px] font-bold">
+                            {item.badge}
+                          </Badge>
+                        )}
+                      </>
                     )}
                   </>
                 )}
-              </button>
+              </NavLink>
             );
           })}
         </nav>
 
         {/* Bottom Actions */}
-        <div className="absolute bottom-0 left-0 right-0 p-3 border-t border-lavender-100">
-          <button className="w-full flex items-center gap-3 px-3 py-3 rounded-xl text-muted-foreground hover:bg-muted transition-colors">
-            <Settings className="w-5 h-5" />
-            {sidebarOpen && <span className="text-sm">설정</span>}
+        <div className="p-4 border-t border-slate-100">
+          <button className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-500 hover:bg-slate-50 hover:text-slate-900 transition-colors group">
+            <Settings className="w-5 h-5 text-slate-400 group-hover:text-slate-600" />
+            {sidebarOpen && <span className="text-sm font-medium">설정</span>}
           </button>
+          
+          <div className={`mt-4 flex items-center gap-3 px-3 py-2 rounded-xl bg-slate-50 border border-slate-100 ${!sidebarOpen && 'justify-center px-0'}`}>
+            <div className="w-8 h-8 rounded-full bg-white shadow-sm flex items-center justify-center border border-slate-200 flex-shrink-0">
+              <User className="w-4 h-4 text-slate-600" />
+            </div>
+            {sidebarOpen && (
+              <div className="overflow-hidden">
+                <p className="text-xs font-semibold text-slate-900 truncate">Admin User</p>
+                <p className="text-[10px] text-slate-400 truncate">admin@fsc.go.kr</p>
+              </div>
+            )}
+          </div>
         </div>
       </aside>
 
-      {/* Mobile Header */}
-      <header className="lg:hidden fixed top-0 left-0 right-0 z-50 bg-white border-b border-lavender-100">
-        <div className="h-14 flex items-center justify-between px-4">
-          <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-lg gradient-primary flex items-center justify-center">
-              <BarChart3 className="w-4 h-4 text-white" />
+      {/* Main Content Area */}
+      <div className={`flex-1 flex flex-col transition-all duration-300 ${sidebarOpen ? 'lg:ml-64' : 'lg:ml-20'}`}>
+        {/* Top Header */}
+        <header className="h-16 bg-white border-b border-slate-200 sticky top-0 z-30 flex items-center justify-between px-6">
+          <div className="flex items-center gap-4">
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => setSidebarOpen(!sidebarOpen)}
+              className="hidden lg:flex h-9 w-9 text-slate-500 hover:bg-slate-50"
+            >
+              {sidebarOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
+            </Button>
+            
+            <div className="h-4 w-px bg-slate-200 mx-2 hidden lg:block" />
+            
+            <div className="flex items-center gap-2">
+              <span className="text-slate-400 text-sm font-medium">Pages</span>
+              <span className="text-slate-300 text-xs">/</span>
+              <span className="text-slate-900 text-sm font-bold">{activeItem?.label || 'Not Found'}</span>
             </div>
-            <span className="font-semibold">FSC Policy RAG</span>
           </div>
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-          >
-            {mobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
-          </Button>
-        </div>
 
-        {/* Mobile Menu */}
-        {mobileMenuOpen && (
-          <nav className="border-t border-lavender-100 p-3 space-y-1 bg-white">
-            {navItems.map((item) => {
-              const Icon = item.icon;
-              const isActive = activeSection === item.id;
-              
-              return (
-                <button
-                  key={item.id}
-                  onClick={() => {
-                    onSectionChange(item.id);
-                    setMobileMenuOpen(false);
-                  }}
-                  className={`
-                    w-full flex items-center gap-3 px-3 py-3 rounded-xl
-                    ${isActive 
-                      ? 'bg-primary/10 text-primary' 
-                      : 'text-muted-foreground hover:bg-muted'
-                    }
-                  `}
-                >
-                  <Icon className="w-5 h-5" />
-                  <span className="flex-1 text-left">{item.label}</span>
-                  {item.badge && (
-                    <Badge variant="default" className="h-5 min-w-5 px-1">
-                      {item.badge}
-                    </Badge>
-                  )}
-                </button>
-              );
-            })}
-          </nav>
-        )}
-      </header>
+          <div className="flex items-center gap-3">
+            <Button variant="ghost" size="icon" className="h-9 w-9 text-slate-500">
+              <Search className="w-5 h-5" />
+            </Button>
+            <Button variant="ghost" size="icon" className="h-9 w-9 text-slate-500 relative">
+              <Bell className="w-5 h-5" />
+              <span className="absolute top-2 right-2 w-2 h-2 bg-red-500 rounded-full border-2 border-white" />
+            </Button>
+            <div className="h-8 w-px bg-slate-200 mx-1" />
+            <Button variant="outline" size="sm" className="hidden sm:flex items-center gap-2 border-slate-200 text-slate-600 font-semibold h-9 px-4 rounded-lg hover:bg-slate-50">
+              <RefreshCw className="w-4 h-4" />
+              데이터 동기화
+            </Button>
+          </div>
+        </header>
 
-      {/* Main Content */}
-      <main 
-        className={`
-          transition-all duration-300
-          lg:ml-64
-          pt-14 lg:pt-0
-          min-h-screen
-        `}
-      >
-        <div className="p-4 lg:p-8 max-w-7xl mx-auto">
-          {children}
+        {/* Page Content */}
+        <main className="p-6 lg:p-10 flex-1">
+          <div className="max-w-7xl mx-auto animate-in fade-in slide-in-from-bottom-4 duration-700">
+            {children}
+          </div>
+        </main>
+      </div>
+
+      {/* Mobile Nav Header */}
+      <div className="lg:hidden fixed bottom-6 right-6 z-50">
+        <Button
+          size="icon"
+          className="h-14 w-14 rounded-full shadow-xl shadow-primary/20 gradient-primary"
+          onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+        >
+          {mobileMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
+        </Button>
+      </div>
+
+      {mobileMenuOpen && (
+        <div className="lg:hidden fixed inset-0 z-40 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-300">
+          <div className="absolute right-6 bottom-24 w-64 bg-white rounded-3xl shadow-2xl p-4 animate-in slide-in-from-bottom-8 duration-300">
+            <div className="space-y-2">
+              {navItems.map((item) => {
+                const Icon = item.icon;
+                return (
+                  <NavLink
+                    key={item.id}
+                    to={item.path}
+                    onClick={() => setMobileMenuOpen(false)}
+                    className={({ isActive }) => `
+                      w-full flex items-center gap-4 px-4 py-4 rounded-2xl
+                      ${isActive 
+                        ? 'bg-slate-900 text-white shadow-lg shadow-slate-200' 
+                        : 'text-slate-600 hover:bg-slate-50'
+                      }
+                    `}
+                  >
+                    <Icon className="w-5 h-5" />
+                    <span className="flex-1 text-left font-bold">{item.label}</span>
+                  </NavLink>
+                );
+              })}
+            </div>
+          </div>
         </div>
-      </main>
+      )}
     </div>
   );
 }
