@@ -75,70 +75,58 @@ class VectorStore:
         top_k: int = 10,
         filters: Optional[Dict[str, Any]] = None
     ) -> List[SearchResult]:
-        """Pure vector similarity search.
-        
-        Args:
-            query_embedding: Query embedding vector
-            top_k: Number of results
-            filters: Optional metadata filters
-            
-        Returns:
-            List of search results
-        """
+        """Pure vector similarity search using match_chunks_v3 RPC."""
         try:
-            # Build query
-            query = self.db.table("chunks").select(
-                "*, documents!inner(title, published_at, url, category, department), embeddings!inner(embedding)"
-            )
+            print(f"DEBUG: Starting similarity search (dims={len(query_embedding)})")
             
-            # Apply filters
-            if filters:
-                if "date_from" in filters:
-                    query = query.gte("documents.published_at", filters["date_from"])
-                if "date_to" in filters:
-                    query = query.lte("documents.published_at", filters["date_to"])
-                if "category" in filters:
-                    query = query.eq("documents.category", filters["category"])
-                if "department" in filters:
-                    query = query.eq("documents.department", filters["department"])
+            # Use the RPC to avoid selecting the embedding column directly
+            # and to handle computed similarity server-side
+            rpc_params = {
+                "query_embedding": query_embedding,
+                "match_count": top_k
+            }
             
-            # Order by vector similarity using pgvector
-            embedding_str = json.dumps(query_embedding)
-            query = query.order(
-                f"embeddings.embedding <-> '{embedding_str}'::vector"
-            ).limit(top_k)
+            # PostgREST RPC call
+            result = self.db.rpc("match_chunks_v3", rpc_params).execute()
             
-            result = query.execute()
+            if not result.data:
+                print("DEBUG: match_chunks_v3 returned 0 rows.")
+                return []
             
-            return self._parse_search_results(result.data or [])
+            print(f"DEBUG: Vector search found {len(result.data)} raw hits.")
+            
+            results = []
+            for item in result.data:
+                results.append(SearchResult(
+                    chunk_id=item.get("chunk_id"),
+                    document_id=item.get("document_id"),
+                    chunk_text=item.get("chunk_text"),
+                    chunk_index=item.get("chunk_index"),
+                    document_title=item.get("document_title", "Unknown"),
+                    published_at=item.get("published_at"),
+                    url=item.get("url"),
+                    similarity=item.get("similarity", 0.0),
+                    metadata={}
+                ))
+            return results
             
         except Exception as e:
-            print(f"Similarity search error: {e}")
+            print(f"ERROR: Similarity search failed: {e}")
             return []
-    
+
     async def bm25_search(
         self,
         query: str,
         top_k: int = 10,
         filters: Optional[Dict[str, Any]] = None
     ) -> List[SearchResult]:
-        """BM25 keyword search.
-        
-        Args:
-            query: Search query
-            top_k: Number of results
-            filters: Optional metadata filters
-            
-        Returns:
-            List of search results
-        """
+        """Trigram-based keyword search using fixed exec_sql."""
         try:
-            # Use PostgreSQL full-text search
-            # First, create a search query
-            search_terms = query.split()
-            tsquery = " & ".join(search_terms)
+            print(f"DEBUG: Starting keyword search for: '{query}'")
             
-            # Build raw SQL for BM25-like search
+            # Format query for Simple FTS (split words with &)
+            fts_query = " & ".join([w for w in query.split() if w])
+            
             sql = f"""
                 SELECT 
                     c.chunk_id,
@@ -148,71 +136,76 @@ class VectorStore:
                     d.title as document_title,
                     d.published_at,
                     d.url,
-                    d.category,
-                    d.department,
-                    ts_rank(
-                        to_tsvector('korean', c.chunk_text),
-                        to_tsquery('korean', '{tsquery}')
-                    ) as similarity
+                    similarity(c.chunk_text, '{query}') as similarity
                 FROM chunks c
                 JOIN documents d ON c.document_id = d.document_id
                 WHERE 
-                    to_tsvector('korean', c.chunk_text) @@ to_tsquery('korean', '{tsquery}')
+                    c.chunk_text % '{query}' 
+                    OR c.chunk_text ILIKE '%{query}%'
+                    OR to_tsvector('simple', c.chunk_text) @@ to_tsquery('simple', '{fts_query}')
             """
             
-            # Add filters
-            if filters:
-                if "date_from" in filters:
-                    sql += f" AND d.published_at >= '{filters['date_from']}'"
-                if "date_to" in filters:
-                    sql += f" AND d.published_at <= '{filters['date_to']}'"
-                if "category" in filters:
-                    sql += f" AND d.category = '{filters['category']}'"
+            # Execute via fixed exec_sql which returns SETOF jsonb
+            result = self.db.rpc("exec_sql", {"sql": sql + f" LIMIT {top_k}"}).execute()
             
-            sql += f"""
-                ORDER BY similarity DESC
-                LIMIT {top_k}
-            """
+            # PostgREST returns a list of dictionaries (the jsonb rows)
+            if not result.data:
+                return await self._fallback_keyword_search(query, top_k, filters)
+                
+            print(f"DEBUG: Keyword search found {len(result.data)} results.")
             
-            # Execute raw query
-            result = self.db.rpc("exec_sql", {"sql": sql}).execute()
-            
-            return self._parse_bm25_results(result.data or [])
+            # Because of format('SELECT to_jsonb(t)...'), result.data is a list of dicts
+            return self._parse_bm25_results(result.data)
             
         except Exception as e:
-            print(f"BM25 search error: {e}")
-            # Fallback to simple ILIKE search
+            print(f"BM25/Trigram error: {e}")
             return await self._fallback_keyword_search(query, top_k, filters)
-    
+
     async def _fallback_keyword_search(
         self,
         query: str,
         top_k: int,
         filters: Optional[Dict[str, Any]]
     ) -> List[SearchResult]:
-        """Fallback keyword search using ILIKE."""
+        """Fallback keyword search using liberal ILIKE word matching."""
         try:
+            print(f"DEBUG: Falling back to word-based ILIKE for: '{query}'")
+            
+            # Split query into words and build a liberal search
+            words = [w for w in query.split() if len(w) > 1]
+            if not words: words = [query]
+            
             db_query = self.db.table("chunks").select(
-                "*, documents!inner(title, published_at, url, category, department)"
-            ).ilike("chunk_text", f"%{query}%").limit(top_k)
+                "chunk_id, document_id, chunk_text, chunk_index, documents!inner(title, published_at, url)"
+            )
             
-            if filters:
-                if "date_from" in filters:
-                    db_query = db_query.gte("documents.published_at", filters["date_from"])
-                if "date_to" in filters:
-                    db_query = db_query.lte("documents.published_at", filters["date_to"])
+            # Use the first two words for an OR condition to increase recall
+            if len(words) >= 2:
+                filter_str = f"chunk_text.ilike.%{words[0]}%,chunk_text.ilike.%{words[1]}%"
+                result = db_query.or_(filter_str).limit(top_k).execute()
+            else:
+                result = db_query.ilike("chunk_text", f"%{words[0]}%").limit(top_k).execute()
             
-            result = db_query.execute()
+            results = []
+            for item in (result.data or []):
+                doc = item.get("documents", {})
+                results.append(SearchResult(
+                    chunk_id=item["chunk_id"],
+                    document_id=item["document_id"],
+                    chunk_text=item["chunk_text"],
+                    chunk_index=item["chunk_index"],
+                    document_title=doc.get("title", "Unknown"),
+                    published_at=doc.get("published_at"),
+                    url=doc.get("url"),
+                    similarity=0.1,
+                    metadata={}
+                ))
             
-            results = self._parse_search_results(result.data or [])
-            # Set similarity to 1.0 for keyword matches
-            for r in results:
-                r.similarity = 1.0
-            
+            print(f"DEBUG: Fallback word search found {len(results)} results.")
             return results
             
         except Exception as e:
-            print(f"Fallback search error: {e}")
+            print(f"Fallback search fatal error: {e}")
             return []
     
     async def hybrid_search(
@@ -245,6 +238,8 @@ class VectorStore:
             query, top_k * 2, filters
         )
         
+        print(f"DEBUG: Hybrid combining {len(vector_results)} vector vs {len(keyword_results)} keyword results.")
+        
         # Combine results using Reciprocal Rank Fusion (RRF)
         combined = self._reciprocal_rank_fusion(
             vector_results,
@@ -253,6 +248,7 @@ class VectorStore:
             keyword_weight
         )
         
+        print(f"DEBUG: Hybrid combined count: {len(combined)}")
         return combined[:top_k]
     
     def _reciprocal_rank_fusion(
@@ -331,6 +327,7 @@ class VectorStore:
         if not results:
             return []
         
+        print(f"DEBUG: Reranking {len(results)} results using cross-encoder...")
         try:
             from sentence_transformers import CrossEncoder
             
@@ -353,6 +350,7 @@ class VectorStore:
             # Sort by new scores
             results.sort(key=lambda x: x.similarity, reverse=True)
             
+            print(f"DEBUG: Reranking complete. Top score: {results[0].similarity if results else 'N/A'}")
             return results[:top_k]
             
         except Exception as e:
@@ -366,24 +364,16 @@ class VectorStore:
         
         for item in data:
             doc = item.get("documents", {})
-            embedding = item.get("embeddings", {})
-            
-            # Calculate similarity from vector distance
-            similarity = 0.0
-            if embedding and embedding.get("embedding"):
-                # pgvector uses L2 distance, convert to similarity
-                # similarity = 1 / (1 + distance)
-                similarity = 0.9  # Placeholder
             
             results.append(SearchResult(
                 chunk_id=item.get("chunk_id", ""),
                 document_id=item.get("document_id", ""),
                 chunk_text=item.get("chunk_text", ""),
                 chunk_index=item.get("chunk_index", 0),
-                document_title=doc.get("title", ""),
+                document_title=doc.get("title", "Unknown"),
                 published_at=doc.get("published_at", ""),
                 url=doc.get("url", ""),
-                similarity=similarity,
+                similarity=0.5, # Default, will be overridden by RRF or caller
                 metadata={
                     "category": doc.get("category"),
                     "department": doc.get("department")

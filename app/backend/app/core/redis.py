@@ -14,10 +14,22 @@ class RedisClient:
         if cls._client is None:
             cls._client = redis.from_url(
                 settings.REDIS_URL,
-                decode_responses=True
+                decode_responses=True,
+                socket_connect_timeout=1,
+                socket_timeout=1
             )
         return cls._client
     
+    @classmethod
+    def ping(cls) -> bool:
+        """Check Redis connectivity."""
+        try:
+            client = cls.get_client()
+            return client.ping()
+        except Exception as e:
+            print(f"Redis ping failed: {e}")
+            return False
+
     @classmethod
     def close(cls):
         """Close Redis connection."""

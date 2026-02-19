@@ -348,7 +348,7 @@ def retry_decision_node(state: AgentState) -> Literal["retry", "end"]:
 
 # ============ Build the Graph ============
 
-def create_policy_agent() -> StateGraph:
+def create_policy_agent():
     """Create and configure the policy analysis agent workflow."""
     
     # Initialize the graph
@@ -358,7 +358,7 @@ def create_policy_agent() -> StateGraph:
     workflow.add_node("classify", classify_query_node)
     workflow.add_node("qa", rag_qa_node)
     workflow.add_node("industry", industry_classification_node)
-    workflow.add_node("checklist", checklist_extraction_node)
+    workflow.add_node("checklist_node", checklist_extraction_node)
     workflow.add_node("verify", verification_node)
     
     # Add edges
@@ -371,7 +371,7 @@ def create_policy_agent() -> StateGraph:
         {
             "qa": "qa",
             "industry": "industry",
-            "checklist": "checklist",
+            "checklist": "checklist_node",
             "topic": "qa",  # Topic surge uses RAG QA for now
             "end": END
         }
@@ -380,7 +380,7 @@ def create_policy_agent() -> StateGraph:
     # All processing nodes go to verification
     workflow.add_edge("qa", "verify")
     workflow.add_edge("industry", "verify")
-    workflow.add_edge("checklist", "verify")
+    workflow.add_edge("checklist_node", "verify")
     
     # Verification decides next step
     workflow.add_conditional_edges(
@@ -396,7 +396,14 @@ def create_policy_agent() -> StateGraph:
 
 
 # Global agent instance
-policy_agent = create_policy_agent()
+policy_agent = None
+
+def get_policy_agent():
+    global policy_agent
+    if policy_agent is None:
+        policy_agent = create_policy_agent()
+    return policy_agent
+
 
 
 # ============ Public API ============
@@ -426,7 +433,8 @@ async def run_policy_agent(query: str, document_id: str | None = None) -> dict:
         "error_message": None
     }
     
-    result = await policy_agent.ainvoke(initial_state)
+    result = await get_policy_agent().ainvoke(initial_state)
+
     
     return {
         "query_type": result["query_type"],

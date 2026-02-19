@@ -19,7 +19,7 @@ class IndustryClassifier:
     # Keywords for weak labeling
     INDUSTRY_KEYWORDS = {
         IndustryType.INSURANCE: [
-            "보험", "생명보험", "손핳보험", "보험료", "보험금", "계약자", "피보험자",
+            "보험", "생명보험", "손해보험", "보험료", "보험금", "계약자", "피보험자",
             "보험사", "보험상품", "보험계약", "보장", "보험가입", "보험설계사"
         ],
         IndustryType.BANKING: [

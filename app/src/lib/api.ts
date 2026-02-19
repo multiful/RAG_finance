@@ -11,7 +11,7 @@ import type {
   QualityMetrics
 } from '@/types';
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1';
+const API_BASE_URL = '/api/v1';
 
 const api = axios.create({
   baseURL: API_BASE_URL,
@@ -37,8 +37,18 @@ export const getDocument = async (id: string): Promise<Document> => {
 };
 
 // Collection
-export const triggerCollection = async (): Promise<{ message: string }> => {
+export const triggerCollection = async (): Promise<{ message: string; job_id: string; status: string }> => {
   const response = await api.post('/collection/trigger');
+  return response.data;
+};
+
+export const triggerFullPipeline = async (): Promise<{ message: string; job_id: string; status: string }> => {
+  const response = await api.post('/pipeline/collect');
+  return response.data;
+};
+
+export const getJobStatus = async (jobId: string) => {
+  const response = await api.get(`/collection/jobs/${jobId}`);
   return response.data;
 };
 
@@ -62,6 +72,60 @@ export const askQuestion = async (data: {
 }): Promise<QAResponse> => {
   const response = await api.post('/qa', data);
   return response.data;
+};
+
+export const askQuestionStream = async (
+  data: {
+    question: string;
+    industry_filter?: string[];
+    date_from?: string;
+    date_to?: string;
+    top_k?: number;
+  },
+  onChunk: (event: { type: string; [key: string]: unknown }) => void
+) => {
+  const response = await fetch(`${API_BASE_URL}/qa/stream`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(data),
+  });
+
+  if (!response.ok) {
+    throw new Error('Failed to fetch streaming response');
+  }
+
+  const reader = response.body?.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+
+  if (!reader) return;
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split('\n');
+    
+    // Keep the last partial line in the buffer
+    buffer = lines.pop() || '';
+
+    for (const line of lines) {
+      if (line.trim().startsWith('data: ')) {
+        try {
+          const jsonStr = line.replace('data: ', '').trim();
+          if (jsonStr) {
+            const data = JSON.parse(jsonStr);
+            onChunk(data);
+          }
+        } catch (e) {
+          console.error('Error parsing streaming chunk:', e, 'Line:', line);
+        }
+      }
+    }
+  }
 };
 
 // Industry Classification

@@ -16,7 +16,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
-import { askQuestion } from '@/lib/api';
+import { askQuestionStream } from '@/lib/api';
 import type { QAResponse } from '@/types';
 
 interface Message {
@@ -25,6 +25,7 @@ interface Message {
   content: string;
   response?: QAResponse;
   timestamp: Date;
+  isStreaming?: boolean;
 }
 
 export default function RAGQA() {
@@ -56,29 +57,73 @@ export default function RAGQA() {
     setInput('');
     setLoading(true);
 
-    try {
-      const response = await askQuestion({ question: userMessage.content });
-      
-      const assistantMessage: Message = {
-        id: (Date.now() + 1).toString(),
-        type: 'assistant',
-        content: response.answer,
-        response,
-        timestamp: new Date(),
-      };
+    const assistantMsgId = (Date.now() + 1).toString();
+    const assistantMessage: Message = {
+      id: assistantMsgId,
+      type: 'assistant',
+      content: '',
+      timestamp: new Date(),
+      isStreaming: true,
+      response: undefined
+    };
 
-      setMessages(prev => [...prev, assistantMessage]);
+    setMessages(prev => [...prev, assistantMessage]);
+
+    try {
+      let fullAnswer = '';
+      await askQuestionStream(
+        { question: userMessage.content },
+        (event) => {
+          setMessages(prev => prev.map(msg => {
+            if (msg.id === assistantMsgId) {
+              if (event.type === 'citations') {
+                return {
+                  ...msg,
+                  response: {
+                    answer: '',
+                    summary: '',
+                    industry_impact: {},
+                    checklist: [],
+                    citations: event.citations,
+                    confidence: 0,
+                  }
+                };
+              } else if (event.type === 'token') {
+                fullAnswer += event.token;
+                return {
+                  ...msg,
+                  content: fullAnswer
+                };
+              } else if (event.type === 'final') {
+                return {
+                  ...msg,
+                  isStreaming: false,
+                  response: {
+                    ...msg.response!,
+                    ...event.data,
+                    answer: fullAnswer,
+                    answerable: event.data.answerable ?? true
+                  }
+                };
+              } else if (event.type === 'error') {
+                return {
+                  ...msg,
+                  isStreaming: false,
+                  content: event.content
+                };
+              }
+            }
+            return msg;
+          }));
+        }
+      );
     } catch (error) {
       console.error('Error asking question:', error);
-      
-      const errorMessage: Message = {
-        id: (Date.now() + 1).toString(),
-        type: 'assistant',
-        content: '죄송합니다. 답변을 생성하는 중 오류가 발생했습니다.',
-        timestamp: new Date(),
-      };
-
-      setMessages(prev => [...prev, errorMessage]);
+      setMessages(prev => prev.map(msg => 
+        msg.id === assistantMsgId 
+          ? { ...msg, isStreaming: false, content: '죄송합니다. 답변을 생성하는 중 오류가 발생했습니다.' }
+          : msg
+      ));
     } finally {
       setLoading(false);
     }
@@ -178,19 +223,35 @@ export default function RAGQA() {
                     >
                       {message.type === 'assistant' && message.response ? (
                         <div className="space-y-4">
+                          {/* Answerable Warning */}
+                          {message.response.answerable === false && message.response.citations.length > 0 && (
+                            <div className="bg-amber-50 border-l-4 border-amber-500 p-3 rounded-r-lg mb-4">
+                              <p className="text-amber-800 text-xs font-bold flex items-center gap-1">
+                                <AlertTriangle className="w-3 h-3" />
+                                부분적인 정보만 확인됨
+                              </p>
+                              <p className="text-amber-700 text-[11px] mt-1">
+                                질문에 대한 직접적인 답변을 문서에서 찾을 수 없습니다. 
+                                우측의 관련 근거 문서를 참고하시기 바랍니다.
+                              </p>
+                            </div>
+                          )}
+
                           {/* Summary */}
-                          <div>
-                            <p className="text-sm font-medium mb-2 flex items-center gap-2">
-                              <Quote className="w-4 h-4" />
-                              요약
-                            </p>
-                            <p className="text-sm leading-relaxed">
-                              {message.response.summary}
-                            </p>
-                          </div>
+                          {message.response.summary && (
+                            <div>
+                              <p className="text-sm font-medium mb-2 flex items-center gap-2">
+                                <Quote className="w-4 h-4" />
+                                요약
+                              </p>
+                              <p className="text-sm leading-relaxed">
+                                {message.response.summary}
+                              </p>
+                            </div>
+                          )}
 
                           {/* Industry Impact */}
-                          {Object.keys(message.response.industry_impact).length > 0 && (
+                          {Object.keys(message.response.industry_impact || {}).length > 0 && (
                             <div>
                               <p className="text-sm font-medium mb-2">업권 영향</p>
                               <div className="flex flex-wrap gap-2">
@@ -212,34 +273,36 @@ export default function RAGQA() {
                           )}
 
                           {/* Full Answer */}
-                          <div className="pt-2 border-t border-border/50">
+                          <div className={message.response.summary ? "pt-2 border-t border-border/50" : ""}>
                             <p className="text-sm leading-relaxed whitespace-pre-wrap">
                               {message.content}
                             </p>
                           </div>
 
                           {/* Confidence & Uncertainty */}
-                          <div className="flex items-center gap-4 pt-2">
-                            <div className="flex items-center gap-2">
-                              <span className="text-xs text-muted-foreground">신뢰도:</span>
-                              <Progress 
-                                value={message.response.confidence * 100} 
-                                className="w-16 h-1.5"
-                              />
-                              <span className="text-xs">
-                                {(message.response.confidence * 100).toFixed(0)}%
-                              </span>
-                            </div>
-                            {message.response.uncertainty_note && (
-                              <div className="flex items-center gap-1 text-amber-600 text-xs">
-                                <AlertTriangle className="w-3 h-3" />
-                                {message.response.uncertainty_note}
+                          {message.response.confidence > 0 && (
+                            <div className="flex items-center gap-4 pt-2">
+                              <div className="flex items-center gap-2">
+                                <span className="text-xs text-muted-foreground">신뢰도:</span>
+                                <Progress 
+                                  value={message.response.confidence * 100} 
+                                  className="w-16 h-1.5"
+                                />
+                                <span className="text-xs">
+                                  {(message.response.confidence * 100).toFixed(0)}%
+                                </span>
                               </div>
-                            )}
-                          </div>
+                              {message.response.uncertainty_note && (
+                                <div className="flex items-center gap-1 text-amber-600 text-xs">
+                                  <AlertTriangle className="w-3 h-3" />
+                                  {message.response.uncertainty_note}
+                                </div>
+                              )}
+                            </div>
+                          )}
                         </div>
                       ) : (
-                        <p>{message.content}</p>
+                        <p className="whitespace-pre-wrap">{message.content}</p>
                       )}
                     </div>
                   </div>

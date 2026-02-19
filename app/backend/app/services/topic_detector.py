@@ -16,11 +16,15 @@ class TopicDetector:
     def __init__(self):
         self.db = get_db()
     
-    def _cosine_similarity(self, a: List[float], b: List[float]) -> float:
+    def _cosine_similarity(self, a: Any, b: Any) -> float:
         """Calculate cosine similarity between two vectors."""
         a = np.array(a)
         b = np.array(b)
-        return np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b) + 1e-8)
+        norm_a = np.linalg.norm(a)
+        norm_b = np.linalg.norm(b)
+        if norm_a == 0 or norm_b == 0:
+            return 0.0
+        return np.dot(a, b) / (norm_a * norm_b)
     
     async def cluster_documents(
         self,
@@ -31,13 +35,15 @@ class TopicDetector:
         """Cluster documents by embedding similarity."""
         
         # Get documents with embeddings
+        # Use a join to get chunks and their embeddings
         result = self.db.table("chunks").select(
-            "*, documents!inner(title, published_at, url), embeddings!inner(embedding)"
+            "document_id, documents!inner(title, published_at, url), embeddings!inner(embedding)"
         ).gte("documents.published_at", start_date.isoformat()).lte(
             "documents.published_at", end_date.isoformat()
         ).execute()
         
         if not result.data:
+            print(f"No documents found for clustering between {start_date} and {end_date}")
             return []
         
         # Group by document
@@ -54,8 +60,21 @@ class TopicDetector:
             embeddings = []
             for chunk in chunks:
                 if chunk.get("embeddings") and chunk["embeddings"].get("embedding"):
-                    emb = json.loads(chunk["embeddings"]["embedding"])
-                    embeddings.append(emb)
+                    raw_emb = chunk["embeddings"]["embedding"]
+                    if isinstance(raw_emb, str):
+                        try:
+                            # If it's a string representation like '[0.1, 0.2, ...]'
+                            emb = json.loads(raw_emb)
+                            embeddings.append(emb)
+                        except json.JSONDecodeError:
+                            # Handle potential pgvector string format '[0.1,0.2,...]'
+                            try:
+                                emb = [float(x) for x in raw_emb.strip('[]').split(',')]
+                                embeddings.append(emb)
+                            except Exception:
+                                continue
+                    elif isinstance(raw_emb, list):
+                        embeddings.append(raw_emb)
             
             if embeddings:
                 doc_embeddings[doc_id] = np.mean(embeddings, axis=0).tolist()
@@ -70,7 +89,10 @@ class TopicDetector:
         n = len(doc_ids)
         
         if n < min_cluster_size:
+            print(f"Only {n} documents with embeddings found. Minimum required for clustering is {min_cluster_size}.")
             return []
+        
+        print(f"Clustering {n} documents...")
         
         # Similarity matrix
         similarity_matrix = np.zeros((n, n))
@@ -85,7 +107,7 @@ class TopicDetector:
         
         # Hierarchical clustering (simplified)
         clusters = []
-        threshold = 0.75
+        threshold = 0.82 # Increased threshold for tighter clusters
         visited = set()
         
         for i in range(n):
@@ -115,6 +137,7 @@ class TopicDetector:
                     "size": len(cluster)
                 })
         
+        print(f"Detected {len(clusters)} clusters.")
         return clusters
     
     async def calculate_surge_score(

@@ -1,3 +1,6 @@
+from dotenv import load_dotenv
+load_dotenv()
+
 """Main FastAPI application with Phase A/B Architecture."""
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -5,8 +8,10 @@ from contextlib import asynccontextmanager
 from datetime import datetime
 
 from app.core.config import settings
+from app.core.redis import RedisClient
 from app.api.routes import router as main_router
 from app.api.advanced_routes import router as advanced_router
+from app.api.governance_routes import router as governance_router
 from app.api.pipeline_routes import router as pipeline_router
 
 
@@ -19,9 +24,24 @@ async def lifespan(app: FastAPI):
     print(f"📊 Phase B: Serving Service (FastAPI + Redis)")
     print(f"🔍 LangSmith enabled: {bool(settings.LANGSMITH_API_KEY)}")
     print(f"📄 LlamaParse enabled: {bool(settings.LLAMAPARSE_API_KEY)}")
+    
+    # Check Redis
+    redis_ok = RedisClient.ping()
+    if redis_ok:
+        print("✅ Redis connection: OK")
+    else:
+        print("❌ Redis connection: FAILED (Check REDIS_URL or Docker)")
+    
+    # Check OpenAI
+    if not settings.OPENAI_API_KEY:
+        print("⚠️  WARNING: OPENAI_API_KEY is missing. RAG and Topic Detection will fail.")
+    else:
+        print(f"✅ OpenAI API: Configured (Model: {settings.OPENAI_MODEL})")
+    
     yield
     # Shutdown
     print(f"👋 Shutting down {settings.APP_NAME}")
+    RedisClient.close()
 
 
 app = FastAPI(
@@ -53,7 +73,10 @@ app = FastAPI(
 # CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -61,7 +84,8 @@ app.add_middleware(
 
 # Include routers
 app.include_router(main_router, prefix=settings.API_V1_PREFIX)
-app.include_router(advanced_router, prefix=f"{settings.API_V1_PREFIX}/advanced")
+app.include_router(advanced_router, prefix=f"{settings.API_V1_PREFIX}/advanced", tags=["Advanced"])
+app.include_router(governance_router, prefix=f"{settings.API_V1_PREFIX}/advanced", tags=["Governance"])
 app.include_router(pipeline_router, prefix=f"{settings.API_V1_PREFIX}/pipeline")
 
 
@@ -98,11 +122,15 @@ async def root():
 @app.get("/health")
 async def health_check():
     """Health check endpoint."""
+    redis_ok = RedisClient.ping()
+    openai_ok = bool(settings.OPENAI_API_KEY)
     return {
-        "status": "healthy",
+        "status": "healthy" if (redis_ok and openai_ok) else "warning",
         "timestamp": datetime.now().isoformat(),
         "services": {
             "api": True,
+            "redis": redis_ok,
+            "openai": openai_ok,
             "langsmith": bool(settings.LANGSMITH_API_KEY),
             "llamaparse": bool(settings.LLAMAPARSE_API_KEY)
         },

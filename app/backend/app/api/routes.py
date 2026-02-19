@@ -2,7 +2,10 @@
 from fastapi import APIRouter, HTTPException, Query, BackgroundTasks
 from typing import List, Optional
 from datetime import datetime, timedelta
+import logging
+import traceback
 
+from app.core.config import settings
 from app.models.schemas import (
     DocumentListResponse, DocumentResponse,
     QARequest, QAResponse,
@@ -116,12 +119,46 @@ async def get_document(document_id: str):
 
 @router.post("/collection/trigger")
 async def trigger_collection(background_tasks: BackgroundTasks):
-    """Trigger RSS collection in background."""
+    """Trigger RSS collection in background with job tracking."""
     try:
-        background_tasks.add_task(rss_collector.collect_all)
-        return {"message": "Collection started in background"}
+        from app.services.job_tracker import job_tracker
+        job_id = job_tracker.create_job()
+        if not job_id:
+            raise HTTPException(status_code=503, detail="Redis connection failed. Job tracking unavailable.")
+        
+        background_tasks.add_task(rss_collector.collect_all, job_id=job_id)
+        
+        return {
+            "message": "Collection started in background",
+            "job_id": job_id,
+            "status": "running"
+        }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/collection/jobs/latest")
+async def get_latest_job():
+    """Get status of the most recent collection job."""
+    from app.services.job_tracker import job_tracker
+    job_id = job_tracker.get_latest_job_id()
+    if not job_id:
+        return {"message": "No jobs found"}
+    
+    job = job_tracker.get_job(job_id)
+    if not job:
+        return {"message": "Job details not found"}
+    return job
+
+
+@router.get("/collection/jobs/{job_id}")
+async def get_job_status(job_id: str):
+    """Get status of a specific collection job."""
+    from app.services.job_tracker import job_tracker
+    job = job_tracker.get_job(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    return job
 
 
 @router.get("/collection/status")
@@ -140,6 +177,55 @@ async def get_recent_documents(hours: int = Query(24, ge=1, le=168)):
     try:
         documents = await rss_collector.get_recent_documents(hours)
         return {"documents": documents, "count": len(documents)}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ==================== Retrieval Routes ====================
+
+@router.get("/search")
+async def search_documents(
+    query: str = Query(..., min_length=2),
+    top_k: int = Query(5, ge=1, le=20),
+    category: Optional[str] = None,
+    date_from: Optional[datetime] = None,
+    date_to: Optional[datetime] = None
+):
+    """Basic retrieval search (Hybrid)."""
+    try:
+        # Get query embedding
+        query_embedding = await rag_service._get_embedding(query)
+        
+        # Build filters
+        filters = {}
+        if category: filters["category"] = category
+        if date_from: filters["date_from"] = date_from.isoformat()
+        if date_to: filters["date_to"] = date_to.isoformat()
+        
+        # Perform hybrid search
+        results = await rag_service.vector_store.hybrid_search(
+            query=query,
+            query_embedding=query_embedding,
+            top_k=top_k,
+            filters=filters
+        )
+        
+        return {
+            "query": query,
+            "results": [
+                {
+                    "chunk_id": r.chunk_id,
+                    "document_id": r.document_id,
+                    "title": r.document_title,
+                    "url": r.url,
+                    "published_at": r.published_at,
+                    "snippet": r.chunk_text[:300],
+                    "score": r.similarity,
+                    "metadata": r.metadata
+                }
+                for r in results
+            ]
+        }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -175,6 +261,19 @@ async def answer_question(request: QARequest):
             )
         
         return response
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/qa/stream")
+async def answer_question_stream(request: QARequest):
+    """Answer question using RAG with streaming."""
+    from fastapi.responses import StreamingResponse
+    try:
+        return StreamingResponse(
+            rag_service.stream_answer(request),
+            media_type="text/event-stream"
+        )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -240,13 +339,18 @@ async def list_topics(
                     if docs_result.data:
                         for d in docs_result.data:
                             doc = d.get("documents", {})
-                            rep_docs.append({
-                                "document_id": doc.get("document_id"),
-                                "title": doc.get("title"),
-                                "url": doc.get("url"),
-                                "published_at": doc.get("published_at")
-                            })
+                            if doc:
+                                rep_docs.append({
+                                    "document_id": doc.get("document_id"),
+                                    "title": doc.get("title"),
+                                    "url": doc.get("url"),
+                                    "published_at": doc.get("published_at")
+                                })
                     
+                    # Fetch surge score from alerts if available
+                    alert_res = db.table("alerts").select("surge_score").eq("topic_id", t["topic_id"]).execute()
+                    surge_score = alert_res.data[0]["surge_score"] if alert_res.data else 0.0
+
                     topics.append(TopicResponse(
                         topic_id=t["topic_id"],
                         topic_name=t.get("topic_name"),
@@ -254,7 +358,7 @@ async def list_topics(
                         time_window_start=t["time_window_start"],
                         time_window_end=t["time_window_end"],
                         document_count=count_result.count if hasattr(count_result, 'count') else 0,
-                        surge_score=0.0,
+                        surge_score=surge_score,
                         representative_documents=rep_docs
                     ))
         
@@ -376,11 +480,11 @@ async def get_dashboard_stats():
         collection_stats = await rss_collector.get_collection_stats()
         
         # Active alerts
-        alerts_result = db.table("alerts").select("count", count="exact").eq(
+        alerts_result = db.table("alerts").select("*", count="exact").eq(
             "status", "open"
         ).execute()
         
-        high_severity = db.table("alerts").select("count", count="exact").eq(
+        high_severity = db.table("alerts").select("*", count="exact").eq(
             "status", "open"
         ).eq("severity", "high").execute()
         
@@ -406,24 +510,66 @@ async def get_dashboard_stats():
         
         # Collection status per source
         sources = []
-        for fid in ["0111", "0112", "0114"]:
-            source_docs = db.table("documents").select("count", count="exact").eq(
-                "source_id", f"FSC_RSS_{fid}"
+        # Get actual source records to get their UUIDs
+        sources_records = db.table("sources").select("*").in_("fid", settings.FSC_RSS_FIDS).execute()
+        
+        # Pre-calculate 24h/7d timestamps
+        since_24h = (datetime.now() - timedelta(hours=24)).isoformat()
+        since_7d = (datetime.now() - timedelta(days=7)).isoformat()
+
+        for source_rec in (sources_records.data or []):
+            source_id = source_rec["source_id"]
+            fid = source_rec.get("fid")
+            
+            # Real counts from database
+            source_docs = db.table("documents").select("*", count="exact").eq(
+                "source_id", source_id
             ).execute()
             
-            recent = db.table("documents").select("count", count="exact").eq(
-                "source_id", f"FSC_RSS_{fid}"
-            ).gte("ingested_at", (datetime.now() - timedelta(hours=24)).isoformat()).execute()
+            recent = db.table("documents").select("*", count="exact").eq(
+                "source_id", source_id
+            ).gte("ingested_at", since_24h).execute()
             
+            # Calculate success rate for this source specifically
+            source_week = db.table("documents").select("status").eq(
+                "source_id", source_id
+            ).gte("ingested_at", since_7d).execute()
+            
+            total_week = len(source_week.data) if source_week.data else 0
+            failed_week = sum(1 for d in source_week.data if d.get("status") == "failed") if source_week.data else 0
+            success_rate = (total_week - failed_week) / total_week * 100 if total_week > 0 else 100.0
+
             sources.append({
-                "source_id": f"FSC_RSS_{fid}",
-                "source_name": rss_collector.RSS_URLS.get(fid, fid),
+                "source_id": fid,
+                "source_name": source_rec.get("name"),
                 "last_fetch": datetime.now(),
                 "new_documents_24h": recent.count if hasattr(recent, 'count') else 0,
                 "total_documents": source_docs.count if hasattr(source_docs, 'count') else 0,
-                "success_rate_7d": 95.0,
-                "parsing_failures_24h": 0
+                "success_rate_7d": success_rate,
+                "parsing_failures_24h": 0 # This could be fetched from a more granular log if available
             })
+        
+        # Recent topics with counts
+        topics = []
+        if topics_result.data:
+            for t in topics_result.data:
+                # Get document count for each topic
+                count_res = db.table("topic_memberships").select("count", count="exact").eq("topic_id", t["topic_id"]).execute()
+                
+                # Check for alert to get surge score if available
+                alert_res = db.table("alerts").select("surge_score").eq("topic_id", t["topic_id"]).execute()
+                surge_score = alert_res.data[0]["surge_score"] if alert_res.data else 0.0
+
+                topics.append(TopicResponse(
+                    topic_id=t["topic_id"],
+                    topic_name=t.get("topic_name"),
+                    topic_summary=t.get("topic_summary"),
+                    time_window_start=t["time_window_start"],
+                    time_window_end=t["time_window_end"],
+                    document_count=count_res.count if hasattr(count_res, 'count') else 0,
+                    surge_score=surge_score,
+                    representative_documents=[]
+                ))
         
         return DashboardStats(
             total_documents=collection_stats["total_documents"],
@@ -436,7 +582,9 @@ async def get_dashboard_stats():
         )
     
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logging.error(f"Error in get_dashboard_stats: {str(e)}")
+        logging.error(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=f"Dashboard stats error: {str(e)}")
 
 
 @router.get("/dashboard/quality")
