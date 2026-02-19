@@ -223,11 +223,19 @@ class ChecklistService:
         items = []
         if items_result.data:
             for item in items_result.data:
+                # Handle potential string-to-datetime conversion if needed
+                eff_date = item.get("effective_date")
+                if isinstance(eff_date, str):
+                    try:
+                        eff_date = datetime.fromisoformat(eff_date.replace('Z', '+00:00'))
+                    except (ValueError, TypeError):
+                        eff_date = None
+
                 items.append(ChecklistItem(
                     action=item["action"],
                     target=item.get("target"),
                     due_date_text=item.get("due_date_text"),
-                    effective_date=item.get("effective_date"),
+                    effective_date=eff_date,
                     scope=item.get("scope"),
                     penalty=item.get("penalty"),
                     evidence_chunk_id=item.get("evidence_chunk_id"),
@@ -241,12 +249,22 @@ class ChecklistService:
         
         doc_title = doc_result.data[0]["title"] if doc_result.data else ""
         
+        # Handle created_at timestamp
+        gen_at = checklist.get("created_at")
+        if isinstance(gen_at, str):
+            try:
+                gen_at = datetime.fromisoformat(gen_at.replace('Z', '+00:00'))
+            except (ValueError, TypeError):
+                gen_at = datetime.now()
+        else:
+            gen_at = datetime.now()
+
         return ChecklistResponse(
             checklist_id=checklist["checklist_id"],
             document_id=document_id,
             document_title=doc_title,
             items=items,
-            generated_at=checklist["created_at"]
+            generated_at=gen_at
         )
     
     def export_checklist(
