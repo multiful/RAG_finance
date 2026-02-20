@@ -18,7 +18,7 @@ import { Progress } from '@/components/ui/progress';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { getQualityMetrics } from '@/lib/api';
+import { getQualityMetrics, getSystemHealth, type SystemHealth } from '@/lib/api';
 import type { QualityMetrics } from '@/types';
 
 interface MetricCardProps {
@@ -90,14 +90,19 @@ function MetricCard({ title, value, target, unit, icon: Icon, trend, description
 
 export default function QualityDashboard() {
   const [metrics, setMetrics] = useState<QualityMetrics | null>(null);
+  const [systemHealth, setSystemHealth] = useState<SystemHealth | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   const fetchMetrics = useCallback(async (isSilent = false) => {
     if (!isSilent) setLoading(true);
     try {
-      const data = await getQualityMetrics(7);
-      setMetrics(data);
+      const [metricsData, healthData] = await Promise.all([
+        getQualityMetrics(7),
+        getSystemHealth()
+      ]);
+      setMetrics(metricsData);
+      setSystemHealth(healthData);
       setError(null);
     } catch (err) {
       console.error('Error fetching quality metrics:', err);
@@ -258,26 +263,54 @@ export default function QualityDashboard() {
       </Card>
 
       {/* System Status */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        {[
-          { label: 'RAG 엔진', status: '정상 운영중' },
-          { label: '벡터 DB', status: '연결 정상' },
-          { label: 'LLM API', status: '응답 정상' }
-        ].map((item, i) => (
-          <Card key={i} className="card-elevated">
-            <CardContent className="p-6">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-full bg-emerald-100 flex items-center justify-center">
-                  <CheckCircle2 className="w-5 h-5 text-emerald-600" />
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        {systemHealth?.components ? (
+          Object.entries(systemHealth.components).map(([key, component]) => {
+            const isOperational = component.status === 'operational';
+            const isDegraded = component.status === 'degraded';
+            return (
+              <Card key={key} className="card-elevated">
+                <CardContent className="p-6">
+                  <div className="flex items-center gap-3">
+                    <div className={`w-10 h-10 rounded-full flex items-center justify-center ${
+                      isOperational ? 'bg-emerald-100' : isDegraded ? 'bg-amber-100' : 'bg-red-100'
+                    }`}>
+                      {isOperational ? (
+                        <CheckCircle2 className="w-5 h-5 text-emerald-600" />
+                      ) : isDegraded ? (
+                        <AlertTriangle className="w-5 h-5 text-amber-600" />
+                      ) : (
+                        <XCircle className="w-5 h-5 text-red-600" />
+                      )}
+                    </div>
+                    <div>
+                      <p className="text-sm text-muted-foreground">{component.label}</p>
+                      <p className={`font-medium ${
+                        isOperational ? 'text-emerald-600' : isDegraded ? 'text-amber-600' : 'text-red-600'
+                      }`}>
+                        {isOperational ? '정상 운영중' : isDegraded ? '일부 저하' : '연결 오류'}
+                      </p>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            );
+          })
+        ) : (
+          [1, 2, 3, 4].map(i => (
+            <Card key={i} className="card-elevated">
+              <CardContent className="p-6">
+                <div className="flex items-center gap-3">
+                  <Skeleton className="w-10 h-10 rounded-full" />
+                  <div className="flex-1">
+                    <Skeleton className="h-4 w-20 mb-2" />
+                    <Skeleton className="h-5 w-24" />
+                  </div>
                 </div>
-                <div>
-                  <p className="text-sm text-muted-foreground">{item.label}</p>
-                  <p className="font-medium text-emerald-600">{item.status}</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        ))}
+              </CardContent>
+            </Card>
+          ))
+        )}
       </div>
     </div>
   );

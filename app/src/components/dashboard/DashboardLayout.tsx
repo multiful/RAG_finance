@@ -36,6 +36,7 @@ interface NavItem {
 
 const navItems: NavItem[] = [
   { id: 'executive', path: '/executive', label: 'Executive Summary', icon: Zap },
+  { id: 'analytics', path: '/analytics', label: 'Analytics Dashboard', icon: TrendingUp },
   { id: 'monitor', path: '/monitoring', label: 'Ingestion Health', icon: LayoutDashboard },
   { id: 'radar', path: '/radar', label: 'Issue Radar', icon: Radar, badge: 3 },
   { id: 'timeline', path: '/timeline', label: 'Policy Timeline', icon: Calendar },

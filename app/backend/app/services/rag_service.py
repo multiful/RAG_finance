@@ -406,7 +406,7 @@ NO [해당 문서에는 가계대출 금리에 대한 직접적인 언급이 없
             for chunk in reranked_chunks
         ]
         
-        # 9. Logging
+        # 9. Logging with quality metrics
         try:
             from fastapi.encoders import jsonable_encoder
             latency_ms = int((datetime.now(timezone.utc) - start_time).total_seconds() * 1000)
@@ -416,6 +416,11 @@ NO [해당 문서에는 가계대출 금리에 대한 직접적인 언급이 없
                 "answer": structured_data["answer"],
                 "citations": citations,
                 "latency_ms": latency_ms,
+                "response_time_ms": latency_ms,
+                "groundedness_score": grounding_score / 100.0,
+                "confidence": confidence_score / 100.0,
+                "citation_coverage": coverage,
+                "status": "success",
                 "created_at": datetime.now(timezone.utc).isoformat()
             })).execute()
         except Exception as log_err:

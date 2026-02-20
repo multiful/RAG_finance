@@ -237,6 +237,18 @@ export const getDashboardStats = async (): Promise<DashboardStats> => {
   return response.data;
 };
 
+export interface HourlyStats {
+  hourly: Array<{ hour: string; count: number; success: number; failed: number }>;
+  by_source: Array<{ name: string; count: number }>;
+  total: number;
+  period_hours: number;
+}
+
+export const getHourlyStats = async (hours: number = 24): Promise<HourlyStats> => {
+  const response = await api.get('/dashboard/hourly-stats', { params: { hours } });
+  return response.data;
+};
+
 export const getQualityMetrics = async (days: number = 7): Promise<QualityMetrics> => {
   const response = await api.get('/dashboard/quality', { params: { days } });
   return response.data;
@@ -326,6 +338,133 @@ export const exportTimelineIcal = async (params?: {
     params,
     responseType: 'blob'
   });
+  return response.data;
+};
+
+// Analytics API
+export interface TopicTrendData {
+  period: string;
+  monthly_trends: Array<{
+    month: string;
+    keywords: Array<{ keyword: string; count: number }>;
+    total_documents: number;
+  }>;
+  top_keywords_overall: Array<{ keyword: string; count: number }>;
+  total_documents_analyzed: number;
+}
+
+export interface IndustryImpactData {
+  period_days: number;
+  analysis_date: string;
+  industry_impact: Array<{
+    industry: string;
+    industry_label: string;
+    document_count: number;
+    alert_count: number;
+    high_severity_count: number;
+    impact_score: number;
+    risk_level: string;
+    top_keywords: Array<{ keyword: string; count: number }>;
+  }>;
+  summary: {
+    most_affected: string | null;
+    total_regulations: number;
+    total_alerts: number;
+  };
+}
+
+export interface DocumentStatsData {
+  period_days: number;
+  total_documents: number;
+  daily_trend: Array<{ date: string; count: number }>;
+  weekly_trend: Array<{ week_start: string; count: number }>;
+  monthly_trend: Array<{ month: string; count: number }>;
+  by_category: Array<{ category: string; count: number }>;
+  by_status: Array<{ status: string; count: number }>;
+  avg_documents_per_day: number;
+}
+
+export interface KeywordCloudData {
+  period_days: number;
+  keywords: Array<{ text: string; value: number; normalized: number }>;
+}
+
+export interface RegulationSummary {
+  generated_at: string;
+  overview: {
+    total_regulations: number;
+    regulations_this_week: number;
+    week_over_week_change: number;
+    active_alerts: number;
+    high_severity_alerts: number;
+  };
+  insights: Array<{ type: string; message: string }>;
+}
+
+export const getTopicTrends = async (months?: number, industry?: string): Promise<TopicTrendData> => {
+  const response = await api.get('/analytics/topic-trends', { params: { months, industry } });
+  return response.data;
+};
+
+export const getIndustryImpact = async (days?: number): Promise<IndustryImpactData> => {
+  const response = await api.get('/analytics/industry-impact', { params: { days } });
+  return response.data;
+};
+
+export const getDocumentStats = async (days?: number): Promise<DocumentStatsData> => {
+  const response = await api.get('/analytics/document-stats', { params: { days } });
+  return response.data;
+};
+
+export const getKeywordCloud = async (days?: number, limit?: number): Promise<KeywordCloudData> => {
+  const response = await api.get('/analytics/keyword-cloud', { params: { days, limit } });
+  return response.data;
+};
+
+export const getRegulationSummary = async (): Promise<RegulationSummary> => {
+  const response = await api.get('/analytics/regulation-summary');
+  return response.data;
+};
+
+export interface WeeklyReport {
+  generated_at: string;
+  period: { start: string; end: string };
+  summary: string;
+  statistics: {
+    total_documents: number;
+    by_industry: Record<string, number>;
+    urgent_alerts: number;
+    total_alerts: number;
+  };
+  highlights: Array<{ title: string; date: string; category: string }>;
+  recommendations: Array<{ priority: string; text: string } | null>;
+}
+
+export const getWeeklyReport = async (): Promise<WeeklyReport> => {
+  const response = await api.get('/analytics/weekly-report');
+  return response.data;
+};
+
+// System Health API
+export interface SystemHealth {
+  status: 'healthy' | 'degraded' | 'warning';
+  timestamp: string;
+  services: {
+    api: boolean;
+    redis: boolean;
+    supabase: boolean;
+    openai: boolean;
+  };
+  components: {
+    rag_engine: { status: string; label: string };
+    vector_db: { status: string; label: string };
+    llm_api: { status: string; label: string };
+    cache: { status: string; label: string };
+  };
+}
+
+export const getSystemHealth = async (): Promise<SystemHealth> => {
+  const response = await axios.get('/health');
   return response.data;
 };
 

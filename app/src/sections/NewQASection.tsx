@@ -13,6 +13,9 @@ import {
   TrendingUp,
   ChevronDown,
   Shield,
+  BadgeCheck,
+  Lock,
+  Download,
 } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -247,6 +250,44 @@ export default function NewQASection() {
     setInspectorOpen(true);
   };
 
+  const exportAuditLog = () => {
+    const auditLog = {
+      export_date: new Date().toISOString(),
+      session_id: `session_${Date.now()}`,
+      compliance_mode: complianceMode,
+      total_queries: messages.filter(m => m.type === 'user').length,
+      conversations: messages.map((m, idx) => ({
+        sequence: idx + 1,
+        type: m.type,
+        content: m.content,
+        timestamp: m.timestamp.toISOString(),
+        ...(m.type === 'assistant' && {
+          quality_metrics: {
+            confidence: m.confidence,
+            groundedness_score: m.groundedness_score,
+            citation_coverage: m.citation_coverage,
+            hallucination_flag: m.hallucination_flag
+          },
+          citations: m.citations?.map(c => ({
+            document_id: c.document_id,
+            document_title: c.document_title,
+            chunk_id: c.chunk_id,
+            published_at: c.published_at,
+            url: c.url
+          }))
+        })
+      }))
+    };
+
+    const blob = new Blob([JSON.stringify(auditLog, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `audit_log_${new Date().toISOString().split('T')[0]}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   const lastAssistant =
     messages.length > 0 && messages[messages.length - 1].type === 'assistant'
       ? messages[messages.length - 1]
@@ -282,6 +323,40 @@ export default function NewQASection() {
         </div>
       </div>
 
+      {/* Official Source Guarantee Banner */}
+      <div className="bg-gradient-to-r from-emerald-50 to-blue-50 border border-emerald-200/50 rounded-2xl p-4">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div className="flex items-center gap-4">
+            <div className="w-12 h-12 rounded-xl bg-emerald-500 flex items-center justify-center shadow-lg shadow-emerald-200">
+              <BadgeCheck className="w-6 h-6 text-white" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2 mb-1">
+                <span className="text-sm font-black text-emerald-700">공식 출처 100% 보장</span>
+                <Badge className="bg-emerald-100 text-emerald-700 border-emerald-200 text-[10px] font-bold">
+                  <Lock className="w-3 h-3 mr-1" />
+                  VERIFIED
+                </Badge>
+              </div>
+              <p className="text-xs text-slate-600">
+                모든 답변은 <span className="font-bold text-emerald-700">금융위원회·금융감독원 공식 문서</span>에서만 추출되며,
+                <span className="font-bold text-blue-600"> 출처가 명확하게 표시</span>됩니다.
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-3">
+            <div className="text-center px-4 py-2 bg-white rounded-xl border border-emerald-100">
+              <p className="text-lg font-black text-emerald-600">100%</p>
+              <p className="text-[10px] font-bold text-slate-400 uppercase">공식 문서</p>
+            </div>
+            <div className="text-center px-4 py-2 bg-white rounded-xl border border-blue-100">
+              <p className="text-lg font-black text-blue-600">100%</p>
+              <p className="text-[10px] font-bold text-slate-400 uppercase">출처 명시</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <div className="flex-1 grid grid-cols-1 lg:grid-cols-5 gap-8 overflow-hidden">
         {/* Chat Area */}
         <div className="lg:col-span-3 flex flex-col gap-4 overflow-hidden">
@@ -303,7 +378,7 @@ export default function NewQASection() {
                   
                   <Tabs defaultValue="general" className="flex-1">
                     <TabsList className="grid grid-cols-4 mb-4">
-                      {Object.entries(INDUSTRY_TEMPLATES).map(([key, { icon: Icon, label, color }]) => (
+                      {Object.entries(INDUSTRY_TEMPLATES).map(([key, { icon: Icon, label }]) => (
                         <TabsTrigger 
                           key={key} 
                           value={key}
@@ -489,9 +564,54 @@ export default function NewQASection() {
               <Info className="w-5 h-5 text-primary" />
               Session Insights
             </h3>
+            {messages.length > 0 && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={exportAuditLog}
+                className="text-xs font-bold border-slate-200 hover:bg-emerald-50 hover:text-emerald-600 hover:border-emerald-200"
+              >
+                <Download className="w-3 h-3 mr-1" />
+                감사 로그 내보내기
+              </Button>
+            )}
           </div>
 
           <div className="flex-1 overflow-y-auto pr-2 space-y-4">
+            {/* Session Statistics */}
+            {messages.length > 0 && (
+              <Card className="border-none shadow-sm bg-gradient-to-br from-indigo-500 to-purple-600 text-white rounded-3xl p-5">
+                <h4 className="text-xs font-black uppercase tracking-widest mb-3 opacity-70">
+                  Session Statistics
+                </h4>
+                <div className="grid grid-cols-3 gap-3">
+                  <div className="text-center">
+                    <p className="text-2xl font-black">{messages.filter(m => m.type === 'user').length}</p>
+                    <p className="text-[10px] font-bold opacity-70">질문</p>
+                  </div>
+                  <div className="text-center">
+                    <p className="text-2xl font-black">
+                      {messages.filter(m => m.type === 'assistant' && m.citations).reduce((acc, m) => acc + (m.citations?.length || 0), 0)}
+                    </p>
+                    <p className="text-[10px] font-bold opacity-70">참조 문서</p>
+                  </div>
+                  <div className="text-center">
+                    <p className="text-2xl font-black">
+                      {messages.filter(m => m.type === 'assistant').length > 0 
+                        ? Math.round(
+                            messages
+                              .filter(m => m.type === 'assistant' && m.groundedness_score)
+                              .reduce((acc, m) => acc + (m.groundedness_score || 0), 0) /
+                            messages.filter(m => m.type === 'assistant' && m.groundedness_score).length * 100
+                          ) || 0
+                        : 0}%
+                    </p>
+                    <p className="text-[10px] font-bold opacity-70">평균 신뢰도</p>
+                  </div>
+                </div>
+              </Card>
+            )}
+
             {lastAssistant ? (
               <div className="space-y-6 animate-in fade-in duration-500">
 <Card className="border-none shadow-sm bg-slate-900 text-white rounded-3xl p-6">

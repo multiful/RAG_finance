@@ -5,7 +5,6 @@ import { inspectAttr } from 'kimi-plugin-inspect-react'
 
 // https://vite.dev/config/
 export default defineConfig({
-  base: './',
   plugins: [inspectAttr(), react()],
   resolve: {
     alias: {
@@ -16,8 +15,12 @@ export default defineConfig({
     allowedHosts: true,
     proxy: {
       '/api': {
-        
-        target: 'http://127.0.0.1:8000',
+        target: 'http://127.0.0.1:8001',
+        changeOrigin: true,
+        secure: false,
+      },
+      '/health': {
+        target: 'http://127.0.0.1:8001',
         changeOrigin: true,
         secure: false,
       },

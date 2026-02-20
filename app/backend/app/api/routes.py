@@ -12,13 +12,14 @@ from app.models.schemas import (
     IndustryClassificationRequest, IndustryClassificationResponse,
     TopicResponse, TopicListResponse, AlertResponse,
     ChecklistRequest, ChecklistResponse,
-    DashboardStats, QualityMetrics
+    DashboardStats, QualityMetrics, CollectionStatus
 )
 from app.services.rss_collector import RSSCollector
 from app.services.rag_service import RAGService
 from app.services.industry_classifier import IndustryClassifier
 from app.services.topic_detector import TopicDetector
 from app.services.checklist_service import ChecklistService
+from app.services.fss_scraper import fss_scraper
 from app.observability.langsmith_tracer import get_tracer
 
 router = APIRouter()
@@ -117,20 +118,44 @@ async def get_document(document_id: str):
 
 # ==================== Collection Routes ====================
 
+async def _run_all_collection(job_id: str):
+    """Run both FSC RSS and FSS scraping."""
+    # First collect FSC RSS
+    await rss_collector.collect_all(job_id=job_id)
+    # Then collect FSS (금감원)
+    try:
+        await fss_scraper.collect_all()
+    except Exception as e:
+        logging.error(f"FSS scraping failed: {e}")
+
+
 @router.post("/collection/trigger")
 async def trigger_collection(background_tasks: BackgroundTasks):
-    """Trigger RSS collection in background with job tracking."""
+    """Trigger RSS collection (FSC + FSS) in background with job tracking."""
     try:
         from app.services.job_tracker import job_tracker
         job_id = job_tracker.create_job()
         if not job_id:
             raise HTTPException(status_code=503, detail="Redis connection failed. Job tracking unavailable.")
         
-        background_tasks.add_task(rss_collector.collect_all, job_id=job_id)
+        background_tasks.add_task(_run_all_collection, job_id)
         
         return {
-            "message": "Collection started in background",
+            "message": "Collection started (FSC + FSS)",
             "job_id": job_id,
+            "status": "running"
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/collection/trigger-fss")
+async def trigger_fss_collection(background_tasks: BackgroundTasks):
+    """Trigger FSS (금융감독원) scraping only."""
+    try:
+        background_tasks.add_task(fss_scraper.collect_all)
+        return {
+            "message": "FSS scraping started",
             "status": "running"
         }
     except Exception as e:
@@ -473,6 +498,7 @@ async def export_checklist(document_id: str, format: str = Query("json")):
 @router.get("/dashboard/stats", response_model=DashboardStats)
 async def get_dashboard_stats():
     """Get dashboard statistics."""
+    from app.models.schemas import CollectionStatus
     try:
         db = rss_collector.db
         
@@ -574,26 +600,119 @@ async def get_dashboard_stats():
         logging.error(traceback.format_exc())
         raise HTTPException(status_code=500, detail=f"Dashboard stats error: {str(e)}")
 
-    
+
+@router.get("/dashboard/hourly-stats")
+async def get_hourly_collection_stats(hours: int = Query(24, ge=1, le=168)):
+    """Get hourly document collection statistics for charts."""
+    try:
+        db = rss_collector.db
+        since = datetime.now(timezone.utc) - timedelta(hours=hours)
+        
+        # Get documents with timestamps
+        docs_result = db.table("documents").select(
+            "document_id, ingested_at, source_id, status"
+        ).gte("ingested_at", since.isoformat()).execute()
+        
+        # Group by hour
+        hourly_data = {}
+        for i in range(hours):
+            hour_key = (datetime.now(timezone.utc) - timedelta(hours=i)).strftime("%Y-%m-%d %H:00")
+            hourly_data[hour_key] = {"hour": hour_key, "count": 0, "success": 0, "failed": 0}
+        
+        for doc in (docs_result.data or []):
+            ingested = doc.get("ingested_at")
+            if ingested:
+                hour_key = datetime.fromisoformat(ingested.replace("Z", "+00:00")).strftime("%Y-%m-%d %H:00")
+                if hour_key in hourly_data:
+                    hourly_data[hour_key]["count"] += 1
+                    if doc.get("status") == "completed":
+                        hourly_data[hour_key]["success"] += 1
+                    else:
+                        hourly_data[hour_key]["failed"] += 1
+        
+        # Get source distribution
+        sources_result = db.table("sources").select("source_id, name").execute()
+        source_names = {s["source_id"]: s["name"] for s in (sources_result.data or [])}
+        
+        source_counts = {}
+        for doc in (docs_result.data or []):
+            sid = doc.get("source_id")
+            name = source_names.get(sid, "Unknown")
+            source_counts[name] = source_counts.get(name, 0) + 1
+        
+        return {
+            "hourly": sorted(hourly_data.values(), key=lambda x: x["hour"]),
+            "by_source": [{"name": k, "count": v} for k, v in source_counts.items()],
+            "total": len(docs_result.data or []),
+            "period_hours": hours
+        }
     except Exception as e:
-        logging.error(f"Error in get_dashboard_stats: {str(e)}")
-        logging.error(traceback.format_exc())
-        raise HTTPException(status_code=500, detail=f"Dashboard stats error: {str(e)}")
+        logging.error(f"Error in hourly stats: {str(e)}")
+        return {"hourly": [], "by_source": [], "total": 0, "period_hours": hours}
 
 
 @router.get("/dashboard/quality")
 async def get_quality_metrics(days: int = Query(7, ge=1, le=30)):
-    """Get quality metrics for RAG system."""
+    """Get quality metrics for RAG system from actual QA logs."""
     try:
-        # This would be calculated from qa_logs in production
-        # For now, return mock data
+        db = rss_collector.db
+        since = datetime.now(timezone.utc) - timedelta(days=days)
+        
+        # Get QA logs from database
+        qa_result = db.table("qa_logs").select("*").gte(
+            "created_at", since.isoformat()
+        ).execute()
+        
+        qa_logs = qa_result.data or []
+        
+        if not qa_logs:
+            # Return baseline metrics if no logs yet
+            return QualityMetrics(
+                date=datetime.now(timezone.utc),
+                groundedness=0.0,
+                hallucination_rate=0.0,
+                avg_response_time_ms=0,
+                citation_accuracy=0.0,
+                unanswered_rate=0.0
+            )
+        
+        # Calculate actual metrics
+        total_queries = len(qa_logs)
+        
+        groundedness_scores = [log.get("groundedness_score", 0) or 0 for log in qa_logs]
+        avg_groundedness = sum(groundedness_scores) / total_queries if total_queries > 0 else 0
+        
+        response_times = [log.get("response_time_ms", 0) or 0 for log in qa_logs]
+        avg_response_time = int(sum(response_times) / total_queries) if total_queries > 0 else 0
+        
+        citation_scores = [log.get("citation_coverage", 0) or 0 for log in qa_logs]
+        avg_citation = sum(citation_scores) / total_queries if total_queries > 0 else 0
+        
+        # Calculate hallucination rate (confidence < 0.4)
+        low_confidence = sum(1 for log in qa_logs if (log.get("confidence", 1) or 1) < 0.4)
+        hallucination_rate = low_confidence / total_queries if total_queries > 0 else 0
+        
+        # Calculate unanswered rate
+        unanswered = sum(1 for log in qa_logs if log.get("status") == "failed" or not log.get("answer"))
+        unanswered_rate = unanswered / total_queries if total_queries > 0 else 0
+        
         return QualityMetrics(
             date=datetime.now(timezone.utc),
-            groundedness=0.87,
-            hallucination_rate=0.08,
-            avg_response_time_ms=2500,
-            citation_accuracy=0.92,
-            unanswered_rate=0.05
+            groundedness=round(avg_groundedness, 2),
+            hallucination_rate=round(hallucination_rate, 2),
+            avg_response_time_ms=avg_response_time,
+            citation_accuracy=round(avg_citation, 2),
+            unanswered_rate=round(unanswered_rate, 2)
         )
+        
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logging.error(f"Error calculating quality metrics: {str(e)}")
+        # Return zeros instead of mock data on error
+        return QualityMetrics(
+            date=datetime.now(timezone.utc),
+            groundedness=0.0,
+            hallucination_rate=0.0,
+            avg_response_time_ms=0,
+            citation_accuracy=0.0,
+            unanswered_rate=0.0
+        )
