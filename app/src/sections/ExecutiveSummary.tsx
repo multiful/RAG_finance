@@ -24,9 +24,12 @@ import {
   RefreshCw,
   Clock,
   ChevronRight,
-  Zap
+  Zap,
+  Shield,
+  BadgeCheck,
+  Sparkles
 } from 'lucide-react';
-import api from '@/lib/api';
+import api, { getWeeklyReport, type WeeklyReport } from '@/lib/api';
 import type { SmartAlert, TimelineEvent, TimelineSummary } from '@/types';
 
 interface WeeklyHighlight {
@@ -74,6 +77,7 @@ export default function ExecutiveSummary() {
   const [weeklyAlerts, setWeeklyAlerts] = useState<SmartAlert[]>([]);
   const [timelineSummary, setTimelineSummary] = useState<TimelineSummary | null>(null);
   const [heatmapData, setHeatmapData] = useState<IndustryHeatmapData | null>(null);
+  const [weeklyReport, setWeeklyReport] = useState<WeeklyReport | null>(null);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   
   useEffect(() => {
@@ -83,16 +87,18 @@ export default function ExecutiveSummary() {
   const loadData = async () => {
     setLoading(true);
     try {
-      const [alertsRes, timelineRes, complianceRes, alertStatsRes] = await Promise.all([
+      const [alertsRes, timelineRes, complianceRes, alertStatsRes, reportData] = await Promise.all([
         api.get('/alerts', { params: { limit: 10 } }),
         api.get('/timeline/summary'),
         api.get('/compliance/dashboard'),
-        api.get('/alerts/stats')
+        api.get('/alerts/stats'),
+        getWeeklyReport()
       ]);
       
       const alerts = alertsRes.data as SmartAlert[];
       setWeeklyAlerts(alerts.slice(0, 5));
       setTimelineSummary(timelineRes.data);
+      setWeeklyReport(reportData);
       
       // Build heatmap data
       const byIndustry = alertStatsRes.data?.by_industry || {};
@@ -183,7 +189,83 @@ export default function ExecutiveSummary() {
           })} 기준
         </p>
       </div>
+
+      {/* Value Proposition Banner - Why This Report */}
+      <Card className="border-none shadow-lg bg-gradient-to-br from-indigo-900 via-indigo-800 to-purple-900 text-white print:hidden">
+        <CardContent className="p-6">
+          <div className="flex flex-col md:flex-row md:items-center gap-6">
+            <div className="flex-1">
+              <div className="flex items-center gap-2 mb-2">
+                <Shield className="w-5 h-5 text-emerald-400" />
+                <span className="text-xs font-black uppercase tracking-widest text-emerald-400">
+                  AI 기반 규제 인텔리전스
+                </span>
+              </div>
+              <h3 className="text-xl font-black mb-2">
+                이 보고서가 특별한 이유
+              </h3>
+              <p className="text-indigo-200 text-sm">
+                금융위원회·금융감독원 공식 문서만 분석하여 <span className="text-white font-bold">100% 검증된 정보</span>만 제공합니다.
+                일반 AI의 추측이나 오래된 정보가 아닌, <span className="text-emerald-400 font-bold">실시간 규제 변화</span>를 추적합니다.
+              </p>
+            </div>
+            <div className="flex gap-3">
+              {[
+                { icon: BadgeCheck, label: '공식 출처', value: '100%', color: 'text-emerald-400' },
+                { icon: Sparkles, label: '출처 추적', value: '100%', color: 'text-blue-400' },
+                { icon: Clock, label: '업데이트', value: '실시간', color: 'text-purple-300' },
+              ].map((item, i) => (
+                <div key={i} className="bg-white/10 rounded-xl p-4 text-center min-w-[80px]">
+                  <item.icon className={`w-5 h-5 ${item.color} mx-auto mb-1`} />
+                  <p className={`text-lg font-black ${item.color}`}>{item.value}</p>
+                  <p className="text-[10px] font-bold text-indigo-300 uppercase">{item.label}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        </CardContent>
+      </Card>
       
+      {/* AI Weekly Report Summary */}
+      {weeklyReport && (
+        <Card className="border-none shadow-lg bg-gradient-to-r from-emerald-50 to-teal-50 print:bg-white print:border print:border-emerald-200">
+          <CardContent className="p-6">
+            <div className="flex items-start gap-4">
+              <div className="w-12 h-12 rounded-2xl bg-emerald-500 flex items-center justify-center flex-shrink-0">
+                <Zap className="w-6 h-6 text-white" />
+              </div>
+              <div className="flex-1">
+                <div className="flex items-center gap-2 mb-2">
+                  <h3 className="text-lg font-black text-emerald-800">AI 주간 요약</h3>
+                  <Badge className="bg-emerald-100 text-emerald-700 border-emerald-200 text-[10px]">
+                    Auto Generated
+                  </Badge>
+                </div>
+                <p className="text-emerald-700 font-medium mb-4">{weeklyReport.summary}</p>
+                <div className="grid grid-cols-4 gap-3">
+                  <div className="bg-white rounded-xl p-3 text-center">
+                    <p className="text-2xl font-black text-emerald-600">{weeklyReport.statistics.total_documents}</p>
+                    <p className="text-[10px] font-bold text-slate-500 uppercase">총 문서</p>
+                  </div>
+                  <div className="bg-white rounded-xl p-3 text-center">
+                    <p className="text-2xl font-black text-blue-600">{weeklyReport.statistics.by_industry.INSURANCE || 0}</p>
+                    <p className="text-[10px] font-bold text-slate-500 uppercase">보험</p>
+                  </div>
+                  <div className="bg-white rounded-xl p-3 text-center">
+                    <p className="text-2xl font-black text-purple-600">{weeklyReport.statistics.by_industry.BANKING || 0}</p>
+                    <p className="text-[10px] font-bold text-slate-500 uppercase">은행</p>
+                  </div>
+                  <div className="bg-white rounded-xl p-3 text-center">
+                    <p className="text-2xl font-black text-red-600">{weeklyReport.statistics.urgent_alerts}</p>
+                    <p className="text-[10px] font-bold text-slate-500 uppercase">긴급</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Urgent Alerts */}
       {timelineSummary && timelineSummary.urgent_within_7_days.length > 0 && (
         <Alert variant="destructive" className="print:border-2 print:border-red-500">

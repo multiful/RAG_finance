@@ -18,7 +18,10 @@ import {
   ChevronRight,
   Building2,
   FileText,
-  Bell
+  Bell,
+  Flame,
+  Timer,
+  Zap
 } from 'lucide-react';
 import { getTimelineEvents, getTimelineSummary, getCriticalEvents, exportTimelineIcal } from '@/lib/api';
 import type { TimelineEvent, TimelineResponse, TimelineSummary } from '@/types';
@@ -310,23 +313,54 @@ export default function PolicyTimeline() {
         </div>
       </div>
       
-      {/* Urgent Alerts */}
+      {/* Urgent D-Day Countdown Banner */}
       {summary && summary.urgent_within_7_days.length > 0 && (
-        <Alert variant="destructive">
-          <AlertTriangle className="h-4 w-4" />
-          <AlertTitle>긴급 일정 알림</AlertTitle>
-          <AlertDescription>
-            7일 내 {summary.urgent_within_7_days.length}건의 중요 일정이 있습니다:
-            <ul className="mt-2 space-y-1">
-              {summary.urgent_within_7_days.slice(0, 3).map((item) => (
-                <li key={item.event_id} className="text-sm">
-                  <Clock className="h-3 w-3 inline mr-1" />
-                  <strong>D-{item.days_remaining}</strong>: {item.description}
-                </li>
-              ))}
-            </ul>
-          </AlertDescription>
-        </Alert>
+        <Card className="border-none shadow-xl bg-gradient-to-r from-red-600 via-red-500 to-orange-500 text-white overflow-hidden">
+          <CardContent className="p-6">
+            <div className="flex flex-col lg:flex-row lg:items-center gap-6">
+              <div className="flex items-center gap-4">
+                <div className="w-16 h-16 rounded-2xl bg-white/20 backdrop-blur flex items-center justify-center animate-pulse">
+                  <Flame className="w-8 h-8 text-white" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="text-xs font-black uppercase tracking-widest text-white/80">URGENT ALERT</span>
+                    <Badge className="bg-white/20 text-white border-0 text-[10px] font-bold">
+                      {summary.urgent_within_7_days.length}건
+                    </Badge>
+                  </div>
+                  <h3 className="text-xl font-black">7일 내 마감 규제 일정</h3>
+                  <p className="text-white/80 text-sm">즉시 검토 및 대응이 필요합니다</p>
+                </div>
+              </div>
+              
+              <div className="flex-1 grid grid-cols-1 md:grid-cols-3 gap-3">
+                {summary.urgent_within_7_days.slice(0, 3).map((item) => (
+                  <div 
+                    key={item.event_id}
+                    className="bg-white/10 backdrop-blur rounded-xl p-4 hover:bg-white/20 transition-colors"
+                  >
+                    <div className="flex items-center justify-between mb-2">
+                      <Badge className={`border-0 font-black text-sm ${
+                        item.days_remaining <= 3 
+                          ? 'bg-white text-red-600' 
+                          : 'bg-orange-300 text-orange-800'
+                      }`}>
+                        <Timer className="w-3 h-3 mr-1" />
+                        D-{item.days_remaining}
+                      </Badge>
+                      {item.is_critical && <Zap className="w-4 h-4 text-yellow-300" />}
+                    </div>
+                    <p className="text-sm font-medium line-clamp-2">{item.description}</p>
+                    <p className="text-xs text-white/60 mt-2">
+                      {new Date(item.event_date).toLocaleDateString('ko-KR')}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </CardContent>
+        </Card>
       )}
       
       {/* Summary Cards */}

@@ -12,6 +12,7 @@ import QualityDashboard from './sections/QualityDashboard';
 import PolicyTimeline from './sections/PolicyTimeline';
 import ComplianceWorkspace from './sections/ComplianceWorkspace';
 import ExecutiveSummary from './sections/ExecutiveSummary';
+import AnalyticsDashboard from './sections/AnalyticsDashboard';
 import { Toaster } from '@/components/ui/sonner';
 
 function NotFound() {
@@ -36,6 +37,7 @@ function App() {
         <Route path="/workspace/compliance" element={<ComplianceWorkspace />} />
         <Route path="/timeline" element={<PolicyTimeline />} />
         <Route path="/executive" element={<ExecutiveSummary />} />
+        <Route path="/analytics" element={<AnalyticsDashboard />} />
         <Route path="/observability" element={<QualityDashboard />} />
         <Route path="*" element={<NotFound />} />
       </Routes>

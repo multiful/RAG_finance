@@ -13,34 +13,35 @@ from app.api.pipeline_routes import router as pipeline_router
 from app.api.alert_routes import router as alert_router
 from app.api.timeline_routes import router as timeline_router
 from app.api.compliance_routes import router as compliance_router
+from app.api.analytics_routes import router as analytics_router
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan handler."""
     # Startup
-    print(f"🚀 Starting {settings.APP_NAME}")
-    print(f"📊 Phase A: Data Ingestion (LLM Ops)")
-    print(f"📊 Phase B: Serving Service (FastAPI + Redis)")
-    print(f"🔍 LangSmith enabled: {bool(settings.LANGSMITH_API_KEY)}")
-    print(f"📄 LlamaParse enabled: {bool(settings.LLAMAPARSE_API_KEY)}")
+    print(f"[START] Starting {settings.APP_NAME}")
+    print(f"[INFO] Phase A: Data Ingestion (LLM Ops)")
+    print(f"[INFO] Phase B: Serving Service (FastAPI + Redis)")
+    print(f"[INFO] LangSmith enabled: {bool(settings.LANGSMITH_API_KEY)}")
+    print(f"[INFO] LlamaParse enabled: {bool(settings.LLAMAPARSE_API_KEY)}")
     
     # Check Redis
     redis_ok = RedisClient.ping()
     if redis_ok:
-        print("✅ Redis connection: OK")
+        print("[OK] Redis connection: OK")
     else:
-        print("❌ Redis connection: FAILED (Check REDIS_URL or Docker)")
+        print("[FAIL] Redis connection: FAILED (Check REDIS_URL or Docker)")
     
     # Check OpenAI
     if not settings.OPENAI_API_KEY:
-        print("⚠️  WARNING: OPENAI_API_KEY is missing. RAG and Topic Detection will fail.")
+        print("[WARN] WARNING: OPENAI_API_KEY is missing. RAG and Topic Detection will fail.")
     else:
-        print(f"✅ OpenAI API: Configured (Model: {settings.OPENAI_MODEL})")
+        print(f"[OK] OpenAI API: Configured (Model: {settings.OPENAI_MODEL})")
     
     yield
     # Shutdown
-    print(f"👋 Shutting down {settings.APP_NAME}")
+    print(f"[STOP] Shutting down {settings.APP_NAME}")
     RedisClient.close()
 
 
@@ -75,7 +76,11 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "http://localhost:5173",
+        "http://localhost:5174",
+        "http://localhost:5175",
         "http://127.0.0.1:5173",
+        "http://127.0.0.1:5174",
+        "http://127.0.0.1:5175",
     ],
     allow_credentials=True,
     allow_methods=["*"],
@@ -90,6 +95,7 @@ app.include_router(pipeline_router, prefix=f"{settings.API_V1_PREFIX}/pipeline")
 app.include_router(alert_router, prefix=f"{settings.API_V1_PREFIX}")
 app.include_router(timeline_router, prefix=f"{settings.API_V1_PREFIX}")
 app.include_router(compliance_router, prefix=f"{settings.API_V1_PREFIX}/compliance", tags=["Compliance"])
+app.include_router(analytics_router, prefix=f"{settings.API_V1_PREFIX}", tags=["Analytics"])
 
 
 @app.get("/")
@@ -130,15 +136,35 @@ async def health_check():
     """Health check endpoint."""
     redis_ok = RedisClient.ping()
     openai_ok = bool(settings.OPENAI_API_KEY)
+    
+    # Check Supabase/Vector DB connection
+    db_ok = False
+    try:
+        from app.core.database import get_db
+        db = get_db()
+        result = db.table("documents").select("document_id").limit(1).execute()
+        db_ok = True
+    except Exception:
+        db_ok = False
+    
+    all_ok = redis_ok and openai_ok and db_ok
+    
     return {
-        "status": "healthy" if (redis_ok and openai_ok) else "warning",
+        "status": "healthy" if all_ok else "degraded" if (openai_ok and db_ok) else "warning",
         "timestamp": datetime.now().isoformat(),
         "services": {
             "api": True,
             "redis": redis_ok,
+            "supabase": db_ok,
             "openai": openai_ok,
             "langsmith": bool(settings.LANGSMITH_API_KEY),
             "llamaparse": bool(settings.LLAMAPARSE_API_KEY)
+        },
+        "components": {
+            "rag_engine": {"status": "operational" if (openai_ok and db_ok) else "degraded", "label": "RAG 엔진"},
+            "vector_db": {"status": "operational" if db_ok else "error", "label": "벡터 DB"},
+            "llm_api": {"status": "operational" if openai_ok else "error", "label": "LLM API"},
+            "cache": {"status": "operational" if redis_ok else "degraded", "label": "캐시"}
         },
         "phases": {
             "phase_a": "Data Ingestion Ready",

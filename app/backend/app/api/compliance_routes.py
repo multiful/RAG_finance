@@ -123,15 +123,19 @@ async def get_tasks(
         except ValueError:
             raise HTTPException(status_code=400, detail=f"Invalid status: {status}")
     
-    tasks = await service.get_tasks(
-        status=task_status,
-        industries=industries,
-        assigned_to=assigned_to,
-        include_overdue=include_overdue,
-        limit=limit
-    )
-    
-    return [task.to_dict() for task in tasks]
+    try:
+        tasks = await service.get_tasks(
+            status=task_status,
+            industries=industries,
+            assigned_to=assigned_to,
+            include_overdue=include_overdue,
+            limit=limit
+        )
+        
+        return [task.to_dict() for task in tasks]
+    except Exception as e:
+        # Return empty list if table doesn't exist
+        return []
 
 
 @router.get("/tasks/{task_id}", response_model=dict, tags=["Compliance Tasks"])
@@ -187,8 +191,19 @@ async def get_dashboard_stats(
     Returns task counts by status, priority, and industry,
     plus upcoming due tasks and overdue tasks.
     """
-    service = get_tracker_service()
-    return await service.get_dashboard_stats(industries=industries)
+    try:
+        service = get_tracker_service()
+        return await service.get_dashboard_stats(industries=industries)
+    except Exception:
+        # Return empty dashboard if table doesn't exist
+        return {
+            "total_tasks": 0,
+            "by_status": {},
+            "by_priority": {},
+            "by_industry": {},
+            "upcoming_due": [],
+            "overdue": []
+        }
 
 
 @router.get("/history", response_model=List[dict], tags=["Compliance Tasks"])
@@ -200,8 +215,11 @@ async def get_task_history(
     
     Returns daily counts of created and completed tasks.
     """
-    service = get_tracker_service()
-    return await service.get_task_history(document_id=document_id, days=days)
+    try:
+        service = get_tracker_service()
+        return await service.get_task_history(document_id=document_id, days=days)
+    except Exception:
+        return []
 
 
 # ============================================

@@ -8,7 +8,14 @@ import {
   TrendingUp,
   AlertTriangle,
   Database,
-  AlertCircle
+  AlertCircle,
+  Shield,
+  Sparkles,
+  Eye,
+  Scale,
+  Building2,
+  Activity,
+  PieChart as PieChartIcon
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -16,12 +23,27 @@ import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { getDashboardStats, triggerCollection, triggerFullPipeline, getRecentDocuments, getJobStatus } from '@/lib/api';
+import {
+  AreaChart,
+  Area,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+  PieChart,
+  Pie,
+  Cell,
+} from 'recharts';
+import { getDashboardStats, triggerCollection, triggerFullPipeline, getRecentDocuments, getJobStatus, getHourlyStats, type HourlyStats } from '@/lib/api';
 import type { DashboardStats, Document } from '@/types';
+
+const CHART_COLORS = ['#6366f1', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4'];
 
 export default function MonitorDashboard() {
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [recentDocs, setRecentDocs] = useState<Document[]>([]);
+  const [hourlyStats, setHourlyStats] = useState<HourlyStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [collecting, setCollecting] = useState(false);
@@ -31,13 +53,14 @@ export default function MonitorDashboard() {
   const fetchData = useCallback(async (isSilent = false) => {
     if (!isSilent) setLoading(true);
     try {
-      const [statsData, recentData] = await Promise.all([
+      const [statsData, recentData, hourlyData] = await Promise.all([
         getDashboardStats(),
         getRecentDocuments(24),
+        getHourlyStats(24),
       ]);
       setStats(statsData);
-      // More robust check for recent data
       setRecentDocs(recentData?.documents || []);
+      setHourlyStats(hourlyData);
       setError(null);
     } catch (err) {
       console.error('Error fetching dashboard data:', err);
@@ -207,6 +230,44 @@ export default function MonitorDashboard() {
         </Card>
       )}
 
+      {/* Why This System - Differentiation Banner */}
+      <Card className="border-none shadow-lg bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 text-white rounded-3xl overflow-hidden">
+        <CardContent className="p-8">
+          <div className="flex flex-col lg:flex-row lg:items-center gap-6">
+            <div className="flex-1">
+              <div className="flex items-center gap-2 mb-3">
+                <Shield className="w-5 h-5 text-emerald-400" />
+                <span className="text-xs font-black uppercase tracking-widest text-emerald-400">
+                  Enterprise Compliance RAG
+                </span>
+              </div>
+              <h3 className="text-2xl font-black mb-2">
+                금융 규제 전문 RAG 시스템
+              </h3>
+              <p className="text-slate-400 text-sm font-medium">
+                금융위원회·금융감독원 <span className="text-white font-bold">공식 문서</span>를 기반으로 
+                <span className="text-emerald-400 font-bold"> 출처가 명확한 답변</span>을 제공합니다.
+              </p>
+            </div>
+            
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+              {[
+                { icon: Shield, label: '공식 출처', value: '금융위/금감원', color: 'text-emerald-400', bg: 'bg-emerald-500/20' },
+                { icon: Sparkles, label: '출처 추적', value: '100% 제공', color: 'text-blue-400', bg: 'bg-blue-500/20' },
+                { icon: Eye, label: '실시간 모니터링', value: '24/7 수집', color: 'text-purple-400', bg: 'bg-purple-500/20' },
+                { icon: Scale, label: '감사 추적', value: '이력 저장', color: 'text-amber-400', bg: 'bg-amber-500/20' },
+              ].map((item, i) => (
+                <div key={i} className={`${item.bg} rounded-2xl p-4 text-center`}>
+                  <item.icon className={`w-6 h-6 ${item.color} mx-auto mb-2`} />
+                  <p className="text-[10px] font-black uppercase tracking-wider text-slate-400 mb-1">{item.label}</p>
+                  <p className={`text-sm font-black ${item.color}`}>{item.value}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
       {/* Stats Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         {[
@@ -238,6 +299,122 @@ export default function MonitorDashboard() {
             </CardContent>
           </Card>
         ))}
+      </div>
+
+      {/* Collection Charts */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* Hourly Collection Chart */}
+        <Card className="lg:col-span-2 border-none shadow-sm bg-white rounded-2xl">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-lg font-bold flex items-center gap-2">
+              <Activity className="w-5 h-5 text-indigo-500" />
+              시간별 수집 현황
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            {hourlyStats?.hourly && hourlyStats.hourly.length > 0 ? (
+              <ResponsiveContainer width="100%" height={200}>
+                <AreaChart data={hourlyStats.hourly.slice(-12)}>
+                  <defs>
+                    <linearGradient id="colorCount" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#6366f1" stopOpacity={0.3}/>
+                      <stop offset="95%" stopColor="#6366f1" stopOpacity={0}/>
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                  <XAxis 
+                    dataKey="hour" 
+                    tick={{ fontSize: 10, fill: '#94a3b8' }}
+                    tickFormatter={(value) => value.split(' ')[1]?.replace(':00', 'h') || value}
+                  />
+                  <YAxis tick={{ fontSize: 10, fill: '#94a3b8' }} />
+                  <Tooltip 
+                    contentStyle={{ 
+                      backgroundColor: '#1e293b', 
+                      border: 'none', 
+                      borderRadius: '12px',
+                      color: 'white',
+                      fontSize: '12px'
+                    }}
+                    labelFormatter={(value) => `시간: ${value}`}
+                  />
+                  <Area 
+                    type="monotone" 
+                    dataKey="count" 
+                    stroke="#6366f1" 
+                    strokeWidth={2}
+                    fillOpacity={1} 
+                    fill="url(#colorCount)" 
+                    name="수집 문서"
+                  />
+                </AreaChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="h-[200px] flex items-center justify-center text-slate-400">
+                데이터 로딩 중...
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Source Distribution Pie Chart */}
+        <Card className="border-none shadow-sm bg-white rounded-2xl">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-lg font-bold flex items-center gap-2">
+              <PieChartIcon className="w-5 h-5 text-emerald-500" />
+              소스별 분포
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            {hourlyStats?.by_source && hourlyStats.by_source.length > 0 ? (
+              <div className="flex flex-col items-center">
+                <ResponsiveContainer width="100%" height={150}>
+                  <PieChart>
+                    <Pie
+                      data={hourlyStats.by_source}
+                      cx="50%"
+                      cy="50%"
+                      innerRadius={40}
+                      outerRadius={60}
+                      paddingAngle={2}
+                      dataKey="count"
+                      nameKey="name"
+                    >
+                      {hourlyStats.by_source.map((_, index) => (
+                        <Cell key={`cell-${index}`} fill={CHART_COLORS[index % CHART_COLORS.length]} />
+                      ))}
+                    </Pie>
+                    <Tooltip 
+                      contentStyle={{ 
+                        backgroundColor: '#1e293b', 
+                        border: 'none', 
+                        borderRadius: '8px',
+                        color: 'white',
+                        fontSize: '12px'
+                      }}
+                    />
+                  </PieChart>
+                </ResponsiveContainer>
+                <div className="flex flex-wrap justify-center gap-2 mt-2">
+                  {hourlyStats.by_source.slice(0, 4).map((item, idx) => (
+                    <div key={item.name} className="flex items-center gap-1 text-xs">
+                      <div 
+                        className="w-2 h-2 rounded-full" 
+                        style={{ backgroundColor: CHART_COLORS[idx % CHART_COLORS.length] }}
+                      />
+                      <span className="text-slate-500 truncate max-w-[80px]">{item.name}</span>
+                      <span className="font-bold text-slate-700">{item.count}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <div className="h-[200px] flex items-center justify-center text-slate-400">
+                데이터 없음
+              </div>
+            )}
+          </CardContent>
+        </Card>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
