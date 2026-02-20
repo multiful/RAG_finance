@@ -102,16 +102,18 @@ class RAGService:
         chunks: List[Dict[str, Any]],
         consistency_score: float
     ) -> tuple[float, float, float]:
-        """Calculate grounding and confidence scores.
+        """Enhanced grounding and confidence score calculation.
+        
+        Features:
+        - Sentence-level grounding analysis
+        - Hallucination detection
+        - Uncertainty quantification
         
         Returns (grounding_score, confidence_score, citation_coverage).
         """
         # 1. Calculate Citation Coverage
-        # Check how many [출처 N] or [1], [2] exist in the answer
         citations_found = set(re.findall(r'\[(?:출처\s*)?(\d+)\]', answer))
         unique_citations = len(citations_found)
-        
-        # citation_coverage = ratio of chunks actually used
         citation_coverage = min(1.0, unique_citations / max(1, len(chunks)))
         
         # 2. Calculate Evidence Strength
@@ -126,17 +128,129 @@ class RAGService:
         
         evidence_strength = sum(cited_similarities) / len(cited_similarities) if cited_similarities else 0.0
         
-        # 3. Grounding Score (0-100)
-        # Combination of consistency score (LLM check), coverage and evidence strength
-        grounding = (0.5 * consistency_score + 0.3 * evidence_strength + 0.2 * citation_coverage) * 100
+        # 3. Sentence-level Grounding Analysis
+        sentence_grounding = await self._analyze_sentence_grounding(answer, chunks)
         
-        # 4. Confidence Score (0-100)
-        # Factor in ambiguity penalty
-        ambiguity_markers = ["불확실", "추측", "가능성이 있음", "확인되지 않음"]
-        ambiguity_penalty = 20 if any(m in answer for m in ambiguity_markers) else 0
-        confidence = max(0.0, grounding - ambiguity_penalty)
+        # 4. Hallucination Detection
+        hallucination_score = await self._detect_hallucination(answer, chunks)
+        
+        # 5. Calculate Enhanced Grounding Score (0-100)
+        grounding = (
+            0.30 * consistency_score +           # LLM consistency check
+            0.20 * evidence_strength +           # Retrieved document quality
+            0.20 * citation_coverage +           # Citation usage ratio
+            0.15 * sentence_grounding +          # Sentence-level verification
+            0.15 * (1 - hallucination_score)     # Hallucination penalty
+        ) * 100
+        
+        # 6. Uncertainty Quantification
+        uncertainty_markers = [
+            ("불확실", 15), ("추측", 20), ("가능성이 있음", 10),
+            ("확인되지 않음", 15), ("추정", 10), ("아마도", 10),
+            ("~인 것으로 보인다", 5), ("정확하지 않", 15)
+        ]
+        
+        total_penalty = 0
+        for marker, penalty in uncertainty_markers:
+            if marker in answer:
+                total_penalty += penalty
+        
+        # 7. Calculate Confidence Score
+        confidence = max(0.0, grounding - min(total_penalty, 40))
+        
+        # Bonus for high-quality responses
+        if citation_coverage >= 0.6 and hallucination_score < 0.1:
+            confidence = min(100.0, confidence + 5)
         
         return round(grounding, 1), round(confidence, 1), round(citation_coverage, 2)
+    
+    async def _analyze_sentence_grounding(
+        self,
+        answer: str,
+        chunks: List[Dict[str, Any]]
+    ) -> float:
+        """Analyze how well each sentence is grounded in source documents.
+        
+        Returns a score from 0 to 1.
+        """
+        sentences = re.split(r'[.!?]\s+', answer)
+        sentences = [s.strip() for s in sentences if len(s.strip()) > 10]
+        
+        if not sentences or not chunks:
+            return 0.5
+        
+        chunk_texts = " ".join([c.get("chunk_text", "") for c in chunks[:5]])
+        
+        grounded_count = 0
+        for sentence in sentences[:10]:  # Analyze first 10 sentences
+            # Check for explicit citation
+            if re.search(r'\[(?:출처\s*)?\d+\]', sentence):
+                grounded_count += 1
+                continue
+            
+            # Check keyword overlap
+            sentence_words = set(re.findall(r'[가-힣a-zA-Z]{2,}', sentence.lower()))
+            chunk_words = set(re.findall(r'[가-힣a-zA-Z]{2,}', chunk_texts.lower()))
+            
+            if sentence_words:
+                overlap = len(sentence_words & chunk_words) / len(sentence_words)
+                if overlap > 0.3:
+                    grounded_count += 0.8
+                elif overlap > 0.15:
+                    grounded_count += 0.5
+        
+        return min(1.0, grounded_count / max(1, len(sentences[:10])))
+    
+    async def _detect_hallucination(
+        self,
+        answer: str,
+        chunks: List[Dict[str, Any]]
+    ) -> float:
+        """Detect potential hallucinations in the answer.
+        
+        Returns a score from 0 (no hallucination) to 1 (high hallucination).
+        """
+        if not chunks:
+            return 0.5
+        
+        chunk_texts = " ".join([c.get("chunk_text", "") for c in chunks])
+        
+        # Check for specific numeric claims
+        numbers_in_answer = re.findall(r'\d+(?:\.\d+)?(?:%|원|억|만|년|월|일|조|개월)?', answer)
+        numbers_in_chunks = re.findall(r'\d+(?:\.\d+)?(?:%|원|억|만|년|월|일|조|개월)?', chunk_texts)
+        
+        ungrounded_numbers = 0
+        for num in numbers_in_answer:
+            if num not in numbers_in_chunks:
+                if any(c.isdigit() for c in num):
+                    ungrounded_numbers += 1
+        
+        # Check for specific entity mentions (organization names, law names)
+        entity_patterns = [
+            r'(?:법|규정|규칙|지침|고시|조례)(?:안)?',
+            r'제\d+조(?:제\d+항)?',
+            r'(?:금융위원회|금감원|한국은행|예금보험공사)',
+        ]
+        
+        ungrounded_entities = 0
+        for pattern in entity_patterns:
+            entities_in_answer = re.findall(pattern, answer)
+            entities_in_chunks = re.findall(pattern, chunk_texts)
+            
+            for entity in entities_in_answer:
+                if entity not in entities_in_chunks:
+                    ungrounded_entities += 1
+        
+        # Calculate hallucination score
+        total_claims = len(numbers_in_answer) + sum(len(re.findall(p, answer)) for p in entity_patterns)
+        ungrounded_claims = ungrounded_numbers + ungrounded_entities
+        
+        if total_claims == 0:
+            return 0.1  # Low hallucination risk for general statements
+        
+        hallucination_ratio = ungrounded_claims / total_claims
+        
+        return min(1.0, hallucination_ratio)
 
     async def _expand_query(self, query: str) -> str:
         """Expand query with financial synonyms and related terms."""
