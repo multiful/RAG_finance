@@ -18,7 +18,8 @@ import {
   RefreshCw,
   LayoutDashboard,
   Radar,
-  Activity
+  Activity,
+  Calendar
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -34,6 +35,7 @@ interface NavItem {
 const navItems: NavItem[] = [
   { id: 'monitor', path: '/monitoring', label: 'Ingestion Health', icon: LayoutDashboard },
   { id: 'radar', path: '/radar', label: 'Issue Radar', icon: Radar, badge: 3 },
+  { id: 'timeline', path: '/timeline', label: 'Policy Timeline', icon: Calendar },
   { id: 'qa', path: '/workspace/qa', label: 'Q&A Workspace', icon: Search },
   { id: 'checklist', path: '/workspace/checklist', label: 'Compliance Hub', icon: CheckSquare },
   { id: 'quality', path: '/observability', label: 'RAG Observability', icon: Activity },
