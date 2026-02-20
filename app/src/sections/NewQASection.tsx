@@ -8,12 +8,15 @@ import {
   Search,
   Info,
   Radar,
+  Shield,
 } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
+import { Switch } from '@/components/ui/switch';
+import { Label } from '@/components/ui/label';
 import {
   Sheet,
   SheetContent,
@@ -41,6 +44,7 @@ export default function NewQASection() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
+  const [complianceMode, setComplianceMode] = useState(false);
   const [selectedCitation, setSelectedCitation] = useState<Citation | null>(null);
   const [inspectorOpen, setInspectorOpen] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -69,7 +73,10 @@ export default function NewQASection() {
     setLoading(true);
 
     try {
-      const response = await askQuestion({ question: userMessage.content });
+      const response = await askQuestion({ 
+        question: userMessage.content,
+        compliance_mode: complianceMode
+      });
 
       const assistantMessage: Message = {
         id: (Date.now() + 1).toString(),
@@ -118,6 +125,22 @@ export default function NewQASection() {
           <p className="text-slate-500 mt-2 text-lg">
             금융정책 문서 기반 인공지능 분석 및 근거 기반 답변
           </p>
+        </div>
+        <div className="flex items-center gap-3 bg-white p-3 rounded-2xl shadow-sm border border-slate-100">
+          <div className={`p-2 rounded-lg ${complianceMode ? 'bg-primary/10 text-primary' : 'bg-slate-100 text-slate-400'}`}>
+            <Shield className="w-5 h-5" />
+          </div>
+          <div className="flex flex-col">
+            <Label htmlFor="compliance-mode" className="text-xs font-black uppercase tracking-tighter cursor-pointer">
+              Compliance Mode
+            </Label>
+            <span className="text-[10px] font-bold text-slate-400">Strict sentence-level citations</span>
+          </div>
+          <Switch 
+            id="compliance-mode" 
+            checked={complianceMode} 
+            onCheckedChange={setComplianceMode}
+          />
         </div>
       </div>
 
