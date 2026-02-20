@@ -11,6 +11,7 @@ import ChecklistGenerator from './sections/ChecklistGenerator';
 import QualityDashboard from './sections/QualityDashboard';
 import PolicyTimeline from './sections/PolicyTimeline';
 import ComplianceWorkspace from './sections/ComplianceWorkspace';
+import ExecutiveSummary from './sections/ExecutiveSummary';
 import { Toaster } from '@/components/ui/sonner';
 
 function NotFound() {
@@ -34,6 +35,7 @@ function App() {
         <Route path="/workspace/checklist" element={<ChecklistGenerator />} />
         <Route path="/workspace/compliance" element={<ComplianceWorkspace />} />
         <Route path="/timeline" element={<PolicyTimeline />} />
+        <Route path="/executive" element={<ExecutiveSummary />} />
         <Route path="/observability" element={<QualityDashboard />} />
         <Route path="*" element={<NotFound />} />
       </Routes>
