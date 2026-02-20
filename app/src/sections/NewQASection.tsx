@@ -8,11 +8,16 @@ import {
   Search,
   Info,
   Radar,
+  Building2,
+  Landmark,
+  TrendingUp,
+  ChevronDown,
 } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Progress } from '@/components/ui/progress';
 import {
   Sheet,
@@ -36,6 +41,138 @@ interface Message {
   hallucination_flag?: boolean;
   timestamp: Date;
 }
+
+interface QATemplate {
+  category: string;
+  questions: string[];
+}
+
+const INDUSTRY_TEMPLATES: Record<string, { icon: React.ElementType; label: string; color: string; templates: QATemplate[] }> = {
+  insurance: {
+    icon: Building2,
+    label: '보험업',
+    color: 'bg-blue-500',
+    templates: [
+      {
+        category: 'K-ICS / 자본규제',
+        questions: [
+          'K-ICS 2.0 도입에 따른 보험사 자본적정성 평가 기준은?',
+          'K-ICS와 기존 RBC 제도의 주요 차이점은?',
+          'K-ICS 경과조치 기간 중 보험사 대응 의무는?',
+        ],
+      },
+      {
+        category: '보험업감독규정',
+        questions: [
+          '보험업감독규정 최근 개정사항 요약해줘',
+          '보험상품 신고/심사 제도 변경사항은?',
+          '보험사 내부통제기준 강화 내용은?',
+        ],
+      },
+      {
+        category: '소비자보호',
+        questions: [
+          '금융소비자보호법에 따른 보험 판매 규제는?',
+          '보험계약 청약철회권 관련 규정 변경사항은?',
+          '고령 소비자 보호를 위한 보험 판매 기준은?',
+        ],
+      },
+    ],
+  },
+  banking: {
+    icon: Landmark,
+    label: '은행업',
+    color: 'bg-green-500',
+    templates: [
+      {
+        category: 'LCR/NSFR 유동성',
+        questions: [
+          'LCR(유동성커버리지비율) 산정 기준 변경사항은?',
+          'NSFR(순안정자금조달비율) 규제 적용 현황은?',
+          '시스템적 중요 은행의 추가 유동성 요건은?',
+        ],
+      },
+      {
+        category: '가계대출 규제',
+        questions: [
+          'DSR 규제 현황과 최근 변경사항은?',
+          'LTV 규제 지역별 적용 기준은?',
+          '스트레스 DSR 도입 내용과 시행 일정은?',
+        ],
+      },
+      {
+        category: '내부통제/리스크',
+        questions: [
+          '은행 내부통제기준 최근 강화 내용은?',
+          '금리 리스크 관리 기준 변경사항은?',
+          '운영리스크 자본 산출 방식 개정 내용은?',
+        ],
+      },
+    ],
+  },
+  securities: {
+    icon: TrendingUp,
+    label: '증권업',
+    color: 'bg-purple-500',
+    templates: [
+      {
+        category: '자본시장법',
+        questions: [
+          '자본시장법 최근 주요 개정사항은?',
+          '증권사 영업용순자본비율 규제 변경은?',
+          '파생상품 투자자 보호 강화 내용은?',
+        ],
+      },
+      {
+        category: '공매도/시장규제',
+        questions: [
+          '공매도 규제 현황과 향후 방향은?',
+          '불공정거래 규제 강화 내용은?',
+          '외국인 투자자 관련 규제 변경사항은?',
+        ],
+      },
+      {
+        category: '기업금융',
+        questions: [
+          '대주주 적격성 심사 기준 변경사항은?',
+          'IPO 관련 규제 최근 변경사항은?',
+          'M&A 공시 의무 강화 내용은?',
+        ],
+      },
+    ],
+  },
+  general: {
+    icon: Search,
+    label: '공통',
+    color: 'bg-slate-500',
+    templates: [
+      {
+        category: '금융소비자보호',
+        questions: [
+          '금융소비자보호법 핵심 내용과 금융기관 의무는?',
+          '적합성/적정성 원칙 적용 기준은?',
+          '설명의무 위반 시 제재 내용은?',
+        ],
+      },
+      {
+        category: 'ESG/지속가능',
+        questions: [
+          'ESG 공시 의무화 로드맵과 일정은?',
+          '녹색금융 분류체계 적용 기준은?',
+          '기후리스크 관리 가이드라인 내용은?',
+        ],
+      },
+      {
+        category: '디지털금융',
+        questions: [
+          '가상자산 관련 최신 규제 동향은?',
+          '마이데이터 사업자 의무사항은?',
+          '오픈뱅킹 확대 적용 내용은?',
+        ],
+      },
+    ],
+  },
+};
 
 export default function NewQASection() {
   const [messages, setMessages] = useState<Message[]>([]);
@@ -127,34 +264,59 @@ export default function NewQASection() {
           <Card className="flex-1 flex flex-col border-none shadow-xl shadow-slate-200/50 bg-white rounded-[2rem] overflow-hidden">
             <CardContent className="flex-1 overflow-y-auto p-6 space-y-6 scrollbar-hide">
               {messages.length === 0 ? (
-                <div className="h-full flex flex-col items-center justify-center text-center p-8">
-                  <div className="w-20 h-20 rounded-[2.5rem] bg-indigo-50 flex items-center justify-center mb-8 shadow-inner">
-                    <Send className="w-8 h-8 text-indigo-500" />
+                <div className="h-full flex flex-col p-4">
+                  <div className="text-center mb-6">
+                    <div className="w-16 h-16 rounded-[2rem] bg-indigo-50 flex items-center justify-center mx-auto mb-4 shadow-inner">
+                      <Send className="w-7 h-7 text-indigo-500" />
+                    </div>
+                    <h3 className="text-lg font-black text-slate-900 mb-2">
+                      업권별 질문 템플릿
+                    </h3>
+                    <p className="text-slate-500 font-medium text-sm">
+                      자주 묻는 질문을 선택하거나 직접 입력하세요
+                    </p>
                   </div>
-                  <h3 className="text-xl font-black text-slate-900 mb-3">
-                    무엇을 도와드릴까요?
-                  </h3>
-                  <p className="text-slate-500 font-medium max-w-xs mb-10 leading-relaxed">
-                    최신 금융 정책과 규제에 대해 질문하시면 근거 문서와 함께 답변해
-                    드립니다.
-                  </p>
-                  <div className="grid grid-cols-1 gap-3 w-full max-w-md">
-                    {[
-                      '금소법 시행에 따른 보험사 대응 의무',
-                      '가계부채 관리를 위한 DSR 규제 강화 방안',
-                      'ESG 공시 의무화 로드맵 요약',
-                    ].map((q) => (
-                      <button
-                        key={q}
-                        onClick={() => setInput(q)}
-                        className="px-6 py-4 bg-slate-50 border border-slate-100 rounded-2xl text-sm font-bold text-slate-600 hover:bg-white hover:border-primary hover:text-primary hover:shadow-lg hover:shadow-primary/5 transition-all text-left flex items-center gap-3 group"
-                        type="button"
-                      >
-                        <div className="w-2 h-2 rounded-full bg-slate-200 group-hover:bg-primary transition-colors" />
-                        {q}
-                      </button>
+                  
+                  <Tabs defaultValue="general" className="flex-1">
+                    <TabsList className="grid grid-cols-4 mb-4">
+                      {Object.entries(INDUSTRY_TEMPLATES).map(([key, { icon: Icon, label, color }]) => (
+                        <TabsTrigger 
+                          key={key} 
+                          value={key}
+                          className="text-xs font-bold data-[state=active]:bg-slate-900 data-[state=active]:text-white"
+                        >
+                          <Icon className="w-3 h-3 mr-1" />
+                          {label}
+                        </TabsTrigger>
+                      ))}
+                    </TabsList>
+                    
+                    {Object.entries(INDUSTRY_TEMPLATES).map(([key, { templates, color }]) => (
+                      <TabsContent key={key} value={key} className="mt-0 space-y-4 overflow-y-auto max-h-[400px]">
+                        {templates.map((template) => (
+                          <div key={template.category} className="space-y-2">
+                            <h4 className="text-xs font-black text-slate-400 uppercase tracking-wider px-2">
+                              {template.category}
+                            </h4>
+                            <div className="space-y-2">
+                              {template.questions.map((q) => (
+                                <button
+                                  key={q}
+                                  onClick={() => setInput(q)}
+                                  className="w-full px-4 py-3 bg-slate-50 border border-slate-100 rounded-xl text-sm font-medium text-slate-600 hover:bg-white hover:border-primary hover:text-primary hover:shadow-md transition-all text-left flex items-center gap-3 group"
+                                  type="button"
+                                >
+                                  <div className={`w-2 h-2 rounded-full ${color} opacity-60 group-hover:opacity-100 transition-opacity`} />
+                                  <span className="flex-1">{q}</span>
+                                  <ChevronDown className="w-4 h-4 opacity-0 group-hover:opacity-100 -rotate-90 transition-all" />
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        ))}
+                      </TabsContent>
                     ))}
-                  </div>
+                  </Tabs>
                 </div>
               ) : (
                 messages.map((message) => (
