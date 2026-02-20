@@ -19,7 +19,8 @@ import {
   LayoutDashboard,
   Radar,
   Activity,
-  Calendar
+  Calendar,
+  ClipboardList
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -37,7 +38,8 @@ const navItems: NavItem[] = [
   { id: 'radar', path: '/radar', label: 'Issue Radar', icon: Radar, badge: 3 },
   { id: 'timeline', path: '/timeline', label: 'Policy Timeline', icon: Calendar },
   { id: 'qa', path: '/workspace/qa', label: 'Q&A Workspace', icon: Search },
-  { id: 'checklist', path: '/workspace/checklist', label: 'Compliance Hub', icon: CheckSquare },
+  { id: 'checklist', path: '/workspace/checklist', label: 'Checklist Gen', icon: CheckSquare },
+  { id: 'compliance', path: '/workspace/compliance', label: 'Task Manager', icon: ClipboardList },
   { id: 'quality', path: '/observability', label: 'RAG Observability', icon: Activity },
 ];
 
