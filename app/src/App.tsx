@@ -9,6 +9,7 @@ import IndustryPanel from './sections/IndustryPanel';
 import NewQASection from './sections/NewQASection';
 import ChecklistGenerator from './sections/ChecklistGenerator';
 import QualityDashboard from './sections/QualityDashboard';
+import PolicyTimeline from './sections/PolicyTimeline';
 import { Toaster } from '@/components/ui/sonner';
 
 function NotFound() {
@@ -30,6 +31,7 @@ function App() {
         <Route path="/industry" element={<IndustryPanel />} />
         <Route path="/workspace/qa" element={<NewQASection />} />
         <Route path="/workspace/checklist" element={<ChecklistGenerator />} />
+        <Route path="/timeline" element={<PolicyTimeline />} />
         <Route path="/observability" element={<QualityDashboard />} />
         <Route path="*" element={<NotFound />} />
       </Routes>

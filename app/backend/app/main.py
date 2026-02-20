@@ -10,6 +10,9 @@ from app.api.routes import router as main_router
 from app.api.advanced_routes import router as advanced_router
 from app.api.governance_routes import router as governance_router
 from app.api.pipeline_routes import router as pipeline_router
+from app.api.alert_routes import router as alert_router
+from app.api.timeline_routes import router as timeline_router
+from app.api.compliance_routes import router as compliance_router
 
 
 @asynccontextmanager
@@ -84,6 +87,9 @@ app.include_router(main_router, prefix=settings.API_V1_PREFIX)
 app.include_router(advanced_router, prefix=f"{settings.API_V1_PREFIX}/advanced", tags=["Advanced"])
 app.include_router(governance_router, prefix=f"{settings.API_V1_PREFIX}/advanced", tags=["Governance"])
 app.include_router(pipeline_router, prefix=f"{settings.API_V1_PREFIX}/pipeline")
+app.include_router(alert_router, prefix=f"{settings.API_V1_PREFIX}")
+app.include_router(timeline_router, prefix=f"{settings.API_V1_PREFIX}")
+app.include_router(compliance_router, prefix=f"{settings.API_V1_PREFIX}")
 
 
 @app.get("/")
@@ -105,13 +111,16 @@ async def root():
             "Hybrid Vector Search (BM25 + Embedding)",
             "Cross-Encoder Reranking",
             "Guardrail & Hallucination Detection",
-            "Redis Caching Layer"
+            "Redis Caching Layer",
+            "Smart Alert System",
+            "Policy Timeline Tracker"
         ],
         "docs": "/docs",
         "endpoints": {
             "main": f"{settings.API_V1_PREFIX}",
             "advanced": f"{settings.API_V1_PREFIX}/advanced",
-            "pipeline": f"{settings.API_V1_PREFIX}/pipeline"
+            "pipeline": f"{settings.API_V1_PREFIX}/pipeline",
+            "alerts": f"{settings.API_V1_PREFIX}/alerts"
         }
     }
 

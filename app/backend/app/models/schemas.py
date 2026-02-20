@@ -256,3 +256,113 @@ class GovernanceMetricsResponse(BaseModel):
     avg_hallucination_rate: float
     sample_size: int
     last_updated: datetime
+
+
+# ==================== Smart Alert Models ====================
+
+class AlertPriority(str, Enum):
+    """Alert priority levels."""
+    CRITICAL = "critical"
+    HIGH = "high"
+    MEDIUM = "medium"
+    LOW = "low"
+
+
+class AlertChannel(str, Enum):
+    """Alert notification channels."""
+    WEBHOOK = "webhook"
+    EMAIL = "email"
+    SLACK = "slack"
+    IN_APP = "in_app"
+
+
+class AlertSubscription(BaseModel):
+    """User subscription for alerts."""
+    subscription_id: Optional[str] = None
+    user_email: str
+    industries: List[IndustryType]
+    channels: List[AlertChannel]
+    min_priority: AlertPriority = AlertPriority.MEDIUM
+    webhook_url: Optional[str] = None
+    is_active: bool = True
+
+
+class AlertSubscriptionCreate(BaseModel):
+    """Create alert subscription request."""
+    user_email: str
+    industries: List[IndustryType]
+    channels: List[AlertChannel] = [AlertChannel.IN_APP]
+    min_priority: AlertPriority = AlertPriority.MEDIUM
+    webhook_url: Optional[str] = None
+
+
+class SmartAlertResponse(BaseModel):
+    """Enhanced alert response with urgency analysis."""
+    alert_id: str
+    document_id: str
+    document_title: str
+    published_at: datetime
+    priority: AlertPriority
+    urgency_score: float = Field(..., ge=0, le=100)
+    industries: List[IndustryType]
+    impact_summary: str
+    key_deadlines: List[Dict[str, Any]]
+    action_items: List[str]
+    affected_regulations: List[str]
+    generated_at: datetime
+    notification_sent: bool = False
+
+
+class AlertNotificationRequest(BaseModel):
+    """Request to send alert notification."""
+    alert_id: str
+    channels: List[AlertChannel]
+    recipients: Optional[List[str]] = None
+
+
+class AlertStatsResponse(BaseModel):
+    """Alert statistics response."""
+    total_alerts_24h: int
+    critical_alerts: int
+    high_alerts: int
+    by_industry: Dict[str, int]
+    avg_urgency_score: float
+    pending_notifications: int
+
+
+# ==================== Policy Timeline Models ====================
+
+class TimelineEventType(str, Enum):
+    """Types of timeline events."""
+    EFFECTIVE_DATE = "effective_date"
+    DEADLINE = "deadline"
+    GRACE_PERIOD_END = "grace_period_end"
+    SUBMISSION_DUE = "submission_due"
+    REVIEW_DATE = "review_date"
+
+
+class TimelineEvent(BaseModel):
+    """Policy timeline event."""
+    event_id: str
+    document_id: str
+    document_title: str
+    event_type: TimelineEventType
+    event_date: datetime
+    description: str
+    target_entities: List[str]
+    industries: List[IndustryType]
+    days_remaining: int
+    is_critical: bool = False
+
+
+class TimelineResponse(BaseModel):
+    """Timeline response with events."""
+    events: List[TimelineEvent]
+    total_events: int
+    upcoming_critical: int
+
+
+class TimelineExtractRequest(BaseModel):
+    """Request to extract timeline from document."""
+    document_id: str
+    force_refresh: bool = False
