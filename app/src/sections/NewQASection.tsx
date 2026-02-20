@@ -27,6 +27,7 @@ import {
   SheetDescription,
 } from '@/components/ui/sheet';
 import { SourceCardGrid } from '@/components/dashboard/SourceCard';
+import CitationHighlighter, { ConfidenceGauge } from '@/components/CitationHighlighter';
 import { askQuestion } from '@/lib/api';
 import type { Citation } from '@/types';
 
@@ -385,10 +386,14 @@ export default function NewQASection() {
                               )}
                           </div>
 
-                          {/* Answer */}
-                          <div className="text-base font-medium leading-relaxed text-slate-800 whitespace-pre-wrap">
-                            {message.content}
-                          </div>
+{/* Answer with Citation Highlighting */}
+                                          <div className="text-base font-medium whitespace-pre-wrap">
+                                            <CitationHighlighter
+                                              content={message.content}
+                                              citations={message.citations || []}
+                                              onCitationClick={openInspector}
+                                            />
+                                          </div>
 
                           {/* Citations Preview */}
                           {message.citations && message.citations.length > 0 && (
@@ -466,38 +471,38 @@ export default function NewQASection() {
           <div className="flex-1 overflow-y-auto pr-2 space-y-4">
             {lastAssistant ? (
               <div className="space-y-6 animate-in fade-in duration-500">
-                <Card className="border-none shadow-sm bg-indigo-900 text-white rounded-3xl p-6">
-                  <h4 className="text-xs font-black uppercase tracking-widest mb-4 opacity-60">
-                    Response Quality
-                  </h4>
-                  <div className="space-y-4">
-                    <div>
-                      <div className="flex justify-between text-[10px] font-bold mb-1">
-                        <span>CITATION COVERAGE</span>
-                        <span>
-                          {(((lastAssistant.citation_coverage ?? 0) * 100) as number).toFixed(0)}%
-                        </span>
-                      </div>
-                      <Progress
-                        value={(lastAssistant.citation_coverage ?? 0) * 100}
-                        className="h-1 bg-white/10"
-                      />
-                    </div>
-
-                    <div>
-                      <div className="flex justify-between text-[10px] font-bold mb-1">
-                        <span>GROUNDEDNESS SCORE</span>
-                        <span>
-                          {(((lastAssistant.groundedness_score ?? 0) * 100) as number).toFixed(0)}%
-                        </span>
-                      </div>
-                      <Progress
-                        value={(lastAssistant.groundedness_score ?? 0) * 100}
-                        className="h-1 bg-white/10"
-                      />
-                    </div>
-                  </div>
-                </Card>
+<Card className="border-none shadow-sm bg-slate-900 text-white rounded-3xl p-6">
+                                  <h4 className="text-xs font-black uppercase tracking-widest mb-4 opacity-60">
+                                    Response Quality
+                                  </h4>
+                                  <div className="grid grid-cols-2 gap-3 mb-4">
+                                    <ConfidenceGauge 
+                                      score={lastAssistant.groundedness_score ?? 0} 
+                                      label="Groundedness" 
+                                    />
+                                    <ConfidenceGauge 
+                                      score={lastAssistant.confidence ?? 0} 
+                                      label="Confidence" 
+                                    />
+                                  </div>
+                                  <div className="space-y-3 pt-3 border-t border-white/10">
+                                    <div>
+                                      <div className="flex justify-between text-[10px] font-bold mb-1">
+                                        <span>CITATION COVERAGE</span>
+                                        <span>
+                                          {(((lastAssistant.citation_coverage ?? 0) * 100) as number).toFixed(0)}%
+                                        </span>
+                                      </div>
+                                      <Progress
+                                        value={(lastAssistant.citation_coverage ?? 0) * 100}
+                                        className="h-1 bg-white/10"
+                                      />
+                                    </div>
+                                    <div className="text-[10px] text-white/60">
+                                      {lastAssistant.citations?.length || 0}개 문서 참조
+                                    </div>
+                                  </div>
+                                </Card>
 
                 <div className="space-y-4">
                   <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest px-2">
