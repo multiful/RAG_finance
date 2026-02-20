@@ -566,12 +566,19 @@ async def self_reflection_node(state: AgentState) -> AgentState:
     return state
 
 
-# ============ Retrieval Decision Node ============
+# ============ Retrieval Route Decision Node ============
 
-def retrieval_decision_node(state: AgentState) -> Literal["more_retrieval", "generate"]:
-    """Decide whether more retrieval is needed."""
+def retrieval_route_decision_node(state: AgentState) -> Literal["more_retrieval", "comparative", "generate"]:
+    """Decide next step after retrieval.
+    
+    - If needs more retrieval -> retrieve again
+    - If comparative query -> go directly to comparative analysis (skip generic generation)
+    - Otherwise -> generate answer
+    """
     if state.get("needs_more_retrieval", False):
         return "more_retrieval"
+    if state.get("query_type") == "comparative":
+        return "comparative"
     return "generate"
 
 
@@ -599,8 +606,11 @@ def create_policy_agent():
     """Create and configure the multi-step reasoning agent workflow.
     
     Flow:
-    analyze -> route -> [retrieve -> decide -> generate] -> reflect -> decide
-                     -> [industry/checklist/comparative]
+    analyze -> route -> [retrieve -> route -> generate/comparative] -> reflect -> decide
+                     -> [industry/checklist]
+    
+    Comparative queries: analyze -> retrieve -> comparative -> reflect
+    QA queries: analyze -> retrieve -> generate -> reflect
     """
     
     workflow = StateGraph(AgentState)
@@ -618,6 +628,7 @@ def create_policy_agent():
     workflow.set_entry_point("analyze")
     
     # From analyze, route to appropriate handler
+    # Note: comparative queries go to retrieve first (need documents for comparison)
     workflow.add_conditional_edges(
         "analyze",
         route_query_node,
@@ -631,30 +642,22 @@ def create_policy_agent():
         }
     )
     
-    # After retrieval, decide if more is needed
+    # After retrieval, decide next step:
+    # - If needs more retrieval -> retrieve again
+    # - If comparative query -> go directly to comparative analysis (skip generic generation)
+    # - Otherwise -> generate answer
     workflow.add_conditional_edges(
         "retrieve",
-        retrieval_decision_node,
+        retrieval_route_decision_node,
         {
             "more_retrieval": "retrieve",
+            "comparative": "comparative",
             "generate": "generate"
         }
     )
     
-    # Check if this is a comparative query after generation
-    def post_generate_route(state: AgentState) -> Literal["comparative", "reflect"]:
-        if state.get("query_type") == "comparative":
-            return "comparative"
-        return "reflect"
-    
-    workflow.add_conditional_edges(
-        "generate",
-        post_generate_route,
-        {
-            "comparative": "comparative",
-            "reflect": "reflect"
-        }
-    )
+    # Generation goes directly to reflection
+    workflow.add_edge("generate", "reflect")
     
     # Comparative analysis goes to reflection
     workflow.add_edge("comparative", "reflect")

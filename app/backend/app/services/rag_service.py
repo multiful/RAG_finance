@@ -198,10 +198,10 @@ NO [해당 문서에는 가계대출 금리에 대한 직접적인 언급이 없
         evidence_strength = sum(cited_similarities) / len(cited_similarities) if cited_similarities else 0.0
         
         # 3. Sentence-level Grounding Analysis
-        sentence_grounding = await self._analyze_sentence_grounding(answer, chunks)
+        sentence_grounding = self._analyze_sentence_grounding(answer, chunks)
         
         # 4. Hallucination Detection
-        hallucination_score = await self._detect_hallucination(answer, chunks)
+        hallucination_score = self._detect_hallucination(answer, chunks)
         
         # 5. Calculate Enhanced Grounding Score (0-100)
         grounding = (
@@ -233,7 +233,7 @@ NO [해당 문서에는 가계대출 금리에 대한 직접적인 언급이 없
         
         return round(grounding, 1), round(confidence, 1), round(citation_coverage, 2)
     
-    async def _analyze_sentence_grounding(
+    def _analyze_sentence_grounding(
         self,
         answer: str,
         chunks: List[Dict[str, Any]]
@@ -270,7 +270,7 @@ NO [해당 문서에는 가계대출 금리에 대한 직접적인 언급이 없
         
         return min(1.0, grounded_count / max(1, len(sentences[:10])))
     
-    async def _detect_hallucination(
+    def _detect_hallucination(
         self,
         answer: str,
         chunks: List[Dict[str, Any]]
