@@ -102,6 +102,7 @@ class QARequest(BaseModel):
     date_from: Optional[datetime] = None
     date_to: Optional[datetime] = None
     top_k: int = 5
+    compliance_mode: bool = False
 
 
 class Citation(BaseModel):

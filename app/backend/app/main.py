@@ -89,7 +89,7 @@ app.include_router(governance_router, prefix=f"{settings.API_V1_PREFIX}/advanced
 app.include_router(pipeline_router, prefix=f"{settings.API_V1_PREFIX}/pipeline")
 app.include_router(alert_router, prefix=f"{settings.API_V1_PREFIX}")
 app.include_router(timeline_router, prefix=f"{settings.API_V1_PREFIX}")
-app.include_router(compliance_router, prefix=f"{settings.API_V1_PREFIX}")
+app.include_router(compliance_router, prefix=f"{settings.API_V1_PREFIX}/compliance", tags=["Compliance"])
 
 
 @app.get("/")

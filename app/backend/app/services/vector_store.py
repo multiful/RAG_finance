@@ -7,6 +7,7 @@ Features:
 - Batch operations
 """
 import json
+import re
 from typing import List, Dict, Any, Optional, Tuple
 from dataclasses import dataclass
 import numpy as np
@@ -120,41 +121,45 @@ class VectorStore:
         top_k: int = 10,
         filters: Optional[Dict[str, Any]] = None
     ) -> List[SearchResult]:
-        """Trigram-based keyword search using fixed exec_sql."""
+        """Trigram-based and FTS keyword search with better acronym handling."""
         try:
             print(f"DEBUG: Starting keyword search for: '{query}'")
             
-            # Format query for Simple FTS (split words with &)
-            fts_query = " & ".join([w for w in query.split() if w])
+            # Clean and prepare query for FTS
+            # Remove special chars and join with | (OR) for higher recall on acronyms
+            clean_query = re.sub(r'[^\w\s]', '', query)
+            fts_query = " | ".join([w for w in clean_query.split() if len(w) > 0])
             
             sql = f"""
-                SELECT 
-                    c.chunk_id,
-                    c.document_id,
-                    c.chunk_text,
-                    c.chunk_index,
-                    d.title as document_title,
-                    d.published_at,
-                    d.url,
-                    similarity(c.chunk_text, '{query}') as similarity
-                FROM chunks c
-                JOIN documents d ON c.document_id = d.document_id
-                WHERE 
-                    c.chunk_text % '{query}' 
-                    OR c.chunk_text ILIKE '%{query}%'
-                    OR to_tsvector('simple', c.chunk_text) @@ to_tsquery('simple', '{fts_query}')
+                WITH matches AS (
+                    SELECT 
+                        c.chunk_id,
+                        c.document_id,
+                        c.chunk_text,
+                        c.chunk_index,
+                        d.title as document_title,
+                        d.published_at,
+                        d.url,
+                        -- Combine Trigram similarity and FTS rank
+                        (
+                            similarity(c.chunk_text, '{query}') * 0.4 + 
+                            ts_rank_cd(to_tsvector('simple', c.chunk_text), to_tsquery('simple', '{fts_query}')) * 0.6
+                        ) as combined_score
+                    FROM chunks c
+                    JOIN documents d ON c.document_id = d.document_id
+                    WHERE 
+                        c.chunk_text % '{query}' 
+                        OR c.chunk_text ILIKE '%{query}%'
+                        OR to_tsvector('simple', c.chunk_text) @@ to_tsquery('simple', '{fts_query}')
+                )
+                SELECT * FROM matches ORDER BY combined_score DESC LIMIT {top_k}
             """
             
-            # Execute via fixed exec_sql which returns SETOF jsonb
-            result = self.db.rpc("exec_sql", {"sql": sql + f" LIMIT {top_k}"}).execute()
+            result = self.db.rpc("exec_sql", {"sql": sql}).execute()
             
-            # PostgREST returns a list of dictionaries (the jsonb rows)
             if not result.data:
                 return await self._fallback_keyword_search(query, top_k, filters)
                 
-            print(f"DEBUG: Keyword search found {len(result.data)} results.")
-            
-            # Because of format('SELECT to_jsonb(t)...'), result.data is a list of dicts
             return self._parse_bm25_results(result.data)
             
         except Exception as e:
@@ -425,7 +430,7 @@ class VectorStore:
                 document_title=item.get("document_title", ""),
                 published_at=item.get("published_at", ""),
                 url=item.get("url", ""),
-                similarity=item.get("similarity", 0.0),
+                similarity=item.get("combined_score", item.get("similarity", 0.0)),
                 metadata={
                     "category": item.get("category"),
                     "department": item.get("department")

@@ -238,8 +238,8 @@ class RSSCollector:
         ).gte("ingested_at", since_24h.isoformat()).execute()
         
         return {
-            "total_documents": total.count if hasattr(total, 'count') else 0,
-            "documents_24h": recent_24h.count if hasattr(recent_24h, 'count') else 0,
-            "success_rate_7d": success_rate,
-            "parsing_failures_24h": failures_24h.count if hasattr(failures_24h, 'count') else 0
+            "total_documents": (total.count if hasattr(total, 'count') else 0) or 0,
+            "documents_24h": (recent_24h.count if hasattr(recent_24h, 'count') else 0) or 0,
+            "success_rate_7d": float(success_rate),
+            "parsing_failures_24h": (failures_24h.count if hasattr(failures_24h, 'count') else 0) or 0
         }

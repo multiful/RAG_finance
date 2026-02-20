@@ -2,6 +2,7 @@ import axios from 'axios';
 import type {
   DocumentListResponse,
   Document,
+  QARequest,
   QAResponse,
   IndustryClassification,
   Topic,
@@ -14,7 +15,11 @@ import type {
   AlertSubscription,
   TimelineEvent,
   TimelineResponse,
-  TimelineSummary
+  TimelineSummary,
+  ComplianceDocument,
+  ComplianceChecklist,
+  ComplianceActionItem,
+  ActionItemAudit
 } from '@/types';
 
 const API_BASE_URL = '/api/v1';
@@ -69,25 +74,13 @@ export const getRecentDocuments = async (hours: number = 24) => {
 };
 
 // RAG QA
-export const askQuestion = async (data: {
-  question: string;
-  industry_filter?: string[];
-  date_from?: string;
-  date_to?: string;
-  top_k?: number;
-}): Promise<QAResponse> => {
+export const askQuestion = async (data: QARequest): Promise<QAResponse> => {
   const response = await api.post('/qa', data);
   return response.data;
 };
 
 export const askQuestionStream = async (
-  data: {
-    question: string;
-    industry_filter?: string[];
-    date_from?: string;
-    date_to?: string;
-    top_k?: number;
-  },
+  data: QARequest,
   onChunk: (event: { type: string; [key: string]: unknown }) => void
 ) => {
   const response = await fetch(`${API_BASE_URL}/qa/stream`, {
@@ -186,6 +179,55 @@ export const exportChecklist = async (documentId: string, format: string = 'json
     params: { format },
     responseType: 'text',
   });
+  return response.data;
+};
+
+// Compliance Hub
+export const getComplianceDocument = async (id: string): Promise<ComplianceDocument> => {
+  const response = await api.get(`/compliance/documents/${id}`);
+  return response.data;
+};
+
+export const getComplianceChecklist = async (id: string): Promise<ComplianceChecklist> => {
+  const response = await api.get(`/compliance/checklists/${id}`);
+  return response.data;
+};
+
+export const listComplianceChecklists = async (params?: {
+  skip?: number;
+  limit?: number;
+  status?: string;
+  risk_level?: string;
+}): Promise<ComplianceChecklist[]> => {
+  const response = await api.get('/compliance/checklists', { params });
+  return response.data;
+};
+
+export const generateComplianceChecklist = async (originalDocumentId: string, userId?: string): Promise<ComplianceChecklist> => {
+  const response = await api.post('/compliance/checklists/generate', null, {
+    params: { original_document_id: originalDocumentId, user_id: userId }
+  });
+  return response.data;
+};
+
+export const updateActionItem = async (
+  id: string, 
+  update: Partial<ComplianceActionItem>,
+  userId?: string
+): Promise<ComplianceActionItem> => {
+  const response = await api.put(`/compliance/action-items/${id}`, update, {
+    params: { user_id: userId }
+  });
+  return response.data;
+};
+
+export const getActionItemAudit = async (id: string): Promise<ActionItemAudit[]> => {
+  const response = await api.get(`/compliance/action-items/${id}/audit`);
+  return response.data;
+};
+
+export const recalculateRisk = async (id: string): Promise<{ message: string }> => {
+  const response = await api.post(`/compliance/action-items/${id}/recalculate-risk`);
   return response.data;
 };
 
