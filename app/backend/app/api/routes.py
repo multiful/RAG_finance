@@ -476,81 +476,26 @@ async def get_dashboard_stats():
     try:
         db = rss_collector.db
         
-        # Collection stats
+        # Collection stats (total docs, documents_24h, success_rate_7d)
         collection_stats = await rss_collector.get_collection_stats()
         
         # Active alerts
         alerts_result = db.table("alerts").select("*", count="exact").eq(
             "status", "open"
         ).execute()
+        active_alerts_count = (alerts_result.count if hasattr(alerts_result, 'count') else 0) or 0
         
-        high_severity = db.table("alerts").select("*", count="exact").eq(
+        high_severity_res = db.table("alerts").select("*", count="exact").eq(
             "status", "open"
         ).eq("severity", "high").execute()
+        high_severity_count = (high_severity_res.count if hasattr(high_severity_res, 'count') else 0) or 0
         
-        # Recent topics
-        since = datetime.now(timezone.utc) - timedelta(days=7)
+        # Recent topics (last 7 days)
+        since_topic = datetime.now(timezone.utc) - timedelta(days=7)
         topics_result = db.table("topics").select("*").gte(
-            "time_window_start", since.isoformat()
+            "time_window_start", since_topic.isoformat()
         ).order("created_at", desc=True).limit(5).execute()
         
-        topics = []
-        if topics_result.data:
-            for t in topics_result.data:
-                topics.append(TopicResponse(
-                    topic_id=t["topic_id"],
-                    topic_name=t.get("topic_name"),
-                    topic_summary=t.get("topic_summary"),
-                    time_window_start=t["time_window_start"],
-                    time_window_end=t["time_window_end"],
-                    document_count=0,
-                    surge_score=0.0,
-                    representative_documents=[]
-                ))
-        
-        # Collection status per source
-        sources = []
-        # Get actual source records to get their UUIDs
-        sources_records = db.table("sources").select("*").in_("fid", settings.FSC_RSS_FIDS).execute()
-        
-        # Pre-calculate 24h/7d timestamps
-        now_utc = datetime.now(timezone.utc)
-        since_24h = (now_utc - timedelta(hours=24)).isoformat()
-        since_7d = (now_utc - timedelta(days=7)).isoformat()
-
-        for source_rec in (sources_records.data or []):
-            source_id = source_rec["source_id"]
-            fid = source_rec.get("fid")
-            
-            # Real counts from database
-            source_docs = db.table("documents").select("*", count="exact").eq(
-                "source_id", source_id
-            ).execute()
-            
-            recent = db.table("documents").select("*", count="exact").eq(
-                "source_id", source_id
-            ).gte("ingested_at", since_24h).execute()
-            
-            # Calculate success rate for this source specifically
-            source_week = db.table("documents").select("status").eq(
-                "source_id", source_id
-            ).gte("ingested_at", since_7d).execute()
-            
-            total_week = len(source_week.data) if source_week.data else 0
-            failed_week = sum(1 for d in source_week.data if d.get("status") == "failed") if source_week.data else 0
-            success_rate = (total_week - failed_week) / total_week * 100 if total_week > 0 else 100.0
-
-            sources.append({
-                "source_id": fid,
-                "source_name": source_rec.get("name"),
-                "last_fetch": now_utc,
-                "new_documents_24h": recent.count if hasattr(recent, 'count') else 0,
-                "total_documents": source_docs.count if hasattr(source_docs, 'count') else 0,
-                "success_rate_7d": success_rate,
-                "parsing_failures_24h": 0 # This could be fetched from a more granular log if available
-            })
-        
-        # Recent topics with counts
         topics = []
         if topics_result.data:
             for t in topics_result.data:
@@ -563,24 +508,72 @@ async def get_dashboard_stats():
 
                 topics.append(TopicResponse(
                     topic_id=t["topic_id"],
-                    topic_name=t.get("topic_name"),
+                    topic_name=t.get("topic_name") or "New Topic",
                     topic_summary=t.get("topic_summary"),
                     time_window_start=t["time_window_start"],
                     time_window_end=t["time_window_end"],
-                    document_count=count_res.count if hasattr(count_res, 'count') else 0,
+                    document_count=(count_res.count if hasattr(count_res, 'count') else 0) or 0,
                     surge_score=surge_score,
                     representative_documents=[]
                 ))
         
+        # Collection status per source (defined in FSC_RSS_FIDS)
+        sources = []
+        # Get actual source records to get their UUIDs
+        sources_records = db.table("sources").select("*").in_("fid", settings.FSC_RSS_FIDS).execute()
+        
+        # Pre-calculate timestamps
+        now_utc = datetime.now(timezone.utc)
+        since_24h = (now_utc - timedelta(hours=24)).isoformat()
+        since_7d = (now_utc - timedelta(days=7)).isoformat()
+
+        for source_rec in (sources_records.data or []):
+            source_id = source_rec["source_id"]
+            fid = source_rec.get("fid")
+            
+            # Count from DB
+            source_docs = db.table("documents").select("*", count="exact").eq(
+                "source_id", source_id
+            ).execute()
+            
+            recent = db.table("documents").select("*", count="exact").eq(
+                "source_id", source_id
+            ).gte("ingested_at", since_24h).execute()
+            
+            # Calculate success rate
+            source_week = db.table("documents").select("status").eq(
+                "source_id", source_id
+            ).gte("ingested_at", since_7d).execute()
+            
+            total_week = len(source_week.data) if source_week.data else 0
+            failed_week = sum(1 for d in source_week.data if d.get("status") == "failed") if source_week.data else 0
+            success_rate = (total_week - failed_week) / total_week * 100 if total_week > 0 else 100.0
+
+            sources.append(CollectionStatus(
+                source_id=fid,
+                source_name=source_rec.get("name") or f"Source {fid}",
+                last_fetch=now_utc,
+                new_documents_24h=(recent.count if hasattr(recent, 'count') else 0) or 0,
+                total_documents=(source_docs.count if hasattr(source_docs, 'count') else 0) or 0,
+                success_rate_7d=success_rate,
+                parsing_failures_24h=0
+            ))
+        
         return DashboardStats(
-            total_documents=collection_stats["total_documents"],
-            documents_24h=collection_stats["documents_24h"],
-            active_alerts=alerts_result.count if hasattr(alerts_result, 'count') else 0,
-            high_severity_alerts=high_severity.count if hasattr(high_severity, 'count') else 0,
+            total_documents=collection_stats["total_documents"] or 0,
+            documents_24h=collection_stats["documents_24h"] or 0,
+            active_alerts=active_alerts_count,
+            high_severity_alerts=high_severity_count,
             collection_status=sources,
             recent_topics=topics,
             quality_metrics=None
         )
+    
+    except Exception as e:
+        logging.error(f"Error in get_dashboard_stats: {str(e)}")
+        logging.error(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=f"Dashboard stats error: {str(e)}")
+
     
     except Exception as e:
         logging.error(f"Error in get_dashboard_stats: {str(e)}")

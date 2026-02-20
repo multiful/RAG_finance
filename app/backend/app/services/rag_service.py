@@ -1,7 +1,7 @@
 """RAG (Retrieval Augmented Generation) service."""
 import openai
 from typing import List, Dict, Any, Optional
-from datetime import datetime
+from datetime import datetime, timezone
 import json
 import re
 
@@ -25,17 +25,15 @@ class RAGService:
         self.openai_client = openai.AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
     
     async def _get_embedding(self, text: str) -> List[float]:
-        """Get embedding for text."""
+        """Get embedding for text with Redis caching."""
         import hashlib
         text_hash = hashlib.md5(text.encode()).hexdigest()
         cache_key = f"emb:{text_hash}"
         cached = self.redis.get(cache_key)
         
         if cached:
-            print(f"DEBUG: Using cached query embedding for '{text[:20]}...'")
             return json.loads(cached)
         
-        print(f"DEBUG: Calling OpenAI for query embedding (model={settings.OPENAI_EMBEDDING_MODEL})")
         response = await self.openai_client.embeddings.create(
             model=settings.OPENAI_EMBEDDING_MODEL,
             input=text[:8000]
@@ -44,58 +42,130 @@ class RAGService:
         
         # Cache for 24 hours
         self.redis.setex(cache_key, 86400, json.dumps(embedding))
-        print(f"DEBUG: Successfully generated embedding (dims={len(embedding)})")
         return embedding
-    
+
+    async def _expand_query_hyde(self, query: str) -> str:
+        """HyDE (Hypothetical Document Embeddings): Generate a hypothetical answer to improve retrieval."""
+        hyde_prompt = f"""당신은 금융 정책 전문가입니다. 다음 질문에 대해 정책 문서의 '핵심 요약' 또는 '관련 조항'과 유사한 스타일로 1-2문장의 가상의 답변을 작성하세요.
+실제 사실 여부는 중요하지 않으며, 검색에 도움이 될만한 전문 용어와 문체를 사용하는 것이 목적입니다.
+
+질문: {query}
+가상 답변:"""
+
+        try:
+            response = await self.openai_client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[{"role": "user", "content": hyde_prompt}],
+                temperature=0.4,
+                max_tokens=200
+            )
+            hyde_answer = response.choices[0].message.content
+            return f"{query}\n{hyde_answer}"
+        except Exception:
+            return query
+
     async def _check_answerability(
         self,
         query: str,
         chunks: List[Dict[str, Any]]
     ) -> tuple[bool, str, float]:
-        """Check if query can be answered from retrieved chunks.
-        Returns (can_answer, reason, consistency_score)."""
+        """Check if query can be answered from retrieved chunks with high strictness."""
         if not chunks:
             return False, "검색된 문서가 없습니다.", 0.0
         
-        # Filter chunks by minimum similarity if available (similarity is from hybrid search RRF)
-        # For RRF, scores are usually small, but let's assume if we have hits, we proceed
-        # and let the LLM judge consistency.
-        
         combined_text = "\n\n".join([f"[{i+1}] {c['chunk_text']}" for i, c in enumerate(chunks[:5])])
         
-        check_prompt = f"""당신은 금융 정책 질의응답 검증관입니다.
+        check_prompt = f"""당신은 금융 정책 규제 준수 검증관입니다.
 질문: {query}
 
 참고 문서 내용:
-{combined_text[:2000]}
+{combined_text[:3000]}
 
 규칙:
-1. 제공된 문서 내용만으로 질문에 대해 구체적인 답변이 가능하면 'YES'라고 하세요.
-2. 문서에 관련 내용이 없거나 부족하면 'NO'라고 하고 이유를 짧게 쓰세요.
-3. 답변의 근거가 되는 문서 번호를 나열하세요. (예: YES [1, 2])
+1. 제공된 문서 내용('참고 문서 내용')에 질문에 대한 명확한 답이 포함되어 있는가?
+2. 추측하거나 외부 지식을 사용하지 마세요.
+3. 문서에 구체적인 수치, 대상, 기한 등이 명시되어 있지 않으면 'NO'라고 하세요.
+4. 답변이 가능하면 'YES [근거번호]', 불가능하면 'NO [이유]'를 출력하세요.
 
-출력 형식: [YES/NO] [이유] [근거번호]"""
+출력 예시:
+YES [1, 2, 4]
+NO [해당 문서에는 가계대출 금리에 대한 직접적인 언급이 없음]"""
 
         try:
             response = await self.openai_client.chat.completions.create(
-                model="gpt-4o-mini", # Use mini for cheaper checks
+                model="gpt-4o-mini",
                 messages=[{"role": "user", "content": check_prompt}],
                 temperature=0,
-                max_tokens=150
+                max_tokens=100
             )
             
-            content = response.choices[0].message.content.upper()
-            if "YES" in content:
-                # Estimate consistency score based on how many chunks were useful
-                cited_count = len(re.findall(r'\[\d+\]', content))
-                consistency = min(1.0, cited_count / 2.0) # Assume 2 chunks is a solid answer
+            content = response.choices[0].message.content.strip().upper()
+            if content.startswith("YES"):
+                cited_indices = re.findall(r'\[(.*?)\]', content)
+                consistency = 0.9 if cited_indices else 0.6
                 return True, "", consistency
             else:
-                return False, "검색된 문서에서 구체적인 답을 찾을 수 없습니다. (근거 부족)", 0.0
+                reason = content.replace("NO", "").strip() or "검색된 문서에 질문과 관련된 구체적인 정책 내용이 포함되어 있지 않습니다."
+                return False, reason, 0.0
         
         except Exception:
-            return True, "", 0.5  # Fallback to allowing
-    
+            return True, "", 0.5
+
+    async def _generate_answer(self, query: str, chunks: List[Dict[str, Any]], compliance_mode: bool = False) -> Dict[str, Any]:
+        """Generate a structured, cited answer using LLM."""
+        context = "\n\n".join([f"[{i+1}] {c['document_title']} ({c['published_at'][:10]})\n{c['chunk_text']}" for i, c in enumerate(chunks)])
+        
+        mode_instruction = ""
+        if compliance_mode:
+            mode_instruction = "당신은 현재 '컴플라이언스 모드'입니다. 모든 문장의 끝에 반드시 근거 문서 번호 [번호]를 명시하십시오. 근거가 없는 문장은 작성하지 마십시오."
+        else:
+            mode_instruction = "답변의 모든 문장에는 근거가 되는 문서의 번호를 [1], [2]와 같이 표시하십시오."
+
+        system_prompt = f"""당신은 금융위원회의 정책을 분석하고 답변하는 'FSC AI 어시스턴트'입니다.
+다음 규칙을 엄격히 준수하여 답변하십시오:
+
+1. 오직 제공된 [참고 문서]의 내용만을 기반으로 답변하십시오.
+2. {mode_instruction}
+3. 문서에 없는 내용은 절대 추측하여 답변하지 마십시오. 모르는 경우 '제공된 문서에서 관련 내용을 찾을 수 없습니다'라고 하십시오.
+4. 금융 용어를 정확하게 사용하고 전문적인 어조를 유지하십시오.
+5. 반드시 아래 JSON 형식으로만 출력하십시오.
+
+출력 JSON 형식:
+{{
+    "answer": "상세 답변 내용 (문장별 인용 포함)",
+    "summary": "3줄 이내 요약",
+    "industry_impact": {{
+        "BANKING": 0.0~1.0,
+        "INSURANCE": 0.0~1.0,
+        "SECURITIES": 0.0~1.0
+    }},
+    "checklist": [
+        {{"action": "행동지침", "target": "대상", "due_date_text": "기한", "penalty": "제재사항"}}
+    ],
+    "uncertainty_note": "답변의 한계나 추가 확인이 필요한 사항 (없으면 null)"
+}}"""
+
+        try:
+            response = await self.openai_client.chat.completions.create(
+                model=settings.OPENAI_MODEL,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": f"질문: {query}\n\n[참고 문서]\n{context}"}
+                ],
+                response_format={"type": "json_object"},
+                temperature=0.2
+            )
+            
+            return json.loads(response.choices[0].message.content)
+        except Exception as e:
+            print(f"Answer generation error: {e}")
+            return {
+                "answer": "죄송합니다. 답변 생성 중 오류가 발생했습니다.",
+                "summary": "오류 발생",
+                "industry_impact": {"BANKING": 0, "INSURANCE": 0, "SECURITIES": 0},
+                "checklist": []
+            }
+
     async def _calculate_scores(
         self,
         answer: str,
@@ -111,12 +181,11 @@ class RAGService:
         
         Returns (grounding_score, confidence_score, citation_coverage).
         """
-        # 1. Calculate Citation Coverage
+        # 1. Calculate Citation Coverage (supports both [1] and [출처 1] formats)
         citations_found = set(re.findall(r'\[(?:출처\s*)?(\d+)\]', answer))
         unique_citations = len(citations_found)
         citation_coverage = min(1.0, unique_citations / max(1, len(chunks)))
         
-        # 2. Calculate Evidence Strength
         cited_similarities = []
         for idx_str in citations_found:
             try:
@@ -252,52 +321,29 @@ class RAGService:
         
         return min(1.0, hallucination_ratio)
 
-    async def _expand_query(self, query: str) -> str:
-        """Expand query with financial synonyms and related terms."""
-        expansion_map = {
-            "금소법": "금융소비자보호법",
-            "가출법": "가계대출 규제",
-            "바젤3": "자본적정성 규제 바젤III",
-            "ESG": "ESG 공시 의무화 환경 사회 지배구조",
-            "가상자산": "가상자산 이용자 보호법 암호화폐 코인",
-            "금리": "기준금리 예금금리 대출금리",
-            "부채": "가계부채 기업부채 부채비율",
-            "보험": "보험업법 지급여력비율 K-ICS",
-            "은행": "은행법 유동성 커버리지 비율 LCR",
-            "증권": "자본시장법 금융투자업"
-        }
-        
-        expanded = query
-        for short, full in expansion_map.items():
-            if short in query and full not in query:
-                expanded += f" ({full})"
-        
-        return expanded
-
     async def answer_question(self, request: QARequest) -> QAResponse:
-        """Main RAG pipeline: Embedding -> Hybrid Search -> Rerank -> LLM -> Parse."""
-        start_time = datetime.now()
+        """Main RAG pipeline: HyDE -> Hybrid Search -> Rerank -> LLM -> Parse."""
+        start_time = datetime.now(timezone.utc)
         
-        # 0. Query Expansion
-        expanded_query = await self._expand_query(request.question)
-        print(f"DEBUG: Expanded query: '{request.question}' -> '{expanded_query}'")
+        # 1. HyDE Query Expansion
+        expanded_query = await self._expand_query_hyde(request.question)
         
-        # 1. Get query embedding
+        # 2. Get query embedding
         query_embedding = await self._get_embedding(expanded_query)
         
-        # 2. Hybrid Search (RRF)
+        # 3. Hybrid Search (RRF)
         filters = {}
         if request.date_from:
             filters["date_from"] = request.date_from.isoformat()
         
         search_results = await self.vector_store.hybrid_search(
-            query=expanded_query,
+            query=request.question,
             query_embedding=query_embedding,
             top_k=settings.TOP_K_RETRIEVAL,
             filters=filters
         )
         
-        # 3. Optional Reranking
+        # 4. Optional Reranking
         if settings.ENABLE_RERANKING:
             reranked_results = await self.vector_store.rerank(
                 query=request.question,
@@ -320,61 +366,57 @@ class RAGService:
             for r in reranked_results
         ]
         
-        # 4. Answerability Guardrail
+        # 5. Answerability Guardrail
         can_answer, reason, consistency = await self._check_answerability(request.question, reranked_chunks)
         
         if not can_answer:
             return QAResponse(
-                answer=f"죄송합니다. {reason}\n\n질문을 더 구체적으로 입력하시거나 다른 키워드로 시도해 주세요.",
+                answer=f"죄송합니다. {reason}\n\n다른 질문으로 시도하시거나, 더 구체적인 키워드를 입력해 주세요.",
                 summary="답변 불가",
-                industry_impact={"INSURANCE": 0.0, "BANKING": 0.0, "SECURITIES": 0.0},
+                industry_impact={"BANKING": 0.0, "INSURANCE": 0.0, "SECURITIES": 0.0},
                 checklist=[],
                 citations=[],
                 confidence=0.0,
                 groundedness_score=0.0,
+                citation_coverage=0.0,
                 uncertainty_note=reason,
                 answerable=False
             )
         
-        # 5. Generate Answer
-        answer_data = await self._generate_answer(request.question, reranked_chunks)
+        # 6. Generate Answer
+        structured_data = await self._generate_answer(request.question, reranked_chunks, request.compliance_mode)
         
-        # 6. Calculate Real Scores
+        # 7. Metrics
         grounding_score, confidence_score, coverage = await self._calculate_scores(
-            answer_data["answer"], 
+            structured_data["answer"], 
             reranked_chunks,
             consistency
         )
         
-        # 7. Build Citations
+        # 8. Build Citations
         citations = [
             Citation(
                 chunk_id=chunk["chunk_id"],
                 document_id=chunk["document_id"],
                 document_title=chunk["document_title"],
-                published_at=chunk["published_at"],
+                published_at=datetime.fromisoformat(chunk["published_at"].replace('Z', '+00:00')),
                 snippet=chunk["chunk_text"][:200],
                 url=chunk["url"]
             )
             for chunk in reranked_chunks
         ]
         
-        # 8. Parse structured data
-        structured_data = self._parse_structured_answer(answer_data["answer"], reranked_chunks)
-        
-        # 9. Async Logging to qa_logs
+        # 9. Logging
         try:
             from fastapi.encoders import jsonable_encoder
-            latency_ms = int((datetime.now() - start_time).total_seconds() * 1000)
+            latency_ms = int((datetime.now(timezone.utc) - start_time).total_seconds() * 1000)
             self.db.table("qa_logs").insert(jsonable_encoder({
                 "user_query": request.question,
                 "retrieved_chunk_ids": [chunk["chunk_id"] for chunk in reranked_chunks],
                 "answer": structured_data["answer"],
                 "citations": citations,
-                "grounding_score": grounding_score,
-                "confidence_score": confidence_score,
-                "citation_coverage": coverage,
-                "latency_ms": latency_ms
+                "latency_ms": latency_ms,
+                "created_at": datetime.now(timezone.utc).isoformat()
             })).execute()
         except Exception as log_err:
             print(f"Logging to qa_logs failed: {log_err}")
@@ -393,124 +435,19 @@ class RAGService:
         )
 
     async def stream_answer(self, request: QARequest):
-        """Stream RAG answer with citations and structured metadata."""
+        """Stream RAG answer (minimal implementation using non-streaming logic for stability)."""
+        response = await self.answer_question(request)
+        # Convert Pydantic to Dict
+        data = json.loads(response.model_dump_json())
         
-        # 1-3. Retrieval and Reranking (Same as non-streaming)
-        query_embedding = await self._get_embedding(request.question)
+        # Yield citations first
+        yield f"data: {json.dumps({'type': 'citations', 'citations': data['citations']})}\n\n"
         
-        filters = {}
-        if request.date_from:
-            filters["date_from"] = request.date_from.isoformat()
-        if request.date_to:
-            filters["date_to"] = request.date_to.isoformat()
-
-        search_results = await self.vector_store.hybrid_search(
-            query=request.question,
-            query_embedding=query_embedding,
-            top_k=settings.TOP_K_RETRIEVAL,
-            filters=filters
-        )
-        
-        if settings.ENABLE_RERANKING:
-            reranked_results = await self.vector_store.rerank(
-                query=request.question,
-                results=search_results,
-                top_k=settings.TOP_K_RERANK
-            )
-        else:
-            reranked_results = search_results[:settings.TOP_K_RERANK]
-
-        reranked_chunks = [
-            {
-                "chunk_id": r.chunk_id,
-                "document_id": r.document_id,
-                "document_title": r.document_title,
-                "published_at": r.published_at,
-                "url": r.url,
-                "chunk_text": r.chunk_text,
-                "similarity": r.similarity
-            }
-            for r in reranked_results
-        ]
-        
-        # 4. Citations (Send immediately)
-        citations = [
-            {
-                "chunk_id": chunk["chunk_id"],
-                "document_id": chunk["document_id"],
-                "document_title": chunk["document_title"],
-                "published_at": chunk["published_at"],
-                "snippet": chunk["chunk_text"][:200],
-                "url": chunk["url"]
-            }
-            for chunk in reranked_chunks
-        ]
-        yield f"data: {json.dumps({'type': 'citations', 'citations': citations})}\n\n"
-        
-        # 5. Answerability Guardrail
-        can_answer, reason, consistency = await self._check_answerability(request.question, reranked_chunks)
-        if not can_answer:
-            yield f"data: {json.dumps({'type': 'error', 'content': reason})}\n\n"
-            return
-
-        # 6. Stream Generation
-        context_parts = []
-        for i, chunk in enumerate(reranked_chunks):
-            context_parts.append(
-                f"[출처 {i+1}] {chunk['document_title']} ({chunk['published_at'][:10]})\n"
-                f"{chunk['chunk_text']}\n"
-            )
-        context = "\n".join(context_parts)
-        
-        system_prompt = """당신은 금융정책 전문가입니다. 제공된 문서만을 기반으로 답변하세요.
-답변 형식:
-1. 요약 (3줄 이내)
-2. 업권 영향 (보험/은행/증권별 영향도 0-1)
-3. 체크리스트 (의무/기한/대상)
-4. 근거 인용 (문서명/발행일)
-5. 불확실성 표시 (근거 불충분 시)"""
-
-        user_prompt = f"질문: {request.question}\n\n참고 문서:\n{context}\n\n위 문서만을 기반으로 구조화된 답변을 제공하세요."
-
-        full_answer = ""
-        try:
-            stream = await self.openai_client.chat.completions.create(
-                model=settings.OPENAI_MODEL,
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt}
-                ],
-                temperature=0.3,
-                max_tokens=1500,
-                stream=True
-            )
+        # Stream the answer token by token (simulated for UI compatibility)
+        answer = data["answer"]
+        chunk_size = 5
+        for i in range(0, len(answer), chunk_size):
+            token = answer[i:i+chunk_size]
+            yield f"data: {json.dumps({'type': 'token', 'token': token})}\n\n"
             
-            async for chunk in stream:
-                if chunk.choices and chunk.choices[0].delta.content:
-                    token = chunk.choices[0].delta.content
-                    full_answer += token
-                    yield f"data: {json.dumps({'type': 'token', 'token': token})}\n\n"
-            
-            # 7. Final structured data
-            final_data = self._parse_structured_answer(full_answer, reranked_chunks)
-            
-            # Calculate real metrics for streaming too
-            grounding_score, confidence_score, coverage = await self._calculate_scores(
-                full_answer, 
-                reranked_chunks,
-                consistency
-            )
-            
-            final_data["groundedness_score"] = grounding_score / 100.0
-            final_data["confidence"] = confidence_score / 100.0
-            final_data["citation_coverage"] = coverage
-            
-            unanswerable_phrases = ["확인되지 않음", "정보가 없습니다", "답변을 찾을 수 없습니다", "명시되어 있지 않습니다"]
-            final_data["answerable"] = not any(phrase in final_data["answer"] for phrase in unanswerable_phrases)
-            if final_data.get("uncertainty_note"):
-                final_data["answerable"] = False
-                
-            yield f"data: {json.dumps({'type': 'final', 'data': final_data})}\n\n"
-            
-        except Exception as e:
-            yield f"data: {json.dumps({'type': 'error', 'content': str(e)})}\n\n"
+        yield f"data: {json.dumps({'type': 'final', 'data': data})}\n\n"
