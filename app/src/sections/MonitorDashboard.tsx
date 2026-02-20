@@ -36,11 +36,12 @@ export default function MonitorDashboard() {
         getRecentDocuments(24),
       ]);
       setStats(statsData);
-      setRecentDocs(recentData.documents || []);
+      // More robust check for recent data
+      setRecentDocs(recentData?.documents || []);
       setError(null);
     } catch (err) {
       console.error('Error fetching dashboard data:', err);
-      if (!isSilent) setError('데이터를 불러오는 중 오류가 발생했습니다.');
+      if (!isSilent) setError('데이터를 불러오는 중 오류가 발생했습니다. 서버 연결 상태를 확인해주세요.');
     } finally {
       if (!isSilent) setLoading(false);
     }

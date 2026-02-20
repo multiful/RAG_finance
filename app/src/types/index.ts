@@ -27,6 +27,15 @@ export interface IndustryClassification {
   evidence_chunk_ids: string[];
 }
 
+export interface QARequest {
+  question: string;
+  industry_filter?: string[];
+  date_from?: string;
+  date_to?: string;
+  top_k?: number;
+  compliance_mode?: boolean;
+}
+
 export interface Citation {
   chunk_id: string;
   document_id: string;
@@ -117,4 +126,56 @@ export interface QualityMetrics {
   avg_response_time_ms: number;
   citation_accuracy: number;
   unanswered_rate: number;
+}
+
+export interface ComplianceDocument {
+  compliance_doc_id: string;
+  original_document_id: string;
+  title: string;
+  version: string;
+  status: 'active' | 'archived' | 'superseded';
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ComplianceActionItem {
+  action_item_id: string;
+  checklist_id: string;
+  action: string;
+  target?: string;
+  due_date?: string;
+  completed_at?: string;
+  status: 'pending' | 'in_progress' | 'completed' | 'overdue' | 'skipped';
+  priority: 'low' | 'medium' | 'high' | 'urgent';
+  risk_score: number;
+  risk_level: 'low' | 'medium' | 'high' | 'critical';
+  assigned_user_id?: string;
+  notes?: string;
+  evidence_chunk_id?: string;
+  llm_confidence: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ComplianceChecklist {
+  checklist_id: string;
+  compliance_doc_id: string;
+  title?: string;
+  description?: string;
+  status: string;
+  risk_score: number;
+  risk_level: 'low' | 'medium' | 'high' | 'critical';
+  created_at: string;
+  updated_at: string;
+  action_items: ComplianceActionItem[];
+}
+
+export interface ActionItemAudit {
+  audit_id: string;
+  action_item_id: string;
+  changed_by_user_id?: string;
+  old_values: Record<string, any>;
+  new_values: Record<string, any>;
+  changed_fields: string[];
+  created_at: string;
 }
