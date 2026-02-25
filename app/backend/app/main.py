@@ -1,4 +1,5 @@
 """Main FastAPI application with Phase A/B Architecture."""
+import asyncio
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
@@ -14,6 +15,7 @@ from app.api.alert_routes import router as alert_router
 from app.api.timeline_routes import router as timeline_router
 from app.api.compliance_routes import router as compliance_router
 from app.api.analytics_routes import router as analytics_router
+from app.api.evaluation_routes import router as evaluation_router
 
 
 @asynccontextmanager
@@ -38,8 +40,25 @@ async def lifespan(app: FastAPI):
         print("[WARN] WARNING: OPENAI_API_KEY is missing. RAG and Topic Detection will fail.")
     else:
         print(f"[OK] OpenAI API: Configured (Model: {settings.OPENAI_MODEL})")
-    
+
+    # 일일 1회 자동 수집 (경량, 추가 디펜던시 없음)
+    schedule_task = None
+    if getattr(settings, "ENABLE_DAILY_COLLECTION", True):
+        try:
+            from app.scheduler import run_daily_collection_loop
+            schedule_task = asyncio.create_task(run_daily_collection_loop())
+            print("[OK] Daily collection schedule: enabled (1x/day)")
+        except Exception as e:
+            print(f"[WARN] Daily schedule not started: {e}")
+
     yield
+
+    if schedule_task and not schedule_task.done():
+        schedule_task.cancel()
+        try:
+            await schedule_task
+        except asyncio.CancelledError:
+            pass
     # Shutdown
     print(f"[STOP] Shutting down {settings.APP_NAME}")
     RedisClient.close()
@@ -96,6 +115,7 @@ app.include_router(alert_router, prefix=f"{settings.API_V1_PREFIX}")
 app.include_router(timeline_router, prefix=f"{settings.API_V1_PREFIX}")
 app.include_router(compliance_router, prefix=f"{settings.API_V1_PREFIX}/compliance", tags=["Compliance"])
 app.include_router(analytics_router, prefix=f"{settings.API_V1_PREFIX}", tags=["Analytics"])
+app.include_router(evaluation_router, prefix=f"{settings.API_V1_PREFIX}", tags=["Evaluation"])
 
 
 @app.get("/")

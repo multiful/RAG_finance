@@ -1,49 +1,42 @@
 /**
- * DashboardLayout: Premium SaaS-style layout with sidebar and top header.
+ * DashboardLayout: Premium Financial-grade layout with sidebar and top header.
+ * React state: sidebarOpen, mobileMenuOpen. Tailwind: transitions, hover, focus.
  */
 import { useState } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import { 
-  BarChart3, 
-  Search,
-  CheckSquare, 
-  Shield,
   Menu,
   X,
   Settings,
-  Database,
   TrendingUp,
   Bell,
-  User,
   RefreshCw,
   LayoutDashboard,
-  Radar,
-  Activity,
-  Calendar,
-  ClipboardList,
-  Zap
+  Sparkles,
+  LineChart,
+  LogOut,
+  Loader2,
+  CheckCircle2
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { useCollection } from '@/contexts/CollectionContext';
 
 interface NavItem {
   id: string;
   path: string;
   label: string;
+  labelKr: string;
   icon: React.ElementType;
   badge?: number;
+  isNew?: boolean;
 }
 
 const navItems: NavItem[] = [
-  { id: 'executive', path: '/executive', label: 'Executive Summary', icon: Zap },
-  { id: 'analytics', path: '/analytics', label: 'Analytics Dashboard', icon: TrendingUp },
-  { id: 'monitor', path: '/monitoring', label: 'Ingestion Health', icon: LayoutDashboard },
-  { id: 'radar', path: '/radar', label: 'Issue Radar', icon: Radar, badge: 3 },
-  { id: 'timeline', path: '/timeline', label: 'Policy Timeline', icon: Calendar },
-  { id: 'qa', path: '/workspace/qa', label: 'Q&A Workspace', icon: Search },
-  { id: 'checklist', path: '/workspace/checklist', label: 'Checklist Gen', icon: CheckSquare },
-  { id: 'compliance', path: '/workspace/compliance', label: 'Task Manager', icon: ClipboardList },
-  { id: 'quality', path: '/observability', label: 'RAG Observability', icon: Activity },
+  { id: 'dashboard', path: '/', label: 'Dashboard', labelKr: '대시보드', icon: LayoutDashboard },
+  { id: 'analytics', path: '/analytics', label: 'Analytics', labelKr: '규제 분석', icon: TrendingUp },
+  { id: 'qa', path: '/qa', label: 'AI Assistant', labelKr: 'AI 질의', icon: Sparkles },
+  { id: 'settings', path: '/settings', label: 'Settings', labelKr: '설정', icon: Settings },
 ];
 
 interface DashboardLayoutProps {
@@ -56,66 +49,65 @@ export default function DashboardLayout({
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const location = useLocation();
+  const { isCollecting, jobProgress, startCollection, lastResult } = useCollection();
 
   const activeItem = navItems.find(item => item.path === location.pathname);
 
   return (
-    <div className="min-h-screen bg-slate-50/50 flex">
-      {/* Desktop Sidebar */}
-      <aside 
+    <div className="min-h-screen bg-[#fafafa] flex">
+      {/* Sidebar - Clean card style (reference: high-impact clean UI) */}
+      <aside
         className={`
-          fixed left-0 top-0 z-40 h-screen bg-white border-r border-slate-200
-          transition-all duration-300 hidden lg:flex flex-col
-          ${sidebarOpen ? 'w-64' : 'w-20'}
+          fixed left-0 top-0 z-40 h-screen bg-white
+          hidden lg:flex flex-col
+          transition-[width] duration-300 ease-out will-change-[width]
+          border-r border-[#e9e9e9]
+          ${sidebarOpen ? 'w-[260px]' : 'w-[72px]'}
         `}
       >
-        {/* Logo */}
-        <div className="h-16 flex items-center px-6 border-b border-slate-100">
+        <div className="h-[72px] flex items-center px-5 border-b border-[#e9e9e9]">
           <div className="flex items-center gap-3 overflow-hidden">
-            <div className="w-9 h-9 rounded-lg gradient-primary flex items-center justify-center flex-shrink-0 shadow-sm">
-              <BarChart3 className="w-5 h-5 text-white" />
+            <div className="w-10 h-10 rounded-2xl bg-slate-900 flex items-center justify-center flex-shrink-0">
+              <LineChart className="w-5 h-5 text-white" />
             </div>
             {sidebarOpen && (
-              <div className="whitespace-nowrap">
-                <h1 className="font-bold text-sm tracking-tight text-slate-900">FSC Policy RAG</h1>
-                <p className="text-[10px] uppercase tracking-wider font-semibold text-slate-400">Analysis Platform</p>
+              <div className="whitespace-nowrap min-w-0">
+                <p className="font-semibold text-slate-900 text-[15px] tracking-tight truncate">FSC Policy RAG</p>
+                <p className="text-[11px] text-slate-500 mt-0.5">금융 규제 인텔리전스</p>
               </div>
             )}
           </div>
         </div>
 
-        {/* Navigation */}
-        <nav className="flex-1 p-4 space-y-1.5 overflow-y-auto">
+        <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
           {navItems.map((item) => {
             const Icon = item.icon;
-            
             return (
               <NavLink
                 key={item.id}
                 to={item.path}
                 className={({ isActive }) => `
-                  w-full flex items-center gap-3 px-3 py-2.5 rounded-lg
-                  transition-all duration-200 group
-                  ${isActive 
-                    ? 'bg-slate-900 text-white shadow-md shadow-slate-200' 
-                    : 'text-slate-500 hover:bg-slate-50 hover:text-slate-900'
-                  }
+                  relative flex items-center gap-3 px-4 py-3 rounded-2xl
+                  transition-colors duration-150
+                  ${isActive
+                    ? 'bg-slate-900 text-white'
+                    : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'}
                 `}
               >
                 {({ isActive }) => (
                   <>
-                    <Icon className={`w-5 h-5 flex-shrink-0 ${isActive ? 'text-white' : 'text-slate-400 group-hover:text-slate-600'}`} />
+                    <div className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 ${isActive ? 'bg-white/10' : 'bg-slate-100'}`}>
+                      <Icon className={`w-[22px] h-[22px] ${isActive ? 'text-white' : 'text-slate-600'}`} />
+                    </div>
                     {sidebarOpen && (
-                      <>
-                        <span className="flex-1 text-left text-sm font-medium">
-                          {item.label}
-                        </span>
-                        {item.badge && !isActive && (
-                          <Badge variant="secondary" className="bg-slate-100 text-slate-600 border-none h-5 px-1.5 text-[10px] font-bold">
-                            {item.badge}
-                          </Badge>
-                        )}
-                      </>
+                      <span className={`text-[15px] font-medium ${isActive ? 'text-white' : 'text-slate-700'}`}>
+                        {item.labelKr}
+                      </span>
+                    )}
+                    {item.badge != null && (
+                      <span className={`ml-auto text-xs font-semibold px-2 py-0.5 rounded-full ${isActive ? 'bg-white/20' : 'bg-red-100 text-red-600'}`}>
+                        {item.badge}
+                      </span>
                     )}
                   </>
                 )}
@@ -124,72 +116,127 @@ export default function DashboardLayout({
           })}
         </nav>
 
-        {/* Bottom Actions */}
-        <div className="p-4 border-t border-slate-100">
-          <button className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-500 hover:bg-slate-50 hover:text-slate-900 transition-colors group">
-            <Settings className="w-5 h-5 text-slate-400 group-hover:text-slate-600" />
-            {sidebarOpen && <span className="text-sm font-medium">설정</span>}
-          </button>
-          
-          <div className={`mt-4 flex items-center gap-3 px-3 py-2 rounded-xl bg-slate-50 border border-slate-100 ${!sidebarOpen && 'justify-center px-0'}`}>
-            <div className="w-8 h-8 rounded-full bg-white shadow-sm flex items-center justify-center border border-slate-200 flex-shrink-0">
-              <User className="w-4 h-4 text-slate-600" />
+        <div className="p-4 border-t border-[#e9e9e9]">
+          <div className={`flex items-center gap-3 p-3 rounded-2xl bg-slate-50 ${!sidebarOpen && 'justify-center p-2'}`}>
+            <div className="w-9 h-9 rounded-full bg-slate-200 flex items-center justify-center text-slate-600 font-semibold text-sm flex-shrink-0">
+              T
             </div>
             {sidebarOpen && (
-              <div className="overflow-hidden">
-                <p className="text-xs font-semibold text-slate-900 truncate">Admin User</p>
-                <p className="text-[10px] text-slate-400 truncate">admin@fsc.go.kr</p>
-              </div>
+              <>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-slate-900 truncate">토스증권 · DB 공모전</p>
+                  <p className="text-[11px] text-slate-500 truncate">연구 세션</p>
+                </div>
+                <button type="button" className="p-2 rounded-xl hover:bg-slate-200/80 text-slate-400 hover:text-slate-600 transition-colors" aria-label="로그아웃">
+                  <LogOut className="w-4 h-4" />
+                </button>
+              </>
             )}
           </div>
         </div>
       </aside>
 
-      {/* Main Content Area */}
-      <div className={`flex-1 flex flex-col transition-all duration-300 ${sidebarOpen ? 'lg:ml-64' : 'lg:ml-20'}`}>
-        {/* Top Header */}
-        <header className="h-16 bg-white border-b border-slate-200 sticky top-0 z-30 flex items-center justify-between px-6">
-          <div className="flex items-center gap-4">
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => setSidebarOpen(!sidebarOpen)}
-              className="hidden lg:flex h-9 w-9 text-slate-500 hover:bg-slate-50"
-            >
-              {sidebarOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
-            </Button>
-            
-            <div className="h-4 w-px bg-slate-200 mx-2 hidden lg:block" />
-            
-            <div className="flex items-center gap-2">
-              <span className="text-slate-400 text-sm font-medium">Pages</span>
-              <span className="text-slate-300 text-xs">/</span>
-              <span className="text-slate-900 text-sm font-bold">{activeItem?.label || 'Not Found'}</span>
+      <div className={`flex-1 flex flex-col transition-[margin] duration-300 ease-out ${sidebarOpen ? 'lg:ml-[260px]' : 'lg:ml-[72px]'}`}>
+        <header className="h-[72px] bg-white border-b border-[#e9e9e9] sticky top-0 z-30 flex items-center px-6 lg:px-8">
+          <div className="flex items-center justify-between w-full">
+            <div className="flex items-center gap-4">
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => setSidebarOpen(!sidebarOpen)}
+                className="hidden lg:flex h-10 w-10 rounded-2xl text-slate-500 hover:bg-slate-100 hover:text-slate-700"
+                aria-label={sidebarOpen ? '사이드바 접기' : '사이드바 펼치기'}
+              >
+                {sidebarOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
+              </Button>
+              <div className="h-6 w-px bg-[#e9e9e9] hidden lg:block" />
+              <div>
+                <p className="text-[11px] font-medium text-slate-500 uppercase tracking-wider">DB 보험·금융공모전</p>
+                <h1 className="text-xl font-bold text-slate-900 tracking-tight">{activeItem?.labelKr || '대시보드'}</h1>
+              </div>
             </div>
-          </div>
 
-          <div className="flex items-center gap-3">
-            <Button variant="ghost" size="icon" className="h-9 w-9 text-slate-500">
-              <Search className="w-5 h-5" />
-            </Button>
-            <Button variant="ghost" size="icon" className="h-9 w-9 text-slate-500 relative">
-              <Bell className="w-5 h-5" />
-              <span className="absolute top-2 right-2 w-2 h-2 bg-red-500 rounded-full border-2 border-white" />
-            </Button>
-            <div className="h-8 w-px bg-slate-200 mx-1" />
-            <Button variant="outline" size="sm" className="hidden sm:flex items-center gap-2 border-slate-200 text-slate-600 font-semibold h-9 px-4 rounded-lg hover:bg-slate-50">
-              <RefreshCw className="w-4 h-4" />
-              데이터 동기화
-            </Button>
+            <div className="flex items-center gap-2">
+              {/* Global Collection Status */}
+              {isCollecting && jobProgress && (
+                <div className="hidden md:flex items-center gap-3 px-4 py-2 bg-blue-50 border border-blue-200 rounded-xl">
+                  <Loader2 className="w-4 h-4 text-blue-600 animate-spin" />
+                  <div className="flex flex-col">
+                    <span className="text-sm font-semibold text-blue-700">
+                      {jobProgress.stage}
+                    </span>
+                    <span className="text-xs text-blue-500">
+                      {jobProgress.progress}% 완료
+                    </span>
+                  </div>
+                  <div className="w-20 h-2 bg-blue-200 rounded-full overflow-hidden">
+                    <div 
+                      className="h-full bg-blue-600 transition-all duration-300"
+                      style={{ width: `${jobProgress.progress}%` }}
+                    />
+                  </div>
+                </div>
+              )}
+              
+              {/* Last Result Toast */}
+              {!isCollecting && lastResult?.status === 'completed' && (
+                <div className="hidden md:flex items-center gap-2 px-3 py-2 bg-emerald-50 border border-emerald-200 rounded-xl">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                  <span className="text-sm font-medium text-emerald-700">
+                    신규 {lastResult.result?.total_new || 0}건 수집 완료
+                  </span>
+                </div>
+              )}
+              
+              <Button variant="ghost" size="icon" className="relative h-10 w-10 rounded-2xl text-slate-500 hover:bg-slate-100 hover:text-slate-700 transition-colors" aria-label="알림">
+                <Bell className="w-5 h-5" />
+                <span className="absolute top-2 right-2 w-2.5 h-2.5 bg-red-500 rounded-full border-2 border-white animate-pulse" />
+              </Button>
+              
+              <div className="h-8 w-px bg-slate-200 mx-2 hidden sm:block" />
+              
+              {/* Sync Button - Connected to Global Collection */}
+              <Button 
+                onClick={startCollection}
+                disabled={isCollecting}
+                className="hidden sm:flex items-center gap-2 h-10 px-5 rounded-2xl bg-slate-900 text-white font-semibold hover:bg-slate-800 transition-colors disabled:opacity-70"
+              >
+                {isCollecting ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    수집 중...
+                  </>
+                ) : (
+                  <>
+                    <RefreshCw className="w-4 h-4" />
+                    동기화
+                  </>
+                )}
+              </Button>
+            </div>
           </div>
         </header>
 
-        {/* Page Content */}
-        <main className="p-6 lg:p-10 flex-1">
-          <div className="max-w-7xl mx-auto animate-in fade-in slide-in-from-bottom-4 duration-700">
+        <main className="p-6 lg:p-8 flex-1">
+          <div className="max-w-[1400px] mx-auto space-y-8">
             {children}
           </div>
         </main>
+
+        <footer className="py-4 px-8 border-t border-[#e9e9e9] bg-white">
+          <div className="max-w-[1400px] mx-auto flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-slate-500">
+            <span>© 2026 FSC Policy RAG · DB 공모전</span>
+            <div className="flex items-center gap-4 flex-wrap justify-center">
+              <NavLink to="/privacy" className="hover:text-slate-600 transition-colors">개인정보처리방침</NavLink>
+              <NavLink to="/terms" className="hover:text-slate-600 transition-colors">이용약관</NavLink>
+              <span>Version 2.0.1</span>
+              <div className="flex items-center gap-1.5">
+                <div className="w-2 h-2 rounded-full bg-emerald-500" />
+                <span>시스템 정상</span>
+              </div>
+            </div>
+          </div>
+        </footer>
       </div>
 
       {/* Mobile Nav Header */}
@@ -204,8 +251,18 @@ export default function DashboardLayout({
       </div>
 
       {mobileMenuOpen && (
-        <div className="lg:hidden fixed inset-0 z-40 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-300">
-          <div className="absolute right-6 bottom-24 w-64 bg-white rounded-3xl shadow-2xl p-4 animate-in slide-in-from-bottom-8 duration-300">
+        <div 
+          className="lg:hidden fixed inset-0 z-40 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200"
+          onClick={() => setMobileMenuOpen(false)}
+          role="button"
+          tabIndex={0}
+          aria-label="메뉴 닫기"
+          onKeyDown={(e) => e.key === 'Escape' && setMobileMenuOpen(false)}
+        >
+          <div 
+            className="absolute right-6 bottom-24 w-64 bg-white rounded-3xl shadow-2xl p-4 animate-in slide-in-from-bottom-8 duration-300"
+            onClick={(e) => e.stopPropagation()}
+          >
             <div className="space-y-2">
               {navItems.map((item) => {
                 const Icon = item.icon;
@@ -216,14 +273,15 @@ export default function DashboardLayout({
                     onClick={() => setMobileMenuOpen(false)}
                     className={({ isActive }) => `
                       w-full flex items-center gap-4 px-4 py-4 rounded-2xl
+                      transition-colors duration-150
                       ${isActive 
-                        ? 'bg-slate-900 text-white shadow-lg shadow-slate-200' 
-                        : 'text-slate-600 hover:bg-slate-50'
+                        ? 'bg-slate-900 text-white shadow-lg' 
+                        : 'text-slate-600 hover:bg-slate-50 active:bg-slate-100'
                       }
                     `}
                   >
-                    <Icon className="w-5 h-5" />
-                    <span className="flex-1 text-left font-bold">{item.label}</span>
+                    <Icon className="w-5 h-5 flex-shrink-0" />
+                    <span className="flex-1 text-left font-bold">{item.labelKr}</span>
                   </NavLink>
                 );
               })}

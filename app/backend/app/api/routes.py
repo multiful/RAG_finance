@@ -188,11 +188,130 @@ async def get_job_status(job_id: str):
 
 @router.get("/collection/status")
 async def get_collection_status():
-    """Get RSS collection status."""
+    """Get RSS collection status. total_documents는 DB 전체 행 수(제한 없음)입니다."""
     try:
         stats = await rss_collector.get_collection_stats()
         return stats
     except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/collection/debug")
+async def get_collection_debug():
+    """수집 검증용: 마지막 수집 시각, 총/카테고리별 문서 수, config·RSS_URLS·sources 정합성, 피드 샘플."""
+    try:
+        from app.services.job_tracker import job_tracker
+        from app.core.config import settings
+
+        stats = await rss_collector.get_collection_stats()
+        db = rss_collector.db
+
+        # config / RSS_URLS / sources 정합성 디버깅
+        config_fids = list(getattr(settings, "FSC_RSS_FIDS", []))
+        rss_urls_keys = list(rss_collector.RSS_URLS.keys())
+        sources_res = db.table("sources").select("source_id, fid, name, base_url").execute()
+        db_sources = sources_res.data or []
+        db_fids = [s["fid"] for s in db_sources if s.get("fid")]
+
+        fid_in_config_not_in_db = [f for f in config_fids if f not in db_fids]
+        fid_in_config_not_in_rss = [f for f in config_fids if f not in rss_urls_keys]
+        fid_in_db_not_in_config = [f for f in db_fids if f not in config_fids]
+
+        config_rss_sources_ok = (
+            len(fid_in_config_not_in_db) == 0
+            and len(fid_in_config_not_in_rss) == 0
+        )
+
+        # 카테고리별 건수
+        docs_res = db.table("documents").select("category").execute()
+        by_category = {}
+        for d in (docs_res.data or []):
+            cat = d.get("category") or "unknown"
+            by_category[cat] = by_category.get(cat, 0) + 1
+        category_list = [{"category": k, "count": v} for k, v in sorted(by_category.items(), key=lambda x: -x[1])]
+
+        last_run = None
+        if job_tracker.is_available():
+            last_run = job_tracker.get_last_collection_run()
+
+        # 피드 샘플: 한 채널만 실제 호출
+        feed_sample = None
+        try:
+            fid_map = {s["fid"]: s for s in db_sources}
+            fid = "0111"
+            rec = fid_map.get(fid)
+            base = rec.get("base_url") if rec else None
+            docs = await rss_collector.fetch_feed(fid, base)
+            feed_urls = [d.get("url") for d in docs if d.get("url")]
+            in_db = 0
+            if feed_urls:
+                for i in range(0, len(feed_urls), 50):
+                    batch = feed_urls[i : i + 50]
+                    r = db.table("documents").select("url").in_("url", batch).execute()
+                    in_db += len(r.data or [])
+            feed_sample = {
+                "feed_id": fid,
+                "feed_entries_now": len(docs),
+                "already_in_db": in_db,
+                "potential_new": len(docs) - in_db,
+            }
+        except Exception as fe:
+            feed_sample = {"error": str(fe)}
+
+        return {
+            "total_documents": stats.get("total_documents", 0),
+            "documents_24h": stats.get("documents_24h", 0),
+            "documents_7d": stats.get("documents_7d", 0),
+            "last_collection_run": last_run,
+            "by_category": category_list,
+            "category_count": len(category_list),
+            "feed_sample": feed_sample,
+            "config_rss_sources": {
+                "config_FSC_RSS_FIDS": config_fids,
+                "RSS_URLS_keys": rss_urls_keys,
+                "sources_fids_in_db": db_fids,
+                "ok": config_rss_sources_ok,
+                "missing_in_db": fid_in_config_not_in_db,
+                "missing_in_RSS_URLS": fid_in_config_not_in_rss,
+                "in_db_not_in_config": fid_in_db_not_in_config,
+            },
+            "note": "RSS는 매 수집 시 같은 피드 URL을 호출하지만, 서버가 최신 목록을 반환합니다. "
+                   "동일 문서는 hash로 걸러져 신규만 저장됩니다. "
+                   "config·RSS_URLS·sources가 맞으면 수집 시 누락 fid는 자동으로 sources에 추가됩니다.",
+        }
+    except Exception as e:
+        logging.error(f"Error in get_collection_debug: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/collection/source-stats")
+async def get_collection_source_stats():
+    """소스별·카테고리별 수집 현황 (데이터 소스 4개 FSC/FSS 등 실제 수집 여부 확인용)."""
+    try:
+        db = rss_collector.db
+        # 소스 목록 (이름, fid)
+        sources_res = db.table("sources").select("source_id, name, fid").execute()
+        sources = {s["source_id"]: {"name": s["name"], "fid": s.get("fid", "")} for s in (sources_res.data or [])}
+        # 문서별 source_id 조회 후 카운트
+        docs_res = db.table("documents").select("source_id, category").execute()
+        by_source: dict = {}
+        by_category: dict = {}
+        for d in (docs_res.data or []):
+            sid = d.get("source_id")
+            cat = d.get("category") or "unknown"
+            by_source[sid] = by_source.get(sid, 0) + 1
+            by_category[cat] = by_category.get(cat, 0) + 1
+        source_stats = [
+            {"source_id": sid, "name": sources.get(sid, {}).get("name", "Unknown"), "fid": sources.get(sid, {}).get("fid", ""), "document_count": c}
+            for sid, c in by_source.items()
+        ]
+        return {
+            "by_source": source_stats,
+            "by_category": [{"category": k, "count": v} for k, v in sorted(by_category.items(), key=lambda x: -x[1])],
+            "sources_active": list(set(sources.get(sid, {}).get("name", "Unknown") for sid in by_source)),
+        }
+    except Exception as e:
+        logging.error(f"Error in get_collection_source_stats: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 

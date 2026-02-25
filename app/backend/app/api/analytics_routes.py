@@ -4,6 +4,7 @@ from typing import List, Optional, Dict, Any
 from datetime import datetime, timedelta, timezone
 from collections import Counter, defaultdict
 import logging
+import math
 import re
 
 from app.services.rss_collector import RSSCollector
@@ -26,9 +27,10 @@ async def get_topic_trends(
         
         since = datetime.now(timezone.utc) - timedelta(days=months * 30)
         
+        # 수집된 모든 문서를 가져오되, published_at이 없으면 ingested_at 기준
         query = db.table("documents").select(
-            "document_id, title, category, published_at"
-        ).gte("published_at", since.isoformat())
+            "document_id, title, category, published_at, ingested_at"
+        ).order("published_at", desc=True).limit(500)
         
         if industry:
             query = query.eq("category", industry)
@@ -39,23 +41,24 @@ async def get_topic_trends(
         
         stop_words = {'및', '등', '의', '에', '를', '을', '이', '가', '은', '는', '로', '으로', '와', '과', '에서', '에게', '부터', '까지', '관련', '관한', '대한', '위한', '따른', '통한', '기관', '금융', '제도', '규정', '법률', '시행'}
         
+        monthly_doc_count: Dict[str, int] = defaultdict(int)
         for doc in (result.data or []):
             pub_date = datetime.fromisoformat(doc["published_at"].replace("Z", "+00:00"))
             month_key = pub_date.strftime("%Y-%m")
-            
+            monthly_doc_count[month_key] += 1
+
             title = doc.get("title", "")
             words = re.findall(r'[가-힣]+', title)
             keywords = [w for w in words if len(w) >= 2 and w not in stop_words]
-            
             monthly_keywords[month_key].update(keywords)
-        
+
         trend_data = []
         for month in sorted(monthly_keywords.keys()):
             top_keywords = monthly_keywords[month].most_common(10)
             trend_data.append({
                 "month": month,
                 "keywords": [{"keyword": k, "count": c} for k, c in top_keywords],
-                "total_documents": sum(monthly_keywords[month].values())
+                "total_documents": monthly_doc_count[month]
             })
         
         all_keywords = Counter()
@@ -83,25 +86,19 @@ async def get_industry_impact(
 ):
     """
     Analyze regulation impact by industry sector.
-    Returns impact scores and distribution.
+    Returns impact scores and distribution based on documents only.
     """
     try:
         db = rss_collector.db
         
-        since = datetime.now(timezone.utc) - timedelta(days=days)
-        
         docs_result = db.table("documents").select(
             "document_id, title, category, published_at"
-        ).gte("published_at", since.isoformat()).execute()
-        
-        alerts_result = db.table("alerts").select(
-            "alert_id, topic_id, severity, industries, urgency_score"
-        ).gte("created_at", since.isoformat()).execute()
+        ).order("published_at", desc=True).limit(500).execute()
         
         industry_stats = {
-            "INSURANCE": {"doc_count": 0, "alert_count": 0, "high_severity": 0, "keywords": Counter(), "urgency_sum": 0},
-            "BANKING": {"doc_count": 0, "alert_count": 0, "high_severity": 0, "keywords": Counter(), "urgency_sum": 0},
-            "SECURITIES": {"doc_count": 0, "alert_count": 0, "high_severity": 0, "keywords": Counter(), "urgency_sum": 0},
+            "INSURANCE": {"doc_count": 0, "keywords": Counter()},
+            "BANKING": {"doc_count": 0, "keywords": Counter()},
+            "SECURITIES": {"doc_count": 0, "keywords": Counter()},
         }
         
         industry_keywords = {
@@ -112,44 +109,28 @@ async def get_industry_impact(
         
         for doc in (docs_result.data or []):
             title = doc.get("title", "")
-            
+            assigned = False
             for industry, keywords in industry_keywords.items():
-                if any(kw in title for kw in keywords):
+                if not assigned and any(kw in title for kw in keywords):
                     industry_stats[industry]["doc_count"] += 1
-                    
                     words = re.findall(r'[가-힣]{2,}', title)
                     industry_stats[industry]["keywords"].update(words)
-        
-        for alert in (alerts_result.data or []):
-            industries = alert.get("industries", [])
-            severity = alert.get("severity", "low")
-            urgency = alert.get("urgency_score", 0) or 0
-            
-            for industry in industries:
-                if industry in industry_stats:
-                    industry_stats[industry]["alert_count"] += 1
-                    industry_stats[industry]["urgency_sum"] += urgency
-                    if severity == "high":
-                        industry_stats[industry]["high_severity"] += 1
+                    assigned = True
+                    break
         
         impact_analysis = []
         max_docs = max(s["doc_count"] for s in industry_stats.values()) or 1
-        max_alerts = max(s["alert_count"] for s in industry_stats.values()) or 1
         
         for industry, stats in industry_stats.items():
-            doc_score = (stats["doc_count"] / max_docs) * 40
-            alert_score = (stats["alert_count"] / max_alerts) * 40
-            severity_score = stats["high_severity"] * 5
-            urgency_score = min(20, stats["urgency_sum"] / 10) if stats["alert_count"] > 0 else 0
-            
-            total_impact = min(100, doc_score + alert_score + severity_score + urgency_score)
+            doc_score = (stats["doc_count"] / max_docs) * 80
+            total_impact = min(100, doc_score + 10)
             
             impact_analysis.append({
                 "industry": industry,
                 "industry_label": {"INSURANCE": "보험", "BANKING": "은행", "SECURITIES": "증권"}[industry],
                 "document_count": stats["doc_count"],
-                "alert_count": stats["alert_count"],
-                "high_severity_count": stats["high_severity"],
+                "alert_count": 0,
+                "high_severity_count": 0,
                 "impact_score": round(total_impact, 1),
                 "risk_level": "HIGH" if total_impact >= 70 else "MEDIUM" if total_impact >= 40 else "LOW",
                 "top_keywords": [{"keyword": k, "count": c} for k, c in stats["keywords"].most_common(5)]
@@ -164,7 +145,7 @@ async def get_industry_impact(
             "summary": {
                 "most_affected": impact_analysis[0]["industry_label"] if impact_analysis else None,
                 "total_regulations": len(docs_result.data or []),
-                "total_alerts": len(alerts_result.data or [])
+                "total_alerts": 0
             }
         }
         
@@ -183,11 +164,10 @@ async def get_document_stats(
     try:
         db = rss_collector.db
         
-        since = datetime.now(timezone.utc) - timedelta(days=days)
-        
+        # 모든 수집 문서를 가져와서 통계 분석 (최대 500개)
         result = db.table("documents").select(
             "document_id, title, category, status, published_at, ingested_at"
-        ).gte("published_at", since.isoformat()).execute()
+        ).order("published_at", desc=True).limit(500).execute()
         
         daily_counts: Dict[str, int] = defaultdict(int)
         weekly_counts: Dict[str, int] = defaultdict(int)
@@ -245,29 +225,64 @@ async def get_keyword_cloud(
     limit: int = Query(50, ge=10, le=100)
 ):
     """
-    Get keyword frequency data for word cloud visualization.
+    키워드 클라우드: IDF(문서 빈도) 기반으로 비정보적 단어를 자동 제거.
+    - 등장 문서 비율이 높은 단어(거의 모든 문서에 나오는 단어)는 제외.
+    - 하드코딩 불용어 최소화, 문법용어(조사·접속사)만 제거.
     """
     try:
         db = rss_collector.db
-        
-        since = datetime.now(timezone.utc) - timedelta(days=days)
-        
-        result = db.table("documents").select(
-            "title"
-        ).gte("published_at", since.isoformat()).execute()
-        
-        stop_words = {'및', '등', '의', '에', '를', '을', '이', '가', '은', '는', '로', '으로', '와', '과', '에서', '에게', '부터', '까지', '관련', '관한', '대한', '위한', '따른', '통한', '기관', '금융', '제도', '규정', '법률', '시행', '개정', '변경', '안내', '공고', '알림'}
-        
-        all_keywords = Counter()
-        
-        for doc in (result.data or []):
+        result = db.table("documents").select("title").order(
+            "published_at", desc=True
+        ).limit(500).execute()
+        docs = result.data or []
+        N = len(docs)
+        if N == 0:
+            return {"period_days": days, "keywords": []}
+
+        # 불용어: 조사·접속사 + 비정보적 문구(없습니다, 공고, 마감 등)
+        minimal_stop = {
+            '및', '등', '의', '에', '를', '을', '이', '가', '은', '는', '로', '으로',
+            '와', '과', '에서', '에게', '부터', '까지', '관련', '관한', '대한', '위한', '따른', '통한',
+            '없습니다', '아닙니다', '등은', '정부는', '있습니다', '하였습니다', '합니다', '됩니다',
+            '금융위원회', '공고', '마감', '공개모집', '보도설명', '입법예고', '공지사항', '카드뉴스',
+            '행사', '채용안내', '정책자료',
+        }
+        # 문서별 단어 집합 + 전역 출현 횟수
+        term_total = Counter()
+        doc_freq = Counter()  # 단어가 등장한 문서 수
+        for doc in docs:
             title = doc.get("title", "")
             words = re.findall(r'[가-힣]{2,}', title)
-            keywords = [w for w in words if w not in stop_words]
-            all_keywords.update(keywords)
-        
-        max_count = all_keywords.most_common(1)[0][1] if all_keywords else 1
-        
+            seen_in_doc = set()
+            for w in words:
+                if len(w) < 2 or w in minimal_stop:
+                    continue
+                term_total[w] += 1
+                seen_in_doc.add(w)
+            for w in seen_in_doc:
+                doc_freq[w] += 1
+
+        # 등장 문서 비율이 max_df_ratio 초과인 단어 제외 (거의 모든 문서에 나오면 비정보적)
+        max_df_ratio = 0.55
+        idf_min = 0.4  # idf = log(N/(df+1)); 이 값 미만이면 제외
+        candidates = []
+        for w, total_count in term_total.most_common(limit * 3):
+            df = doc_freq.get(w, 0)
+            if df == 0:
+                continue
+            ratio = df / N
+            if ratio > max_df_ratio:
+                continue
+            idf = math.log(N / (df + 1) + 1)
+            if idf < idf_min:
+                continue
+            # 점수: 총 출현 횟수 * idf (정보량 반영)
+            score = total_count * idf
+            candidates.append((w, total_count, score))
+        candidates.sort(key=lambda x: -x[2])
+        top = [(w, c) for w, c, _ in candidates[:limit]]
+        max_count = top[0][1] if top else 1
+
         return {
             "period_days": days,
             "keywords": [
@@ -276,10 +291,9 @@ async def get_keyword_cloud(
                     "value": count,
                     "normalized": round(count / max_count * 100, 1)
                 }
-                for keyword, count in all_keywords.most_common(limit)
+                for keyword, count in top
             ]
         }
-        
     except Exception as e:
         logging.error(f"Error in get_keyword_cloud: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -362,32 +376,44 @@ async def get_weekly_report():
         db = rss_collector.db
         now = datetime.now(timezone.utc)
         week_ago = now - timedelta(days=7)
-        
-        # Get this week's documents
+
+        # 이번 주 전체 문서 수 (limit 없이 count만)
+        count_result = db.table("documents").select(
+            "document_id", count="exact"
+        ).gte("published_at", week_ago.isoformat()).execute()
+        total_docs = (count_result.count if hasattr(count_result, "count") else None) or 0
+
+        # 요약/하이라이트용: 제한 넓게 (500건). by_industry는 아래에서 전체 집계로 계산
         docs_result = db.table("documents").select(
             "document_id, title, published_at, category"
         ).gte("published_at", week_ago.isoformat()).order(
             "published_at", desc=True
-        ).limit(20).execute()
-        
+        ).limit(500).execute()
+
         documents = docs_result.data or []
-        
-        # Get alerts
-        alerts_result = db.table("alerts").select("*").gte(
-            "created_at", week_ago.isoformat()
-        ).execute()
-        alerts = alerts_result.data or []
-        
-        # Categorize by industry
+        alerts = []
+
+        # by_industry: 이번 주 전체 문서 기준으로 업권별 집계 (별도 쿼리로 정확히)
         by_industry = {"INSURANCE": 0, "BANKING": 0, "SECURITIES": 0, "GENERAL": 0}
-        for doc in documents:
-            category = doc.get("category", "GENERAL")
-            if category in by_industry:
-                by_industry[category] += 1
-            else:
-                by_industry["GENERAL"] += 1
-        
-        # Generate key highlights
+        if total_docs > 0:
+            week_docs = db.table("documents").select("category").gte(
+                "published_at", week_ago.isoformat()
+            ).execute()
+            for doc in (week_docs.data or []):
+                category = doc.get("category", "GENERAL")
+                if category in by_industry:
+                    by_industry[category] += 1
+                else:
+                    by_industry["GENERAL"] += 1
+        else:
+            for doc in documents:
+                category = doc.get("category", "GENERAL")
+                if category in by_industry:
+                    by_industry[category] += 1
+                else:
+                    by_industry["GENERAL"] += 1
+
+        # Generate key highlights (최대 5건)
         highlights = []
         for doc in documents[:5]:
             highlights.append({
@@ -398,9 +424,8 @@ async def get_weekly_report():
         
         # Count urgent items
         urgent_count = sum(1 for a in alerts if a.get("severity") == "high")
-        
-        # Generate summary text
-        total_docs = len(documents)
+
+        # total_docs는 위에서 이번 주 전체 건수로 이미 설정됨
         summary_parts = []
         
         if total_docs > 0:
