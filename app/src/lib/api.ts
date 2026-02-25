@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { toast } from 'sonner';
 import type {
   DocumentListResponse,
   Document,
@@ -30,6 +31,27 @@ const api = axios.create({
     'Content-Type': 'application/json',
   },
 });
+
+// 5xx·네트워크 에러 시 토스트 (고도화)
+api.interceptors.response.use(
+  (res) => res,
+  (err) => {
+    const status = err.response?.status;
+    const isServerError = status >= 500;
+    const isNetworkError = !err.response && err.message?.includes('Network');
+    if (isServerError || isNetworkError) {
+      const detail = err.response?.data?.detail;
+      const message =
+        typeof detail === 'string'
+          ? detail
+          : Array.isArray(detail) && detail[0] && typeof detail[0] === 'object' && 'msg' in detail[0]
+            ? String((detail[0] as { msg: string }).msg)
+            : err.response?.data?.message ?? err.message ?? '요청을 처리할 수 없습니다.';
+      toast.error(message, { duration: 5000 });
+    }
+    return Promise.reject(err);
+  }
+);
 
 // Documents
 export const getDocuments = async (params?: {
@@ -65,6 +87,18 @@ export const getJobStatus = async (jobId: string) => {
 
 export const getCollectionStatus = async () => {
   const response = await api.get('/collection/status');
+  return response.data;
+};
+
+export type SourceStat = { source_id: string; name: string; fid: string; document_count: number };
+export type CollectionSourceStats = {
+  by_source: SourceStat[];
+  by_category: { category: string; count: number }[];
+  sources_active: string[];
+};
+
+export const getCollectionSourceStats = async (): Promise<CollectionSourceStats> => {
+  const response = await api.get('/collection/source-stats');
   return response.data;
 };
 
@@ -353,19 +387,21 @@ export interface TopicTrendData {
   total_documents_analyzed: number;
 }
 
+export interface IndustryImpactItem {
+  industry: string;
+  industry_label: string;
+  document_count: number;
+  alert_count: number;
+  high_severity_count: number;
+  impact_score: number;
+  risk_level: string;
+  top_keywords: Array<{ keyword: string; count: number }>;
+}
+
 export interface IndustryImpactData {
   period_days: number;
   analysis_date: string;
-  industry_impact: Array<{
-    industry: string;
-    industry_label: string;
-    document_count: number;
-    alert_count: number;
-    high_severity_count: number;
-    impact_score: number;
-    risk_level: string;
-    top_keywords: Array<{ keyword: string; count: number }>;
-  }>;
+  industry_impact: IndustryImpactItem[];
   summary: {
     most_affected: string | null;
     total_regulations: number;
@@ -465,6 +501,103 @@ export interface SystemHealth {
 
 export const getSystemHealth = async (): Promise<SystemHealth> => {
   const response = await axios.get('/health');
+  return response.data;
+};
+
+// RAGAS Evaluation API
+export interface EvaluationMetrics {
+  faithfulness: number;
+  answer_relevancy: number;
+  context_precision: number;
+  context_recall: number;
+  overall_score: number;
+  sample_size: number;
+  evaluated_at: string;
+}
+
+export interface EvaluationResult {
+  status: string;
+  evaluation: EvaluationMetrics;
+  details: Array<{
+    question: string;
+    answer: string;
+    rag_confidence: number;
+    rag_groundedness: number;
+    context_count: number;
+  }>;
+}
+
+export interface MetricsSummary {
+  system_name: string;
+  version: string;
+  generated_at: string;
+  data_metrics: {
+    total_documents: number;
+    documents_24h: number;
+    collection_success_rate: number;
+    data_sources: number;
+  };
+  rag_metrics: {
+    avg_faithfulness: number;
+    avg_answer_relevancy: number;
+    avg_context_precision: number;
+    avg_context_recall: number;
+    avg_overall_score: number;
+    evaluation_count: number;
+    note?: string;
+  };
+  technology_stack: Record<string, string>;
+  features: string[];
+}
+
+export const runEvaluation = async (sampleSize: number = 16): Promise<EvaluationResult> => {
+  const response = await api.post('/evaluation/run', { sample_size: sampleSize });
+  return response.data;
+};
+
+export const getLatestEvaluation = async (): Promise<{
+  has_evaluation: boolean;
+  evaluation?: EvaluationMetrics;
+  message?: string;
+}> => {
+  const response = await api.get('/evaluation/latest');
+  return response.data;
+};
+
+export const getEvaluationHistory = async (limit: number = 10) => {
+  const response = await api.get('/evaluation/history', { params: { limit } });
+  return response.data;
+};
+
+export const getMetricsSummary = async (): Promise<MetricsSummary> => {
+  const response = await api.get('/evaluation/metrics/summary');
+  return response.data;
+};
+
+// LangGraph Agent API
+export interface AgentResponse {
+  answer: string;
+  citations: Array<{
+    chunk_id: string;
+    document_id: string;
+    document_title: string;
+    snippet: string;
+    published_at: string;
+    url: string;
+  }>;
+  confidence: number;
+  groundedness_score: number;
+  citation_coverage: number;
+  metadata: {
+    question_type: string;
+    agent_iterations: number;
+    processed_at: string;
+    engine: string;
+  };
+}
+
+export const askAgentQuestion = async (question: string): Promise<AgentResponse> => {
+  const response = await api.post('/evaluation/agent/ask', { question, use_agent: true });
   return response.data;
 };
 

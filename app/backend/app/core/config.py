@@ -35,9 +35,9 @@ class Settings(BaseSettings):
     # Redis
     REDIS_URL: str = "redis://127.0.0.1:6379/0"
     
-    # RSS Sources - 금융위원회
+    # RSS Sources - 금융위원회 (fid = 게시판 코드, 공식 4개 + 추가 2개)
     FSC_RSS_BASE: str = "http://www.fsc.go.kr/about/fsc_bbs_rss/"
-    FSC_RSS_FIDS: List[str] = ["0111", "0112", "0114", "0411"]
+    FSC_RSS_FIDS: List[str] = ["0111", "0112", "0114", "0113", "0115", "0411"]
     RSS_MAX_ITEMS: int = 200  # Default to 200 items per feed
     
     # 금융감독원 (FSS) - 웹 스크래핑
@@ -47,6 +47,11 @@ class Settings(BaseSettings):
         "/fss/bbs/B0000110/list.do?menuNo=200138",  # 공지사항
     ]
     ENABLE_FSS_SCRAPING: bool = True  # 금감원 스크래핑 활성화
+
+    # 일일 자동 수집 (경량 스케줄, 디스크/메모리 절약)
+    ENABLE_DAILY_COLLECTION: bool = True
+    COLLECTION_AT_HOUR: int = 3  # 03:00
+    COLLECTION_TZ: str = "Asia/Seoul"
     
     # Vector DB
     VECTOR_DIMENSION: int = 1536

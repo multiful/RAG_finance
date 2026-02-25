@@ -84,7 +84,12 @@ class JobTracker:
         
         if status in ["success", "success_collect", "no_change", "error"]:
             data["finished_at"] = datetime.now(timezone.utc).isoformat()
-        
+            if status in ["success_collect", "no_change"]:
+                try:
+                    self.redis.set("last_collection_run", data["finished_at"], ex=86400 * 30)
+                except Exception:
+                    pass
+
         try:
             self.redis.setex(f"{self.prefix}{job_id}", self.expiry, json.dumps(data))
         except Exception as e:
@@ -113,6 +118,17 @@ class JobTracker:
             val = self.redis.get(f"{self.prefix}latest")
             if isinstance(val, bytes):
                 return val.decode("utf-8")
+            return val
+        except Exception:
+            return None
+
+    def get_last_collection_run(self) -> Optional[str]:
+        if not self.is_available():
+            return None
+        try:
+            val = self.redis.get("last_collection_run")
+            if isinstance(val, bytes):
+                val = val.decode("utf-8")
             return val
         except Exception:
             return None

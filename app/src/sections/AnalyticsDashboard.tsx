@@ -47,7 +47,9 @@ import {
   ChevronUp,
   ChevronDown,
   Minus,
+  Loader2,
 } from 'lucide-react';
+import { toast } from 'sonner';
 import {
   getTopicTrends,
   getIndustryImpact,
@@ -82,7 +84,7 @@ function StatCard({
   color: string;
 }) {
   return (
-    <Card className="border-none shadow-sm bg-white">
+    <Card className="card-interactive border-none bg-white">
       <CardContent className="p-6">
         <div className="flex items-center justify-between">
           <div className={`w-12 h-12 rounded-2xl ${color} flex items-center justify-center`}>
@@ -118,7 +120,7 @@ function KeywordCloud({ data }: { data: KeywordCloudData }) {
         return (
           <span
             key={keyword.text}
-            className="px-3 py-1 rounded-full bg-indigo-100 text-indigo-700 font-bold transition-all hover:bg-indigo-200 cursor-default"
+            className="px-3 py-1 rounded-full bg-indigo-100 text-indigo-700 font-bold transition-all duration-200 hover:bg-indigo-200 hover:scale-105 cursor-default"
             style={{ 
               fontSize: `${size}px`,
               opacity,
@@ -135,19 +137,22 @@ function KeywordCloud({ data }: { data: KeywordCloudData }) {
 
 export default function AnalyticsDashboard() {
   const [loading, setLoading] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const [topicTrends, setTopicTrends] = useState<TopicTrendData | null>(null);
   const [industryImpact, setIndustryImpact] = useState<IndustryImpactData | null>(null);
   const [documentStats, setDocumentStats] = useState<DocumentStatsData | null>(null);
   const [keywordCloud, setKeywordCloud] = useState<KeywordCloudData | null>(null);
   const [summary, setSummary] = useState<RegulationSummary | null>(null);
   const [periodDays, setPeriodDays] = useState<string>('90');
+  const [lastFetchedAt, setLastFetchedAt] = useState<Date | null>(null);
 
   useEffect(() => {
-    loadData();
+    loadData(false);
   }, [periodDays]);
 
-  const loadData = async () => {
-    setLoading(true);
+  const loadData = async (userRefresh = false) => {
+    if (userRefresh) setIsRefreshing(true);
+    else setLoading(true);
     try {
       const days = parseInt(periodDays);
       const months = Math.ceil(days / 30);
@@ -167,37 +172,47 @@ export default function AnalyticsDashboard() {
       setSummary(summaryData);
     } catch (error) {
       console.error('Failed to load analytics:', error);
+      if (userRefresh) toast.error('분석 데이터를 불러올 수 없습니다.');
     } finally {
       setLoading(false);
+      setIsRefreshing(false);
+      setLastFetchedAt(new Date());
     }
   };
 
   if (loading) {
     return (
-      <div className="p-6 space-y-6">
-        <Skeleton className="h-10 w-64" />
+      <div className="p-6 space-y-6 animate-page-enter">
+        <Skeleton className="h-10 w-64 rounded-lg" />
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          {[1, 2, 3, 4].map(i => <Skeleton key={i} className="h-32" />)}
+          {[1, 2, 3, 4].map((i) => (
+            <Skeleton key={i} className="h-32 rounded-xl" />
+          ))}
         </div>
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <Skeleton className="h-96" />
-          <Skeleton className="h-96" />
+          <Skeleton className="h-96 rounded-2xl" />
+          <Skeleton className="h-96 rounded-2xl" />
         </div>
       </div>
     );
   }
 
   return (
-    <div className="p-6 space-y-6 max-w-7xl mx-auto">
+    <div className="p-6 space-y-6 max-w-7xl mx-auto animate-page-enter">
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-black text-slate-900 flex items-center gap-3">
-            <BarChart3 className="h-8 w-8 text-primary" />
-            규제 분석 대시보드
+          <h1 className="text-2xl font-bold text-slate-900 flex items-center gap-3">
+            <BarChart3 className="h-7 w-7 text-indigo-600" />
+            규제 분석
           </h1>
-          <p className="text-slate-500 mt-1">
-            금융 규제 데이터 트렌드 분석 및 영향도 시각화
+          <p className="text-sm text-slate-500 mt-1">
+            트렌드 분석 · 영향도 시각화 · 키워드 분석
+            {lastFetchedAt && (
+              <span className="ml-2 text-slate-400">
+                · 기준 {lastFetchedAt.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })}
+              </span>
+            )}
           </p>
         </div>
         
@@ -214,8 +229,17 @@ export default function AnalyticsDashboard() {
             </SelectContent>
           </Select>
           
-          <Button variant="outline" onClick={loadData}>
-            <RefreshCw className="h-4 w-4 mr-2" />
+          <Button 
+            variant="outline" 
+            onClick={() => loadData(true)} 
+            disabled={isRefreshing}
+            className="transition-colors duration-200"
+          >
+            {isRefreshing ? (
+              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+            ) : (
+              <RefreshCw className="h-4 w-4 mr-2" />
+            )}
             새로고침
           </Button>
         </div>
@@ -255,7 +279,7 @@ export default function AnalyticsDashboard() {
       {/* Main Analytics Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Topic Trend Chart */}
-        <Card className="border-none shadow-lg">
+        <Card className="border-none shadow-sm transition-shadow duration-200 hover:shadow-lg rounded-2xl overflow-hidden">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Activity className="h-5 w-5 text-primary" />
@@ -313,7 +337,7 @@ export default function AnalyticsDashboard() {
         </Card>
 
         {/* Industry Impact Chart */}
-        <Card className="border-none shadow-lg">
+        <Card className="border-none shadow-sm transition-shadow duration-200 hover:shadow-lg rounded-2xl overflow-hidden">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Target className="h-5 w-5 text-primary" />
@@ -333,7 +357,7 @@ export default function AnalyticsDashboard() {
                       dataKey="industry_label" 
                       tick={{ fontSize: 12, fontWeight: 600 }}
                     />
-                    <PolarRadiusAxis angle={30} domain={[0, 100]} tick={{ fontSize: 10 }} />
+                    <PolarRadiusAxis angle={30} domain={[0, 100]} ticks={[0, 25, 50, 75, 100]} tick={{ fontSize: 10 }} />
                     <Radar
                       name="영향도"
                       dataKey="impact_score"
@@ -399,18 +423,18 @@ export default function AnalyticsDashboard() {
             </CardDescription>
           </CardHeader>
           <CardContent>
-            {industryImpact && industryImpact.industries.length > 0 ? (
+            {industryImpact && industryImpact.industry_impact && industryImpact.industry_impact.length > 0 ? (
               <ResponsiveContainer width="100%" height={300}>
                 <RadarChart cx="50%" cy="50%" outerRadius="70%" data={[
-                  { metric: '문서 수', ...industryImpact.industries.reduce((acc, i) => ({...acc, [i.industry_label]: Math.min(i.document_count, 100)}), {}) },
-                  { metric: '알림 수', ...industryImpact.industries.reduce((acc, i) => ({...acc, [i.industry_label]: Math.min(i.alert_count * 10, 100)}), {}) },
-                  { metric: '영향 점수', ...industryImpact.industries.reduce((acc, i) => ({...acc, [i.industry_label]: i.impact_score}), {}) },
-                  { metric: '고위험', ...industryImpact.industries.reduce((acc, i) => ({...acc, [i.industry_label]: Math.min(i.high_severity_count * 20, 100)}), {}) },
+                  { metric: '문서 수', ...industryImpact.industry_impact.reduce((acc, i) => ({...acc, [i.industry_label]: Math.min(i.document_count, 100)}), {}) },
+                  { metric: '알림 수', ...industryImpact.industry_impact.reduce((acc, i) => ({...acc, [i.industry_label]: Math.min(i.alert_count * 10, 100)}), {}) },
+                  { metric: '영향 점수', ...industryImpact.industry_impact.reduce((acc, i) => ({...acc, [i.industry_label]: i.impact_score}), {}) },
+                  { metric: '고위험', ...industryImpact.industry_impact.reduce((acc, i) => ({...acc, [i.industry_label]: Math.min(i.high_severity_count * 20, 100)}), {}) },
                 ]}>
                   <PolarGrid stroke="#e2e8f0" />
                   <PolarAngleAxis dataKey="metric" tick={{ fontSize: 11, fill: '#64748b' }} />
-                  <PolarRadiusAxis angle={30} domain={[0, 100]} tick={{ fontSize: 10 }} />
-                  {industryImpact.industries.map((industry, idx) => (
+                  <PolarRadiusAxis angle={30} domain={[0, 100]} ticks={[0, 25, 50, 75, 100]} tick={{ fontSize: 10 }} />
+                  {industryImpact.industry_impact.map((industry, idx) => (
                     <Radar
                       key={industry.industry}
                       name={industry.industry_label}
@@ -513,7 +537,7 @@ export default function AnalyticsDashboard() {
               문서 통계 상세
             </CardTitle>
             <CardDescription>
-              기간별 문서 수집 현황 및 카테고리 분포
+              기간별 문서 수집 현황 및 카테고리 분포. 카테고리는 수집 유형(보도자료, 보도설명, 공지사항 등) 기준입니다.
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -581,21 +605,21 @@ export default function AnalyticsDashboard() {
 
             {/* Stats Summary */}
             <div className="mt-6 grid grid-cols-2 md:grid-cols-4 gap-4">
-              <div className="bg-slate-50 rounded-xl p-4 text-center">
+              <div className="bg-slate-50/80 border border-slate-100 rounded-xl p-4 text-center shadow-sm">
                 <p className="text-2xl font-black text-slate-900">{documentStats.total_documents}</p>
-                <p className="text-xs font-bold text-slate-500 uppercase">총 문서</p>
+                <p className="text-xs font-bold text-slate-500 uppercase tracking-wide">총 문서</p>
               </div>
-              <div className="bg-slate-50 rounded-xl p-4 text-center">
+              <div className="bg-slate-50/80 border border-slate-100 rounded-xl p-4 text-center shadow-sm">
                 <p className="text-2xl font-black text-slate-900">{documentStats.avg_documents_per_day}</p>
-                <p className="text-xs font-bold text-slate-500 uppercase">일평균</p>
+                <p className="text-xs font-bold text-slate-500 uppercase tracking-wide">일평균</p>
               </div>
-              <div className="bg-slate-50 rounded-xl p-4 text-center">
+              <div className="bg-slate-50/80 border border-slate-100 rounded-xl p-4 text-center shadow-sm">
                 <p className="text-2xl font-black text-slate-900">{documentStats.by_category.length}</p>
-                <p className="text-xs font-bold text-slate-500 uppercase">카테고리</p>
+                <p className="text-xs font-bold text-slate-500 uppercase tracking-wide">카테고리</p>
               </div>
-              <div className="bg-slate-50 rounded-xl p-4 text-center">
+              <div className="bg-slate-50/80 border border-slate-100 rounded-xl p-4 text-center shadow-sm">
                 <p className="text-2xl font-black text-slate-900">{documentStats.period_days}일</p>
-                <p className="text-xs font-bold text-slate-500 uppercase">분석 기간</p>
+                <p className="text-xs font-bold text-slate-500 uppercase tracking-wide">분석 기간</p>
               </div>
             </div>
           </CardContent>

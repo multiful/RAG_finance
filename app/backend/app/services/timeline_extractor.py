@@ -34,12 +34,15 @@ class TimelineExtractorService:
         """Extract timeline events from a document using GPT-4."""
         
         if not force_refresh:
-            existing = self.db.table("timeline_events").select("*").eq(
-                "document_id", document_id
-            ).execute()
-            
-            if existing.data:
-                return self._convert_to_events(existing.data, document_id)
+            try:
+                existing = self.db.table("timeline_events").select("*").eq(
+                    "document_id", document_id
+                ).execute()
+                
+                if existing.data:
+                    return self._convert_to_events(existing.data, document_id)
+            except Exception:
+                pass  # Table doesn't exist, continue to extract
         
         doc_result = self.db.table("documents").select("*").eq(
             "document_id", document_id
@@ -235,18 +238,23 @@ class TimelineExtractorService:
         today = date.today()
         end_date = today + timedelta(days=days_ahead)
         
-        query = self.db.table("timeline_events").select(
-            "*, documents(title)"
-        ).lte("event_date", end_date.isoformat())
-        
-        if not include_past:
-            query = query.gte("event_date", today.isoformat())
-        
-        query = query.order("event_date")
-        
-        result = query.execute()
-        
-        if not result.data:
+        try:
+            query = self.db.table("timeline_events").select(
+                "*, documents(title)"
+            ).lte("event_date", end_date.isoformat())
+            
+            if not include_past:
+                query = query.gte("event_date", today.isoformat())
+            
+            query = query.order("event_date")
+            
+            result = query.execute()
+            
+            if not result.data:
+                return TimelineResponse(events=[], total_events=0, upcoming_critical=0)
+        except Exception as e:
+            # Table doesn't exist or other DB error
+            print(f"Timeline events query failed: {e}")
             return TimelineResponse(events=[], total_events=0, upcoming_critical=0)
         
         events = []
@@ -303,15 +311,19 @@ class TimelineExtractorService:
     ) -> List[TimelineEvent]:
         """Get events within a date range."""
         
-        query = self.db.table("timeline_events").select(
-            "*, documents(title)"
-        ).gte("event_date", start_date.isoformat()).lte(
-            "event_date", end_date.isoformat()
-        ).order("event_date")
-        
-        result = query.execute()
-        
-        if not result.data:
+        try:
+            query = self.db.table("timeline_events").select(
+                "*, documents(title)"
+            ).gte("event_date", start_date.isoformat()).lte(
+                "event_date", end_date.isoformat()
+            ).order("event_date")
+            
+            result = query.execute()
+            
+            if not result.data:
+                return []
+        except Exception as e:
+            print(f"Timeline date range query failed: {e}")
             return []
         
         today = date.today()
@@ -399,13 +411,18 @@ class TimelineExtractorService:
     async def process_all_documents(self) -> int:
         """Process all unprocessed documents for timeline extraction."""
         
-        existing_doc_ids = self.db.table("timeline_events").select(
-            "document_id"
-        ).execute()
+        try:
+            existing_doc_ids = self.db.table("timeline_events").select(
+                "document_id"
+            ).execute()
+            processed_ids = {item["document_id"] for item in existing_doc_ids.data} if existing_doc_ids.data else set()
+        except Exception:
+            processed_ids = set()  # Table doesn't exist
         
-        processed_ids = {item["document_id"] for item in existing_doc_ids.data} if existing_doc_ids.data else set()
-        
-        all_docs = self.db.table("documents").select("document_id").execute()
+        try:
+            all_docs = self.db.table("documents").select("document_id").execute()
+        except Exception:
+            return 0
         
         processed_count = 0
         for doc in all_docs.data or []:
