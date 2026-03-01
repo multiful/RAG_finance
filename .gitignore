@@ -88,6 +88,8 @@ Icon?
 *.pptx
 *.md
 *.hwp
+docs/
+competition/
 
 # -----------------------------
 # Misc
@@ -111,8 +113,6 @@ __pycache__/
 .store/
 
 # -----------------------------
-# GitHub: 프로젝트/문서는 추적
+# GitHub: 루트 README만 추적 (docs/ competition/ 은 위에서 제외)
 # -----------------------------
 !README.md
-!docs/
-!docs/**/*.md
