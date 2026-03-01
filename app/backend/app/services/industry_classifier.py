@@ -67,11 +67,12 @@ class IndustryClassifier:
 
 참고: 값은 0.0~1.0 사이의 신뢰도, 복수 업권 영향 가능"""
 
+        model = (settings.OPENAI_MODEL_CLASSIFICATION or settings.OPENAI_MODEL).strip() or settings.OPENAI_MODEL
         try:
             response = await self.openai_client.chat.completions.create(
-                model=settings.OPENAI_MODEL,
+                model=model,
                 messages=[
-                    {"role": "system", "content": "금융정책 분석 전문가"},
+                    {"role": "system", "content": "당신은 금융정책·규제 문서의 업권(보험/은행/증권) 영향 분류 전문가입니다. JSON 형식만 출력하세요."},
                     {"role": "user", "content": prompt}
                 ],
                 temperature=0.2,
@@ -108,7 +109,7 @@ class IndustryClassifier:
         if request.text:
             text = request.text
         elif request.document_id:
-            # Fetch document from DB
+            # Fetch document from DB; 본문은 raw_text 우선, 없으면 chunks에서 수집(실제 데이터)
             result = self.db.table("documents").select("*").eq(
                 "document_id", request.document_id
             ).execute()
@@ -124,7 +125,24 @@ class IndustryClassifier:
                     evidence_chunk_ids=[]
                 )
             
-            text = result.data[0].get("raw_text", "")
+            doc = result.data[0]
+            text = doc.get("raw_text") or doc.get("raw_html", "")
+            if not text or not text.strip():
+                chunks_res = self.db.table("chunks").select("chunk_text").eq(
+                    "document_id", request.document_id
+                ).order("chunk_index").limit(25).execute()
+                if chunks_res.data:
+                    text = "\n\n".join([c["chunk_text"] for c in chunks_res.data])
+            if not text or not text.strip():
+                return IndustryClassificationResponse(
+                    document_id=request.document_id,
+                    label_insurance=0.0,
+                    label_banking=0.0,
+                    label_securities=0.0,
+                    predicted_labels=[],
+                    explanation="문서 본문이 없습니다. 파이프라인에서 파싱·청킹이 완료된 문서를 사용하세요.",
+                    evidence_chunk_ids=[]
+                )
         else:
             return IndustryClassificationResponse(
                 label_insurance=0.0,

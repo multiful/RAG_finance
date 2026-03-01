@@ -1,5 +1,6 @@
 import axios from 'axios';
 import { toast } from 'sonner';
+import { API_BASE_URL } from '@/lib/constants';
 import type {
   DocumentListResponse,
   Document,
@@ -22,8 +23,6 @@ import type {
   ComplianceActionItem,
   ActionItemAudit
 } from '@/types';
-
-const API_BASE_URL = '/api/v1';
 
 const api = axios.create({
   baseURL: API_BASE_URL,
@@ -53,12 +52,13 @@ api.interceptors.response.use(
   }
 );
 
-// Documents
+// Documents (topic=stablecoin_sto: 가상자산·토큰증권·스테이블코인만)
 export const getDocuments = async (params?: {
   page?: number;
   page_size?: number;
   category?: string;
   days?: number;
+  topic?: string;
 }): Promise<DocumentListResponse> => {
   const response = await api.get('/documents', { params });
   return response.data;
@@ -430,6 +430,8 @@ export interface RegulationSummary {
   overview: {
     total_regulations: number;
     regulations_this_week: number;
+    domestic_this_week?: number;
+    international_this_week?: number;
     week_over_week_change: number;
     active_alerts: number;
     high_severity_alerts: number;
@@ -544,6 +546,8 @@ export interface MetricsSummary {
     avg_context_recall: number;
     avg_overall_score: number;
     evaluation_count: number;
+    hallucination_rate_recent_pct?: number | null;
+    hallucination_goal_pct?: number;
     note?: string;
   };
   technology_stack: Record<string, string>;
@@ -598,6 +602,158 @@ export interface AgentResponse {
 
 export const askAgentQuestion = async (question: string): Promise<AgentResponse> => {
   const response = await api.post('/evaluation/agent/ask', { question, use_agent: true });
+  return response.data;
+};
+
+// --- Gap Map (KAI Risk–Policy Gap Map) ---
+export interface RiskAxisScore {
+  axis_id: string;
+  name_ko: string;
+  gi: number;
+  lc: number;
+  gap: number;
+}
+export interface GapMapResponse {
+  items: RiskAxisScore[];
+  formula: string;
+}
+export interface BlindSpotItem {
+  rank: number;
+  axis_id: string;
+  name_ko: string;
+  gap: number;
+  description: string;
+}
+export interface TopBlindSpotsResponse {
+  items: BlindSpotItem[];
+  formula: string;
+}
+
+export const getGapMap = async (): Promise<GapMapResponse> => {
+  const response = await api.get<GapMapResponse>('/gap-map');
+  return response.data;
+};
+export const getTopBlindSpots = async (limit: number = 3): Promise<TopBlindSpotsResponse> => {
+  const response = await api.get<TopBlindSpotsResponse>('/gap-map/top-blind-spots', { params: { limit } });
+  return response.data;
+};
+
+export interface GapMapDomesticInternationalComparison {
+  period_days: number;
+  domestic: { document_count: number; sources: string[] };
+  international: { document_count: number; sources: string[] };
+  summary: string;
+}
+export const getGapMapDomesticInternationalComparison = async (
+  days: number = 90
+): Promise<GapMapDomesticInternationalComparison> => {
+  const response = await api.get<GapMapDomesticInternationalComparison>(
+    '/gap-map/domestic-international-comparison',
+    { params: { days } }
+  );
+  return response.data;
+};
+
+// LC 근거 (RAG 기반 RCC): 법령·조항·출처 보기/내보내기
+export interface LCEvidenceItem {
+  axis_id: string;
+  name_ko: string;
+  lc: number;
+  lc_evidence: string;
+  source_or_note: string;
+}
+export interface LCEvidenceResponse {
+  items: LCEvidenceItem[];
+}
+export const getLCEvidence = async (): Promise<LCEvidenceResponse> => {
+  const response = await api.get<LCEvidenceResponse>('/gap-map/lc-evidence');
+  return response.data;
+};
+export const getLCEvidenceExportUrl = (format: 'json' | 'csv'): string =>
+  `${api.defaults.baseURL}/gap-map/lc-evidence/export?format=${format}`;
+
+// --- Sandbox Checklist (KAI Sandbox Risk-Based Checklist) ---
+export interface SandboxDesignPrinciple {
+  id: string;
+  title: string;
+  description: string;
+  icon_hint?: string;
+}
+export interface SandboxChecklistQuestion {
+  question_id: string;
+  group_id: string;
+  axis_ids: string[];
+  question_ko: string;
+  description_ko: string;
+}
+export interface SandboxChecklistTemplate {
+  design_principles: SandboxDesignPrinciple[];
+  groups: Array<{ id: string; label: string }>;
+  questions: SandboxChecklistQuestion[];
+  answer_options: Array<{ value: string; label_ko: string }>;
+}
+export interface SandboxRemediationSuggestion {
+  question_id?: string;
+  axis_id: string;
+  question_ko: string;
+  response: string;
+  gap_score: number;
+  suggestion_ko: string;
+}
+
+export const getSandboxChecklist = async (): Promise<SandboxChecklistTemplate> => {
+  const response = await api.get<SandboxChecklistTemplate>('/sandbox/checklist');
+  return response.data;
+};
+export const submitSandboxAssessment = async (answers: Array<{ question_id: string; value: string }>) => {
+  const response = await api.post('/sandbox/checklist/submit', { answers });
+  return response.data;
+};
+export const getSandboxRemediation = async (answers: Array<{ question_id: string; value: string }>) => {
+  const response = await api.post<SandboxRemediationSuggestion[]>('/sandbox/checklist/remediation', { answers });
+  return response.data;
+};
+
+// Sandbox Scenario Simulation (방안 B)
+export interface SandboxSimulateResponse {
+  scenario_summary: string;
+  review_points: string[];
+  mitigation_options: string[];
+  citations: Array<{ title: string; url: string; snippet: string }>;
+  blind_spots_used?: Array<{ axis_id: string; name_ko: string; gap: number; description: string }>;
+}
+export const sandboxSimulate = async (params: {
+  blind_spot_axes?: string[];
+  checklist_weaknesses?: Array<{ question_id: string; question_ko?: string; response: string }>;
+}): Promise<SandboxSimulateResponse> => {
+  const response = await api.post<SandboxSimulateResponse>('/sandbox/simulate', params);
+  return response.data;
+};
+
+// Policy Simulate (규제 변경 시뮬레이션)
+export interface PolicyDiffItem {
+  clause: string;
+  change_type: string;
+  description: string;
+  risk_level: string;
+  impacted_process: string;
+}
+export interface PolicyDiffResponse {
+  old_doc_title: string;
+  new_doc_title: string;
+  changes: PolicyDiffItem[];
+  overall_risk: string;
+  summary: string;
+  generated_at: string;
+}
+export const policySimulate = async (
+  oldDocumentId: string,
+  newDocumentId: string
+): Promise<PolicyDiffResponse> => {
+  const response = await api.post<PolicyDiffResponse>('/advanced/policy/simulate', {
+    old_document_id: oldDocumentId,
+    new_document_id: newDocumentId,
+  });
   return response.data;
 };
 

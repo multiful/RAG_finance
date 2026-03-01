@@ -113,6 +113,7 @@ class Citation(BaseModel):
     published_at: datetime
     snippet: str
     url: str
+    parsing_source: Optional[str] = None  # e.g. "llamaparse_v1", "pdfplumber" (파싱 출처)
 
 
 class QAResponse(BaseModel):
@@ -221,6 +222,10 @@ class DashboardStats(BaseModel):
     collection_status: List[CollectionStatus]
     recent_topics: List[TopicResponse]
     quality_metrics: Optional[QualityMetrics] = None
+    # 이번 주(7일) 신규 = 국내+국제 합산. 국내(FSC 등)/국제(FSB·BIS) 구분용.
+    documents_this_week: Optional[int] = None
+    domestic_this_week: Optional[int] = None
+    international_this_week: Optional[int] = None
 
 
 # ==================== Advanced/Governance Models ====================

@@ -109,3 +109,10 @@ __pycache__/
 
 # Ignore npm / pnpm lockstore cache dirs used by some workflows
 .store/
+
+# -----------------------------
+# GitHub: 프로젝트/문서는 추적
+# -----------------------------
+!README.md
+!docs/
+!docs/**/*.md

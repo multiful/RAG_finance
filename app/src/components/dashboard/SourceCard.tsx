@@ -15,6 +15,7 @@ interface Citation {
   published_at: string;
   url: string;
   snippet?: string;
+  parsing_source?: string;
 }
 
 interface SourceCardProps {
@@ -64,6 +65,11 @@ export default function SourceCard({
               <p className="font-medium text-sm truncate">{citation.document_title}</p>
               <p className="text-xs text-muted-foreground">
                 {citation.published_at ? new Date(citation.published_at).toLocaleDateString('ko-KR') : '날짜 없음'}
+                {citation.parsing_source && (
+                  <Badge variant="secondary" className="ml-1.5 text-[10px]">
+                    {citation.parsing_source}
+                  </Badge>
+                )}
               </p>
             </div>
           </div>

@@ -43,6 +43,8 @@ export interface Citation {
   published_at: string;
   snippet: string;
   url: string;
+  /** 파싱 출처 (예: llamaparse_v1, pdfplumber) */
+  parsing_source?: string;
 }
 
 export interface QAResponse {
@@ -117,6 +119,9 @@ export interface DashboardStats {
   collection_status: CollectionStatus[];
   recent_topics: Topic[];
   quality_metrics?: QualityMetrics;
+  documents_this_week?: number;
+  domestic_this_week?: number;
+  international_this_week?: number;
 }
 
 export interface QualityMetrics {

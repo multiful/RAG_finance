@@ -76,7 +76,7 @@ export function CollectionProvider({ children }: { children: ReactNode }) {
   const [isCollecting, setIsCollecting] = useState(false);
   const [jobProgress, setJobProgress] = useState<JobProgress | null>(null);
   const [lastResult, setLastResult] = useState<JobProgress | null>(null);
-  const pollingRef = useRef<NodeJS.Timeout | null>(null);
+  const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const jobIdRef = useRef<string | null>(null);
 
   const stopPolling = useCallback(() => {

@@ -3,6 +3,7 @@
  */
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { FileText } from 'lucide-react';
+import { SOURCE_LABEL_FULL } from '@/lib/constants';
 
 export default function TermsPage() {
   return (
@@ -29,7 +30,7 @@ export default function TermsPage() {
           <section>
             <h2 className="text-base font-semibold text-slate-900 mt-6 mb-2">제2조 (서비스의 성격)</h2>
             <p className="text-slate-600 leading-relaxed">
-              본 서비스는 금융위원회·금융감독원 등 공개된 규제·정책 정보를 수집·정리하여 대시보드·트렌드·키워드 분석 및
+              본 서비스는 {SOURCE_LABEL_FULL} 등 공개된 규제·정책 정보를 수집·정리하여 대시보드·트렌드·키워드 분석 및
               AI 기반 질의응답 형태로 제공하는 정보 플랫폼입니다. 원문은 해당 기관 공식 채널에서 확인하시기 바랍니다.
             </p>
           </section>

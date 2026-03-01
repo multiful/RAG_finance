@@ -16,10 +16,13 @@ import {
   LineChart,
   LogOut,
   Loader2,
-  CheckCircle2
+  CheckCircle2,
+  Map,
+  ClipboardList,
+  GitCompare
 } from 'lucide-react';
+import { APP_NAME } from '@/lib/constants';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
 import { useCollection } from '@/contexts/CollectionContext';
 
 interface NavItem {
@@ -36,6 +39,9 @@ const navItems: NavItem[] = [
   { id: 'dashboard', path: '/', label: 'Dashboard', labelKr: '대시보드', icon: LayoutDashboard },
   { id: 'analytics', path: '/analytics', label: 'Analytics', labelKr: '규제 분석', icon: TrendingUp },
   { id: 'qa', path: '/qa', label: 'AI Assistant', labelKr: 'AI 질의', icon: Sparkles },
+  { id: 'gap-map', path: '/gap-map', label: 'Gap Map', labelKr: 'Gap Map', icon: Map },
+  { id: 'sandbox', path: '/sandbox/checklist', label: 'Sandbox Checklist', labelKr: 'Sandbox 체크리스트', icon: ClipboardList },
+  { id: 'policy-simulate', path: '/policy-simulate', label: 'Policy Simulate', labelKr: '규제 시뮬레이션', icon: GitCompare },
   { id: 'settings', path: '/settings', label: 'Settings', labelKr: '설정', icon: Settings },
 ];
 
@@ -72,8 +78,8 @@ export default function DashboardLayout({
             </div>
             {sidebarOpen && (
               <div className="whitespace-nowrap min-w-0">
-                <p className="font-semibold text-slate-900 text-[15px] tracking-tight truncate">FSC Policy RAG</p>
-                <p className="text-[11px] text-slate-500 mt-0.5">금융 규제 인텔리전스</p>
+                <p className="font-semibold text-slate-900 text-[15px] tracking-tight truncate">{APP_NAME}</p>
+                <p className="text-[11px] text-slate-500 mt-0.5">스테이블코인·STO 규제·Gap 분석</p>
               </div>
             )}
           </div>
@@ -225,7 +231,7 @@ export default function DashboardLayout({
 
         <footer className="py-4 px-8 border-t border-[#e9e9e9] bg-white">
           <div className="max-w-[1400px] mx-auto flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-slate-500">
-            <span>© 2026 FSC Policy RAG · DB 공모전</span>
+            <span>© 2026 {APP_NAME} · 스테이블코인·STO 규제·Gap · DB 공모전</span>
             <div className="flex items-center gap-4 flex-wrap justify-center">
               <NavLink to="/privacy" className="hover:text-slate-600 transition-colors">개인정보처리방침</NavLink>
               <NavLink to="/terms" className="hover:text-slate-600 transition-colors">이용약관</NavLink>

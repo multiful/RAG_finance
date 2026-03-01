@@ -64,14 +64,14 @@ pdf2image==1.17.0
 pytesseract==0.3.10
 
 # =========================
-# ML / Embeddings
+# ML / Embeddings (Render/pip 호환: scikit-learn 1.4.1은 PyPI에 없음 → 1.4.2)
 # =========================
-scikit-learn==1.4.1
-numpy==1.26.4
-pandas==2.2.1
-sentence-transformers==2.2.2
-transformers==4.38.2
-torch==2.2.1
+scikit-learn>=1.4.0,<1.5
+numpy>=1.26.4,<3
+pandas>=2.2.1,<3
+sentence-transformers>=2.2.2
+transformers>=4.38.2
+torch>=2.2.1
 
 # =========================
 # Utils

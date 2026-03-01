@@ -101,29 +101,14 @@ async def parse_document(
     file: UploadFile = File(...),
     file_type: str = Query(..., description="File type: pdf, hwp, hwpx")
 ):
-    """Parse document using LlamaParse.
+    """PDF/HWP 업로드 → LlamaParse(API 키 있음) 또는 pdfplumber/olefile fallback.
     
-    Extracts text, tables, and structure from PDF/HWP files.
+    **플로우**: 업로드 파일 임시 저장 → parse_and_chunk_document() → 마크다운·테이블 추출·청킹.
+    LLAMAPARSE_API_KEY가 설정되어 있으면 LlamaParse API로 파싱하고, 없으면 로컬 fallback 사용.
+    반환 chunks의 metadata.parser에 'llamaparse' | 'pdfplumber' 등 파싱 출처가 포함됨.
     
     Returns:
-        {
-            "text": "full markdown text",
-            "pages": ["page1", "page2", ...],
-            "tables": [
-                {
-                    "headers": [...],
-                    "rows": [...],
-                    "page": 1
-                }
-            ],
-            "chunks": [
-                {
-                    "chunk_index": 0,
-                    "chunk_text": "...",
-                    "tables": [...]
-                }
-            ]
-        }
+        filename, file_type, text(전체), chunks(청크 목록), total_chunks, parsing_source(사용된 파서)
     """
     try:
         # Save uploaded file
@@ -139,12 +124,17 @@ async def parse_document(
             # Combine all text
             full_text = "\n\n".join([c["chunk_text"] for c in chunks])
             
+            parsing_source = (
+                chunks[0].get("metadata", {}).get("parser", "unknown")
+                if chunks else "unknown"
+            )
             return {
                 "filename": file.filename,
                 "file_type": file_type,
                 "text": full_text,
                 "chunks": chunks,
-                "total_chunks": len(chunks)
+                "total_chunks": len(chunks),
+                "parsing_source": parsing_source,
             }
             
         finally:

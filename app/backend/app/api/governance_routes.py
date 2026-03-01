@@ -58,9 +58,17 @@ async def daily_job(background_tasks: BackgroundTasks):
 
 @router.post("/policy/simulate", response_model=PolicyDiffResponse)
 async def simulate_policy(req: PolicySimulationRequest):
-    """Simulate impact of policy changes between two documents."""
+    """두 정책 문서(실제 DB 문서) 간 규제 변경 영향 시뮬레이션."""
     try:
+        from app.core.database import get_db
+        db = get_db()
+        for doc_id, label in [(req.old_document_id, "기준 문서"), (req.new_document_id, "비교 문서")]:
+            r = db.table("documents").select("document_id").eq("document_id", doc_id).execute()
+            if not r.data:
+                raise HTTPException(status_code=404, detail=f"{label}(ID: {doc_id})를 찾을 수 없습니다. 문서 목록을 새로고침하세요.")
         from app.services.policy_simulator import simulator
         return await simulator.simulate(req.old_document_id, req.new_document_id)
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

@@ -83,9 +83,10 @@ pip install -r requirements.txt
 # Copy .env.example to .env and populate keys
 cp .env.example .env
 
-# Run Server
-uvicorn app.main:app --reload
+# Run Server (반드시 포트 8001로 실행 — 프론트 프록시와 일치)
+uvicorn app.main:app --reload --host 0.0.0.0 --port 8001
 ```
+**중요:** 프론트(Vite)는 `/api` 요청을 `http://127.0.0.1:8001`로 프록시합니다. 백엔드를 **8001**에서 실행하지 않으면 `ECONNREFUSED` 또는 프록시 에러가 납니다. 500 에러가 나면 `backend/.env`에 `SUPABASE_URL`, `SUPABASE_SERVICE_KEY`, `REDIS_URL`이 올바른지 확인하세요.
 
 ### 2. Frontend Setup
 ```bash
@@ -112,9 +113,9 @@ ENABLE_TRACING=False
 ## 🧪 Testing & Verification
 
 ### API Documentation
-Once the backend is running, access the interactive API docs at:
-- **Swagger UI**: `http://localhost:8000/docs`
-- **ReDoc**: `http://localhost:8000/redoc`
+Once the backend is running (on port 8001), access the interactive API docs at:
+- **Swagger UI**: `http://localhost:8001/docs`
+- **ReDoc**: `http://localhost:8001/redoc`
 
 ### Windows CMD Testing Guide
 **Note**: Windows CMD requires strict JSON escaping and URL encoding.

@@ -35,30 +35,49 @@ tracer = get_tracer()
 
 # ==================== Document Routes ====================
 
+# 가상자산·토큰증권·스테이블코인 필터용 키워드 (주제 연계). or_() 미지원 시 단일 키워드 폴백.
+STABLECOIN_STO_KEYWORDS = ("가상자산", "토큰증권", "스테이블코인", "STO")
+TOPIC_FALLBACK_KEYWORD = "가상자산"  # PostgREST .or_() 실패 시 사용
+
+
 @router.get("/documents", response_model=DocumentListResponse)
 async def list_documents(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     category: Optional[str] = None,
-    days: Optional[int] = None
+    days: Optional[int] = None,
+    topic: Optional[str] = Query(None, description="stablecoin_sto = 가상자산·토큰증권·스테이블코인만"),
 ):
     """List documents with pagination and filtering."""
     try:
         db = rss_collector.db
         query = db.table("documents").select("*", count="exact")
-        
+
         if category:
             query = query.eq("category", category)
-        
+
         if days:
             since = datetime.now() - timedelta(days=days)
             query = query.gte("published_at", since.isoformat())
-        
+
+        if topic == "stablecoin_sto":
+            # 스테이블코인·STO 관련만: 제목에 키워드 포함 (OR 조건). or_() 미지원 환경 시 단일 ilike 폴백.
+            try:
+                query = query.or_(*[f"title.ilike.%{kw}%" for kw in STABLECOIN_STO_KEYWORDS])
+            except Exception as e:
+                logging.getLogger(__name__).debug(
+                    "documents topic=stablecoin_sto: or_() 실패, 단일 키워드 폴백. %s", e
+                )
+                try:
+                    query = query.ilike("title", f"%{TOPIC_FALLBACK_KEYWORD}%")
+                except Exception:
+                    pass
+
         # Order and paginate
         query = query.order("published_at", desc=True)
         offset = (page - 1) * page_size
         query = query.range(offset, offset + page_size - 1)
-        
+
         result = query.execute()
         
         documents = [
@@ -119,14 +138,18 @@ async def get_document(document_id: str):
 # ==================== Collection Routes ====================
 
 async def _run_all_collection(job_id: str):
-    """Run both FSC RSS and FSS scraping."""
-    # First collect FSC RSS
+    """Run FSC RSS, FSS scraping, and (옵션) 국제기구 RSS."""
     await rss_collector.collect_all(job_id=job_id)
-    # Then collect FSS (금감원)
     try:
         await fss_scraper.collect_all()
     except Exception as e:
         logging.error(f"FSS scraping failed: {e}")
+    if getattr(settings, "ENABLE_INTERNATIONAL_RSS", False):
+        try:
+            from app.services.international_rss_collector import international_rss_collector
+            await international_rss_collector.collect_all(job_id=job_id)
+        except Exception as e:
+            logging.error(f"International RSS collection failed: {e}")
 
 
 @router.post("/collection/trigger")
@@ -141,7 +164,7 @@ async def trigger_collection(background_tasks: BackgroundTasks):
         background_tasks.add_task(_run_all_collection, job_id)
         
         return {
-            "message": "Collection started (FSC + FSS)",
+            "message": "Collection started (FSC + FSS + International RSS)",
             "job_id": job_id,
             "status": "running"
         }
@@ -158,6 +181,25 @@ async def trigger_fss_collection(background_tasks: BackgroundTasks):
             "message": "FSS scraping started",
             "status": "running"
         }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/collection/trigger-international")
+async def trigger_international_collection(background_tasks: BackgroundTasks):
+    """Trigger 국제기구 RSS 수집만 (FSB, BIS 등). 금융위원회처럼 URL에서 크롤링해 documents에 저장."""
+    from app.core.config import settings
+    if not getattr(settings, "ENABLE_INTERNATIONAL_RSS", True):
+        raise HTTPException(status_code=400, detail="ENABLE_INTERNATIONAL_RSS is disabled")
+    try:
+        from app.services.international_rss_collector import international_rss_collector
+        from app.services.job_tracker import job_tracker
+        job_id = job_tracker.create_job()
+        if job_id:
+            background_tasks.add_task(international_rss_collector.collect_all, job_id)
+            return {"message": "International RSS collection started (FSB, BIS)", "job_id": job_id, "status": "running"}
+        background_tasks.add_task(international_rss_collector.collect_all, None)
+        return {"message": "International RSS collection started (FSB, BIS)", "status": "running"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -322,7 +364,13 @@ async def get_recent_documents(hours: int = Query(24, ge=1, le=168)):
         documents = await rss_collector.get_recent_documents(hours)
         return {"documents": documents, "count": len(documents)}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logging.error(f"Error in get_recent_documents: {e}")
+        try:
+            from app.data.demo_data import get_demo_recent_documents
+            docs = get_demo_recent_documents()
+            return {"documents": docs, "count": len(docs)}
+        except Exception:
+            return {"documents": [], "count": 0}
 
 
 # ==================== Retrieval Routes ====================
@@ -333,27 +381,33 @@ async def search_documents(
     top_k: int = Query(5, ge=1, le=20),
     category: Optional[str] = None,
     date_from: Optional[datetime] = None,
-    date_to: Optional[datetime] = None
+    date_to: Optional[datetime] = None,
+    topic: Optional[str] = Query(None, description="stablecoin_sto = 가상자산·토큰증권·스테이블코인만"),
 ):
-    """Basic retrieval search (Hybrid)."""
+    """Basic retrieval search (Hybrid). topic=stablecoin_sto 시 제목 필터 적용."""
     try:
-        # Get query embedding
         query_embedding = await rag_service._get_embedding(query)
-        
-        # Build filters
         filters = {}
-        if category: filters["category"] = category
-        if date_from: filters["date_from"] = date_from.isoformat()
-        if date_to: filters["date_to"] = date_to.isoformat()
-        
-        # Perform hybrid search
+        if category:
+            filters["category"] = category
+        if date_from:
+            filters["date_from"] = date_from.isoformat()
+        if date_to:
+            filters["date_to"] = date_to.isoformat()
+
         results = await rag_service.vector_store.hybrid_search(
             query=query,
             query_embedding=query_embedding,
-            top_k=top_k,
-            filters=filters
+            top_k=top_k * 2 if topic == "stablecoin_sto" else top_k,
+            filters=filters,
         )
-        
+
+        if topic == "stablecoin_sto":
+            results = [
+                r for r in results
+                if any(kw in (r.document_title or "") for kw in STABLECOIN_STO_KEYWORDS)
+            ][:top_k]
+
         return {
             "query": query,
             "results": [
@@ -365,10 +419,10 @@ async def search_documents(
                     "published_at": r.published_at,
                     "snippet": r.chunk_text[:300],
                     "score": r.similarity,
-                    "metadata": r.metadata
+                    "metadata": r.metadata,
                 }
                 for r in results
-            ]
+            ],
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -664,13 +718,36 @@ async def get_dashboard_stats():
         
         # Collection status per source (defined in FSC_RSS_FIDS)
         sources = []
-        # Get actual source records to get their UUIDs
+        # Get actual source records to get their UUIDs (국내 = FSC 등)
         sources_records = db.table("sources").select("*").in_("fid", settings.FSC_RSS_FIDS).execute()
-        
+        domestic_source_ids = [s["source_id"] for s in (sources_records.data or [])]
+
+        # 국제 소스(FSB, BIS 등) — fid가 FSC_RSS_FIDS에 없으면 국제로 간주
+        all_sources = db.table("sources").select("source_id, fid").execute()
+        international_source_ids = [
+            s["source_id"] for s in (all_sources.data or [])
+            if s.get("fid") and s["fid"] not in settings.FSC_RSS_FIDS
+        ]
+
         # Pre-calculate timestamps
         now_utc = datetime.now(timezone.utc)
         since_24h = (now_utc - timedelta(hours=24)).isoformat()
         since_7d = (now_utc - timedelta(days=7)).isoformat()
+
+        # 이번 주 신규: 국내/국제 구분 (7일 이내 ingested_at)
+        documents_this_week = collection_stats.get("documents_7d") or 0
+        domestic_this_week = 0
+        if domestic_source_ids:
+            r = db.table("documents").select("*", count="exact").in_(
+                "source_id", domestic_source_ids
+            ).gte("ingested_at", since_7d).execute()
+            domestic_this_week = (r.count if hasattr(r, "count") else 0) or 0
+        international_this_week = 0
+        if international_source_ids:
+            r = db.table("documents").select("*", count="exact").in_(
+                "source_id", international_source_ids
+            ).gte("ingested_at", since_7d).execute()
+            international_this_week = (r.count if hasattr(r, "count") else 0) or 0
 
         for source_rec in (sources_records.data or []):
             source_id = source_rec["source_id"]
@@ -711,13 +788,32 @@ async def get_dashboard_stats():
             high_severity_alerts=high_severity_count,
             collection_status=sources,
             recent_topics=topics,
-            quality_metrics=None
+            quality_metrics=None,
+            documents_this_week=documents_this_week,
+            domestic_this_week=domestic_this_week,
+            international_this_week=international_this_week,
         )
     
     except Exception as e:
         logging.error(f"Error in get_dashboard_stats: {str(e)}")
         logging.error(traceback.format_exc())
-        raise HTTPException(status_code=500, detail=f"Dashboard stats error: {str(e)}")
+        try:
+            from app.data.demo_data import get_demo_dashboard_stats
+            return get_demo_dashboard_stats()
+        except Exception as fallback_err:
+            logging.error(f"Demo fallback failed: {fallback_err}")
+            return DashboardStats(
+                total_documents=0,
+                documents_24h=0,
+                active_alerts=0,
+                high_severity_alerts=0,
+                collection_status=[],
+                recent_topics=[],
+                quality_metrics=None,
+                documents_this_week=0,
+                domestic_this_week=0,
+                international_this_week=0,
+            )
 
 
 @router.get("/dashboard/hourly-stats")
@@ -767,7 +863,11 @@ async def get_hourly_collection_stats(hours: int = Query(24, ge=1, le=168)):
         }
     except Exception as e:
         logging.error(f"Error in hourly stats: {str(e)}")
-        return {"hourly": [], "by_source": [], "total": 0, "period_hours": hours}
+        try:
+            from app.data.demo_data import get_demo_hourly_stats
+            return get_demo_hourly_stats(hours)
+        except Exception:
+            return {"hourly": [], "by_source": [], "total": 0, "period_hours": hours}
 
 
 @router.get("/dashboard/quality")
