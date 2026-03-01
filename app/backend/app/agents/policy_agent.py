@@ -69,7 +69,7 @@ llm = ChatOpenAI(
 )
 
 llm_mini = ChatOpenAI(
-    model="gpt-4o-mini",
+    model=settings.OPENAI_MODEL,
     temperature=0,
     api_key=settings.OPENAI_API_KEY
 )

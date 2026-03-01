@@ -54,7 +54,7 @@ class RAGService:
 
         try:
             response = await self.openai_client.chat.completions.create(
-                model="gpt-4o-mini",
+                model=settings.OPENAI_MODEL,
                 messages=[{"role": "user", "content": hyde_prompt}],
                 temperature=0.4,
                 max_tokens=200
@@ -93,7 +93,7 @@ NO [해당 문서에는 가계대출 금리에 대한 직접적인 언급이 없
 
         try:
             response = await self.openai_client.chat.completions.create(
-                model="gpt-4o-mini",
+                model=settings.OPENAI_MODEL,
                 messages=[{"role": "user", "content": check_prompt}],
                 temperature=0,
                 max_tokens=100
@@ -111,9 +111,28 @@ NO [해당 문서에는 가계대출 금리에 대한 직접적인 언급이 없
         except Exception:
             return True, "", 0.5
 
+    def _safe_published_at(self, raw: Any) -> datetime:
+        """published_at 문자열/None을 datetime으로 안전 변환."""
+        if raw is None or (isinstance(raw, str) and not raw.strip()):
+            return datetime.now(timezone.utc)
+        if hasattr(raw, "isoformat"):
+            return raw if getattr(raw, "tzinfo", None) else raw.replace(tzinfo=timezone.utc)
+        s = str(raw).replace("Z", "+00:00").strip()
+        if not s:
+            return datetime.now(timezone.utc)
+        try:
+            return datetime.fromisoformat(s)
+        except (ValueError, TypeError):
+            return datetime.now(timezone.utc)
+
     async def _generate_answer(self, query: str, chunks: List[Dict[str, Any]], compliance_mode: bool = False) -> Dict[str, Any]:
         """Generate a structured, cited answer using LLM."""
-        context = "\n\n".join([f"[{i+1}] {c['document_title']} ({c['published_at'][:10]})\n{c['chunk_text']}" for i, c in enumerate(chunks)])
+        def _date_str(c: Dict[str, Any]) -> str:
+            pa = c.get("published_at")
+            if pa is None or (isinstance(pa, str) and not pa):
+                return ""
+            return str(pa)[:10] if len(str(pa)) >= 10 else str(pa)
+        context = "\n\n".join([f"[{i+1}] {c['document_title']} ({_date_str(c)})\n{c.get('chunk_text', '')}" for i, c in enumerate(chunks)])
         
         mode_instruction = ""
         if compliance_mode:
@@ -361,7 +380,8 @@ NO [해당 문서에는 가계대출 금리에 대한 직접적인 언급이 없
                 "published_at": r.published_at,
                 "url": r.url,
                 "chunk_text": r.chunk_text,
-                "similarity": r.similarity
+                "similarity": r.similarity,
+                "parsing_source": getattr(r, "parsing_source", None),
             }
             for r in reranked_results
         ]
@@ -393,15 +413,16 @@ NO [해당 문서에는 가계대출 금리에 대한 직접적인 언급이 없
             consistency
         )
         
-        # 8. Build Citations
+        # 8. Build Citations (parsing_source: LlamaParse 등 파싱 출처 노출)
         citations = [
             Citation(
-                chunk_id=chunk["chunk_id"],
-                document_id=chunk["document_id"],
-                document_title=chunk["document_title"],
-                published_at=datetime.fromisoformat(chunk["published_at"].replace('Z', '+00:00')),
-                snippet=chunk["chunk_text"][:200],
-                url=chunk["url"]
+                chunk_id=chunk.get("chunk_id", ""),
+                document_id=chunk.get("document_id", ""),
+                document_title=chunk.get("document_title", ""),
+                published_at=self._safe_published_at(chunk.get("published_at")),
+                snippet=(chunk.get("chunk_text") or "")[:200],
+                url=chunk.get("url") or "",
+                parsing_source=chunk.get("parsing_source"),
             )
             for chunk in reranked_chunks
         ]

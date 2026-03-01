@@ -28,6 +28,7 @@ class SearchResult:
     url: str
     similarity: float
     metadata: Dict[str, Any]
+    parsing_source: Optional[str] = None  # e.g. "llamaparse_v1", "pdfplumber"
 
 
 class VectorStore:
@@ -107,13 +108,22 @@ class VectorStore:
                     published_at=item.get("published_at"),
                     url=item.get("url"),
                     similarity=item.get("similarity", 0.0),
-                    metadata={}
+                    metadata=item.get("metadata") or {},
+                    parsing_source=item.get("chunking_version"),
                 ))
             return results
             
         except Exception as e:
             print(f"ERROR: Similarity search failed: {e}")
             return []
+
+    @staticmethod
+    def _escape_sql_literal(value: str, max_len: int = 500) -> str:
+        """SQL 인젝션 방지: 작은따옴표 이중 이스케이프, 길이 제한."""
+        if not value:
+            return ""
+        s = str(value)[:max_len].replace("\\", "\\\\").replace("'", "''")
+        return s
 
     async def bm25_search(
         self,
@@ -124,12 +134,15 @@ class VectorStore:
         """Trigram-based and FTS keyword search with better acronym handling."""
         try:
             print(f"DEBUG: Starting keyword search for: '{query}'")
-            
-            # Clean and prepare query for FTS
-            # Remove special chars and join with | (OR) for higher recall on acronyms
-            clean_query = re.sub(r'[^\w\s]', '', query)
-            fts_query = " | ".join([w for w in clean_query.split() if len(w) > 0])
-            
+            top_k = max(1, min(100, int(top_k)))
+            safe_query = self._escape_sql_literal(query)
+            if not safe_query.strip():
+                return await self._fallback_keyword_search(query, top_k, filters)
+            clean_query = re.sub(r"[^\w\s]", "", query)
+            fts_parts = [w for w in clean_query.split() if len(w) > 0]
+            fts_query = " | ".join(fts_parts) if fts_parts else safe_query
+            fts_safe = self._escape_sql_literal(fts_query)
+
             sql = f"""
                 WITH matches AS (
                     SELECT 
@@ -137,24 +150,23 @@ class VectorStore:
                         c.document_id,
                         c.chunk_text,
                         c.chunk_index,
+                        c.chunking_version,
                         d.title as document_title,
                         d.published_at,
                         d.url,
-                        -- Combine Trigram similarity and FTS rank
                         (
-                            similarity(c.chunk_text, '{query}') * 0.4 + 
-                            ts_rank_cd(to_tsvector('simple', c.chunk_text), to_tsquery('simple', '{fts_query}')) * 0.6
+                            similarity(c.chunk_text, '{safe_query}') * 0.4 +
+                            ts_rank_cd(to_tsvector('simple', c.chunk_text), to_tsquery('simple', '{fts_safe}')) * 0.6
                         ) as combined_score
                     FROM chunks c
                     JOIN documents d ON c.document_id = d.document_id
                     WHERE 
-                        c.chunk_text % '{query}' 
-                        OR c.chunk_text ILIKE '%{query}%'
-                        OR to_tsvector('simple', c.chunk_text) @@ to_tsquery('simple', '{fts_query}')
+                        c.chunk_text % '{safe_query}'
+                        OR c.chunk_text ILIKE '%' || '{safe_query}' || '%'
+                        OR to_tsvector('simple', c.chunk_text) @@ to_tsquery('simple', '{fts_safe}')
                 )
                 SELECT * FROM matches ORDER BY combined_score DESC LIMIT {top_k}
             """
-            
             result = self.db.rpc("exec_sql", {"sql": sql}).execute()
             
             if not result.data:
@@ -408,11 +420,12 @@ class VectorStore:
                 document_title=doc.get("title", "Unknown"),
                 published_at=doc.get("published_at", ""),
                 url=doc.get("url", ""),
-                similarity=0.5, # Default, will be overridden by RRF or caller
+                similarity=0.5,
                 metadata={
                     "category": doc.get("category"),
-                    "department": doc.get("department")
-                }
+                    "department": doc.get("department"),
+                },
+                parsing_source=item.get("chunking_version"),
             ))
         
         return results
@@ -420,7 +433,6 @@ class VectorStore:
     def _parse_bm25_results(self, data: List[Dict]) -> List[SearchResult]:
         """Parse BM25 search results."""
         results = []
-        
         for item in data:
             results.append(SearchResult(
                 chunk_id=item.get("chunk_id", ""),
@@ -433,10 +445,10 @@ class VectorStore:
                 similarity=item.get("combined_score", item.get("similarity", 0.0)),
                 metadata={
                     "category": item.get("category"),
-                    "department": item.get("department")
-                }
+                    "department": item.get("department"),
+                },
+                parsing_source=item.get("chunking_version"),
             ))
-        
         return results
     
     async def delete_document_embeddings(self, document_id: str) -> bool:

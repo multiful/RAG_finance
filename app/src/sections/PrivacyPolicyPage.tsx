@@ -21,7 +21,7 @@ export default function PrivacyPolicyPage() {
           <section>
             <h2 className="text-base font-semibold text-slate-900 mt-6 mb-2">1. 개요</h2>
             <p className="text-slate-600 leading-relaxed">
-              RegTech PRO(이하 서비스)는 금융 규제·정책 정보 수집·분석 및 AI 기반 질의응답을 제공하는 플랫폼입니다.
+              RegTech PRO(이하 서비스)는 스테이블코인·STO 결합 환경의 규제·리스크 Gap 분석을 지원하며, 금융 규제·정책 정보 수집·분석 및 AI 기반 질의응답을 제공하는 플랫폼입니다.
               이용자의 개인정보를 소중히 하며, 개인정보 보호법 및 관련 법령을 준수합니다.
             </p>
           </section>

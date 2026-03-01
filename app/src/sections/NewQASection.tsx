@@ -35,6 +35,7 @@ import { SourceCardGrid } from '@/components/dashboard/SourceCard';
 import CitationHighlighter, { ConfidenceGauge } from '@/components/CitationHighlighter';
 import { toast } from 'sonner';
 import { askQuestion, askAgentQuestion } from '@/lib/api';
+import { EXAMPLE_QUESTION_SOURCE_CHIP, SOURCE_LABEL_FULL, SOURCE_LABEL_ORIGIN, VERIFIER_SYSTEM_LABEL } from '@/lib/constants';
 import type { Citation } from '@/types';
 
 interface Message {
@@ -58,6 +59,15 @@ interface QATemplate {
   category: string;
   questions: string[];
 }
+
+/** QA 입력란 근처 예시 질문 칩 (클릭 시 자동 입력) — 스테이블코인·STO·금융 규제 */
+const EXAMPLE_QUESTION_CHIPS = [
+  '스테이블코인 규제 현황은?',
+  '토큰증권(STO) 제도 요건은?',
+  '가상자산 시장 규제 방향은?',
+  EXAMPLE_QUESTION_SOURCE_CHIP,
+  '국제기구(FSB) 스테이블코인 권고는?',
+];
 
 const INDUSTRY_TEMPLATES: Record<string, { icon: React.ElementType; label: string; color: string; templates: QATemplate[] }> = {
   insurance: {
@@ -431,7 +441,7 @@ export default function NewQASection() {
                 </span>
               </div>
               <p className="text-sm text-slate-400">
-                금융위원회·금융감독원 공식 문서만을 기반으로 분석하며, 모든 답변에 출처가 명시됩니다.
+                스테이블코인·STO·금융 규제 질의 지원. {SOURCE_LABEL_FULL} 공식 문서 기반, 모든 답변에 출처가 명시됩니다.
               </p>
             </div>
           </div>
@@ -625,6 +635,39 @@ export default function NewQASection() {
                               </div>
                             </div>
                           )}
+
+                          {/* Verifier 에이전트 출처 표기 (KAI page_27) — 출처·신뢰도·검증 시각 강화 */}
+                          {message.type === 'assistant' && (message.citations?.length ?? 0) > 0 && (
+                            <div className="pt-4 mt-4 border-t border-slate-100 rounded-xl bg-emerald-50/50 p-4 ring-1 ring-emerald-100/80">
+                              <p className="text-xs font-bold text-emerald-800 mb-1 flex items-center gap-2">
+                                <Shield className="w-4 h-4" />
+                                Verifier 에이전트 출처 표기 ({VERIFIER_SYSTEM_LABEL})
+                              </p>
+                              <p className="text-[10px] text-emerald-700/80 mb-3">KAI 스타일 출처 정리</p>
+                              <div className="space-y-1.5 mb-4">
+                                {(message.citations ?? []).map((citation, idx) => (
+                                  <p key={citation.chunk_id} className="text-sm text-slate-700">
+                                    <strong>출처 {idx + 1}:</strong> {citation.document_title}
+                                    {citation.published_at && (
+                                      <span className="text-slate-500 text-xs ml-1">
+                                        ({new Date(citation.published_at).toLocaleDateString('ko-KR')})
+                                      </span>
+                                    )}
+                                  </p>
+                                ))}
+                              </div>
+                              <div className="flex flex-wrap items-center gap-3 text-xs">
+                                <span className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-white border border-emerald-200 text-slate-700">
+                                  <span className="font-semibold text-emerald-700">신뢰도</span>
+                                  <span className="font-bold">{(((message.groundedness_score ?? 0) * 100) as number).toFixed(0)}%</span>
+                                </span>
+                                <span className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-white border border-emerald-200 text-slate-700">
+                                  <span className="font-semibold text-emerald-700">최종 검증 시각</span>
+                                  <span>{message.timestamp ? new Date(message.timestamp).toLocaleString('ko-KR', { dateStyle: 'short', timeStyle: 'short' }) : '—'}</span>
+                                </span>
+                              </div>
+                            </div>
+                          )}
                         </div>
                       )}
 
@@ -641,11 +684,24 @@ export default function NewQASection() {
 
             {/* Input */}
             <div className="p-6 bg-slate-50/50 border-t border-slate-50">
+              <div className="flex flex-wrap gap-2 mb-3">
+                <span className="text-xs font-bold text-slate-500 self-center mr-1">예시:</span>
+                {EXAMPLE_QUESTION_CHIPS.map((q) => (
+                  <button
+                    key={q}
+                    type="button"
+                    onClick={() => setInput(q)}
+                    className="px-3 py-1.5 text-xs font-medium rounded-full bg-white border border-slate-200 text-slate-600 hover:bg-primary/10 hover:border-primary hover:text-primary transition-all"
+                  >
+                    {q}
+                  </button>
+                ))}
+              </div>
               <form onSubmit={handleSubmit} className="flex gap-3 relative">
                 <Input
                   value={input}
                   onChange={(e) => setInput(e.target.value)}
-                  placeholder="금융 정책에 대해 물어보세요..."
+                  placeholder="스테이블코인·STO·금융 규제에 대해 물어보세요..."
                   disabled={loading}
                   className="flex-1 h-14 pl-6 pr-16 bg-white border-slate-200 rounded-2xl shadow-sm focus-visible:ring-primary font-medium"
                 />
@@ -861,10 +917,11 @@ export default function NewQASection() {
                   <Button
                     variant="outline"
                     className="w-full h-14 rounded-2xl border-slate-200 text-slate-600 font-black text-sm hover:bg-slate-50 flex items-center gap-3"
-                    onClick={() => window.open(selectedCitation.url, '_blank')}
+                    onClick={() => selectedCitation?.url && window.open(selectedCitation.url, '_blank')}
                     type="button"
+                    disabled={!selectedCitation?.url}
                   >
-                    원문 문서 보기 (금융위원회)
+                    원문 문서 보기 ({SOURCE_LABEL_ORIGIN})
                     <Radar className="w-4 h-4" />
                   </Button>
                 </div>

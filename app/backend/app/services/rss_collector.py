@@ -70,7 +70,7 @@ class RSSCollector:
                 return []
             
             all_entries = feed.entries
-            limit = getattr(settings, "RSS_MAX_ITEMS", 200)
+            limit = getattr(settings, "RSS_MAX_ITEMS", 500)
             entries_to_process = all_entries[:limit] if limit else all_entries
             
             print(f"Feed entries total={len(all_entries)}, to process={len(entries_to_process)} (RSS_MAX_ITEMS={limit})")

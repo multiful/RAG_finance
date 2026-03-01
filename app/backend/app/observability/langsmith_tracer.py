@@ -46,8 +46,11 @@ class LangSmithTracer:
             )
     
     def is_enabled(self) -> bool:
-        """Check if LangSmith tracing is enabled."""
-        return self.client is not None and getattr(settings, 'ENABLE_TRACING', False)
+        """LangSmith 트레이싱 활성 여부. API 키가 있고 ENABLE_TRACING=True일 때 동작."""
+        return (
+            self.client is not None
+            and getattr(settings, "ENABLE_TRACING", True)
+        )
     
     def create_run(
         self,

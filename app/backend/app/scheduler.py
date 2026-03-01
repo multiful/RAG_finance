@@ -29,7 +29,7 @@ def _next_run_utc(hour: int, tz_name: str) -> datetime:
 
 
 async def _run_collection():
-    """FSC RSS + FSS 수집 실행 (routes._run_all_collection와 동일 로직)."""
+    """FSC RSS + FSS + (옵션) 국제기구 RSS 수집 (routes._run_all_collection와 동일 로직)."""
     from app.services.rss_collector import RSSCollector
     from app.services.fss_scraper import fss_scraper
     from app.services.job_tracker import job_tracker
@@ -42,6 +42,12 @@ async def _run_collection():
             await fss_scraper.collect_all()
         except Exception as e:
             logger.warning("FSS 수집 실패: %s", e)
+        if getattr(settings, "ENABLE_INTERNATIONAL_RSS", False):
+            try:
+                from app.services.international_rss_collector import international_rss_collector
+                await international_rss_collector.collect_all(job_id=job_id)
+            except Exception as e:
+                logger.warning("국제기구 RSS 수집 실패: %s", e)
         job = job_tracker.get_job(job_id)
         if job and job.get("status") in ("running", None):
             job_tracker.update_job(

@@ -4,6 +4,8 @@
 -- 1. Enable Extensions
 CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 CREATE EXTENSION IF NOT EXISTS "vector";
+-- 하이브리드 검색 키워드(Trigram + FTS)용
+CREATE EXTENSION IF NOT EXISTS "pg_trgm";
 
 -- 2. Clean up existing tables (Optional - use with caution in production)
 -- DROP TABLE IF EXISTS public.alerts CASCADE;

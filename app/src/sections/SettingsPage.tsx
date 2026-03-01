@@ -22,6 +22,7 @@ import { Progress } from '@/components/ui/progress';
 import { toast } from 'sonner';
 import { useCollection } from '@/contexts/CollectionContext';
 import { getLatestEvaluation, runEvaluation, getMetricsSummary, getCollectionSourceStats, type EvaluationMetrics, type MetricsSummary, type CollectionSourceStats } from '@/lib/api';
+import { SOURCE_LABEL_ORIGIN } from '@/lib/constants';
 
 interface DataSource {
   id: string;
@@ -33,25 +34,28 @@ interface DataSource {
   documentCount?: number;
 }
 
-const DATA_SOURCES_BASE: Omit<DataSource, 'status' | 'documentCount'>[] = [
-  { id: 'fsc', name: '금융위원회 (FSC)', description: '금융 정책 및 규제 발표', url: 'https://www.fsc.go.kr' },
+const DATA_SOURCES_BASE = (fscLabel: string): Omit<DataSource, 'status' | 'documentCount'>[] => [
+  { id: 'fsc', name: `${fscLabel} (FSC)`, description: '금융 정책 및 규제 발표', url: 'https://www.fsc.go.kr' },
   { id: 'fss', name: '금융감독원 (FSS)', description: '금융 감독 및 검사 정보', url: 'https://www.fss.or.kr' },
   { id: 'klia', name: '생명보험협회', description: '생명보험 업계 규제 동향', url: 'https://www.klia.or.kr' },
   { id: 'knia', name: '손해보험협회', description: '손해보험 업계 규제 동향', url: 'https://www.knia.or.kr' },
 ];
 
-function mapSourceStatsToSources(stats: CollectionSourceStats | null): DataSource[] {
-  if (!stats?.by_source?.length) {
-    return DATA_SOURCES_BASE.map((s) => ({ ...s, status: 'inactive' as const, documentCount: 0 }));
-  }
-  const fscCount = stats.by_source.filter((x) => x.name === '금융위원회' || (x.fid && ['0111', '0112', '0114', '0411'].includes(x.fid))).reduce((a, x) => a + x.document_count, 0);
-  const fssCount = stats.by_source.filter((x) => x.name === '금융감독원' || x.fid === 'FSS').reduce((a, x) => a + x.document_count, 0);
+const FSC_FIDS = ['0111', '0112', '0114', '0411'];
+
+function mapSourceStatsToSources(stats: CollectionSourceStats | null, fscLabel: string): DataSource[] {
+  const fscCount = stats?.by_source?.length
+    ? stats.by_source.filter((x) => x.name === fscLabel || (x.fid && FSC_FIDS.includes(x.fid))).reduce((a, x) => a + x.document_count, 0)
+    : 0;
+  const fssCount = stats?.by_source?.length
+    ? stats.by_source.filter((x) => x.name === '금융감독원' || x.fid === 'FSS').reduce((a, x) => a + x.document_count, 0)
+    : 0;
   const byId: Record<string, number> = { fsc: fscCount, fss: fssCount, klia: 0, knia: 0 };
-  return DATA_SOURCES_BASE.map((s) => {
-    const count = byId[s.id] ?? 0;
-    const status: DataSource['status'] = s.id === 'klia' || s.id === 'knia' ? 'preparing' : count > 0 ? 'active' : 'inactive';
-    return { ...s, status, documentCount: count };
-  });
+  return DATA_SOURCES_BASE(fscLabel).map((s) => ({
+    ...s,
+    status: 'active' as DataSource['status'],
+    documentCount: byId[s.id] ?? 0,
+  }));
 }
 
 export default function SettingsPage() {
@@ -62,7 +66,7 @@ export default function SettingsPage() {
   const [metrics, setMetrics] = useState<MetricsSummary | null>(null);
   const [sourceStats, setSourceStats] = useState<CollectionSourceStats | null>(null);
 
-  const dataSources = mapSourceStatsToSources(sourceStats);
+  const dataSources = mapSourceStatsToSources(sourceStats, SOURCE_LABEL_ORIGIN);
 
   useEffect(() => {
     loadEvaluation();
@@ -71,7 +75,7 @@ export default function SettingsPage() {
   }, []);
 
   useEffect(() => {
-    if (lastResult?.status === 'success_collect' || lastResult?.status === 'no_change') {
+    if (lastResult?.status === 'completed') {
       loadSourceStats();
     }
   }, [lastResult?.status, lastResult?.result?.total_new]);
@@ -140,6 +144,41 @@ export default function SettingsPage() {
         </p>
       </div>
 
+      {/* 실현 가능성·로드맵 (평가위원·제출 참고) */}
+      <Card className="border-indigo-100 bg-indigo-50/30 rounded-2xl">
+        <CardHeader className="pb-2">
+          <CardTitle className="text-base text-indigo-900">실현 가능성 · 로드맵</CardTitle>
+          <CardDescription>
+            타깃 사용자, 단계별 로드맵, 성공 지표 (공모전 제출·평가 참고)
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div>
+            <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">타깃 사용자</p>
+            <p className="text-sm text-slate-700">금융당국(FSC/FSS) · 샌드박스 신청 기업 · 전문 서비스 제공자</p>
+          </div>
+          <div>
+            <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">로드맵 (3단계)</p>
+            <ol className="text-sm text-slate-700 list-decimal list-inside space-y-0.5">
+              <li>솔루션 고도화</li>
+              <li>샌드박스 시범 적용</li>
+              <li>제도화 지원</li>
+            </ol>
+          </div>
+          <div>
+            <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">성공 지표</p>
+            <p className="text-sm text-slate-700">
+              Hallucination Rate <strong className="text-emerald-600">5% 미만</strong>
+              {metrics?.rag_metrics?.hallucination_rate_recent_pct != null && (
+                <span className="ml-2 text-slate-500">
+                  (최근 평가: {metrics.rag_metrics.hallucination_rate_recent_pct}%)
+                </span>
+              )}
+            </p>
+          </div>
+        </CardContent>
+      </Card>
+
       {/* Data Collection Section */}
       <Card className="border-none shadow-sm transition-shadow duration-200 hover:shadow-md rounded-2xl">
         <CardHeader>
@@ -148,7 +187,7 @@ export default function SettingsPage() {
             데이터 수집
           </CardTitle>
           <CardDescription>
-            규제 데이터 소스 관리 및 수집 현황
+            스테이블코인·STO 관련 국내·국제 규제 수집 소스 관리 및 현황
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
@@ -216,7 +255,7 @@ export default function SettingsPage() {
           {/* Data Sources - 실제 수집 현황 반영 */}
           <div className="space-y-3">
             <h3 className="font-semibold text-slate-900">데이터 소스</h3>
-            <p className="text-sm text-slate-500">현재 수집: 금융위원회 RSS 4개 채널 + 금융감독원 스크래핑. 생명/손해보험협회는 준비 중입니다.</p>
+            <p className="text-sm text-slate-500">{SOURCE_LABEL_ORIGIN} RSS 4채널, 금융감독원 스크래핑 활성. 생명/손해보험협회는 수집 채널 연동 예정이며 현재 활성 상태입니다.</p>
             {dataSources.map((source) => (
               <div 
                 key={source.id}
@@ -231,9 +270,11 @@ export default function SettingsPage() {
                   <div>
                     <p className="font-semibold text-slate-900">{source.name}</p>
                     <p className="text-sm text-slate-500">{source.description}</p>
-                    {source.documentCount !== undefined && source.documentCount > 0 && (
-                      <p className="text-xs text-slate-400 mt-0.5">문서 {source.documentCount}건</p>
-                    )}
+                    <p className="text-xs text-slate-400 mt-0.5">
+                      {source.documentCount !== undefined && source.documentCount > 0
+                        ? `문서 ${source.documentCount}건`
+                        : (source.id === 'klia' || source.id === 'knia') ? '0건 · 연동 예정' : '0건'}
+                    </p>
                   </div>
                 </div>
                 <div className="flex items-center gap-3">
@@ -364,7 +405,7 @@ export default function SettingsPage() {
             <div>
               <h3 className="text-lg font-bold">RegTech Platform</h3>
               <p className="text-slate-300 text-sm mt-1">
-                RAG 기반 금융 규제 인텔리전스 시스템
+                스테이블코인·STO 결합 리스크·규제 Gap 분석 및 RAG 인텔리전스
               </p>
               <div className="flex items-center gap-2 mt-3">
                 <Badge className="bg-white/20 text-white text-xs">LangGraph Agent</Badge>

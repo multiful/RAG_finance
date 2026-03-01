@@ -5,7 +5,6 @@ import { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Progress } from '@/components/ui/progress';
@@ -64,11 +63,6 @@ import {
 } from '@/lib/api';
 
 const COLORS = ['#6366f1', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4'];
-const INDUSTRY_COLORS = {
-  INSURANCE: '#3b82f6',
-  BANKING: '#10b981',
-  SECURITIES: '#8b5cf6',
-};
 
 function StatCard({ 
   title, 
@@ -113,7 +107,7 @@ function KeywordCloud({ data }: { data: KeywordCloudData }) {
   
   return (
     <div className="flex flex-wrap gap-2 p-4">
-      {data.keywords.map((keyword, idx) => {
+      {data.keywords.map((keyword) => {
         const size = Math.max(12, Math.min(32, (keyword.value / maxValue) * 32));
         const opacity = 0.4 + (keyword.value / maxValue) * 0.6;
         
@@ -207,7 +201,7 @@ export default function AnalyticsDashboard() {
             규제 분석
           </h1>
           <p className="text-sm text-slate-500 mt-1">
-            트렌드 분석 · 영향도 시각화 · 키워드 분석
+            스테이블코인·가상자산·토큰증권 등 규제 트렌드 · 영향도 시각화 · 키워드 분석
             {lastFetchedAt && (
               <span className="ml-2 text-slate-400">
                 · 기준 {lastFetchedAt.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })}
@@ -304,7 +298,7 @@ export default function AnalyticsDashboard() {
                     dataKey="month" 
                     tick={{ fontSize: 12 }}
                     tickFormatter={(value) => {
-                      const [year, month] = value.split('-');
+                      const [, month] = value.split('-');
                       return `${month}월`;
                     }}
                   />
@@ -357,7 +351,7 @@ export default function AnalyticsDashboard() {
                       dataKey="industry_label" 
                       tick={{ fontSize: 12, fontWeight: 600 }}
                     />
-                    <PolarRadiusAxis angle={30} domain={[0, 100]} ticks={[0, 25, 50, 75, 100]} tick={{ fontSize: 10 }} />
+                    <PolarRadiusAxis angle={30} domain={[0, 100]} tick={{ fontSize: 10 }} />
                     <Radar
                       name="영향도"
                       dataKey="impact_score"
@@ -433,7 +427,7 @@ export default function AnalyticsDashboard() {
                 ]}>
                   <PolarGrid stroke="#e2e8f0" />
                   <PolarAngleAxis dataKey="metric" tick={{ fontSize: 11, fill: '#64748b' }} />
-                  <PolarRadiusAxis angle={30} domain={[0, 100]} ticks={[0, 25, 50, 75, 100]} tick={{ fontSize: 10 }} />
+                  <PolarRadiusAxis angle={30} domain={[0, 100]} tick={{ fontSize: 10 }} />
                   {industryImpact.industry_impact.map((industry, idx) => (
                     <Radar
                       key={industry.industry}

@@ -10,15 +10,19 @@ import {
   Clock,
   RefreshCw,
   ChevronRight,
+  ChevronDown,
   Sparkles,
   Building2,
   Landmark,
   BarChart3,
   ExternalLink,
   Loader2,
-  Calendar
+  Calendar,
+  Map,
+  ClipboardList,
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -31,9 +35,6 @@ import {
   CartesianGrid,
   Tooltip,
   ResponsiveContainer,
-  PieChart,
-  Pie,
-  Cell,
 } from 'recharts';
 import { 
   getDashboardStats, 
@@ -41,6 +42,7 @@ import {
   getHourlyStats, 
   getWeeklyReport,
   getIndustryImpact,
+  getMetricsSummary,
   type HourlyStats,
   type WeeklyReport,
   type IndustryImpactData
@@ -50,7 +52,6 @@ import { useCollection } from '@/contexts/CollectionContext';
 import type { DashboardStats, Document } from '@/types';
 import { NavLink } from 'react-router-dom';
 
-const CHART_COLORS = ['#6366f1', '#10b981', '#f59e0b', '#ef4444'];
 const INDUSTRY_ICONS = {
   INSURANCE: Building2,
   BANKING: Landmark,
@@ -66,25 +67,33 @@ export default function UnifiedDashboard() {
   const [loading, setLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [lastFetchedAt, setLastFetchedAt] = useState<Date | null>(null);
-  
+  const [metricsSummary, setMetricsSummary] = useState<{ hallucination_rate_recent_pct?: number | null; hallucination_goal_pct?: number; evaluation_count?: number } | null>(null);
+  const [demoGuideOpen, setDemoGuideOpen] = useState(false);
+
   const { isCollecting, jobProgress, startCollection, lastResult } = useCollection();
 
   const fetchData = useCallback(async (showRefreshSpinner = false) => {
     if (showRefreshSpinner) setIsRefreshing(true);
     else setLoading(true);
     try {
-      const [statsData, recentData, hourlyData, reportData, impactData] = await Promise.all([
+      const [statsData, recentData, hourlyData, reportData, impactData, metricsData] = await Promise.all([
         getDashboardStats(),
         getRecentDocuments(72),
         getHourlyStats(48),
         getWeeklyReport(),
         getIndustryImpact(90),
+        getMetricsSummary().catch(() => null),
       ]);
       setStats(statsData);
       setRecentDocs(recentData?.documents || []);
       setHourlyStats(hourlyData);
       setWeeklyReport(reportData);
       setIndustryImpact(impactData);
+      setMetricsSummary(metricsData ? {
+        hallucination_rate_recent_pct: metricsData.rag_metrics?.hallucination_rate_recent_pct,
+        hallucination_goal_pct: metricsData.rag_metrics?.hallucination_goal_pct ?? 5,
+        evaluation_count: metricsData.rag_metrics?.evaluation_count,
+      } : null);
     } catch (err) {
       console.error('Failed to fetch dashboard data:', err);
       if (!showRefreshSpinner) toast.error('대시보드 데이터를 불러올 수 없습니다.');
@@ -136,12 +145,12 @@ export default function UnifiedDashboard() {
             <div className="space-y-4 max-w-2xl">
               <p className="text-xs font-semibold text-slate-500 uppercase tracking-[0.12em] flex items-center gap-2">
                 <Sparkles className="w-4 h-4 text-indigo-500" />
-                AI 주간 요약
+                스테이블코인·STO 규제·Gap 분석
               </p>
               <h1 className="text-2xl lg:text-[1.75rem] font-bold text-slate-900 leading-snug tracking-tight">
                 {lastResult?.status === 'completed' && (lastResult?.result?.total_new ?? 0) > 0
-                  ? `신규 ${lastResult.result!.total_new}건 수집 완료. 이번 주 규제 문서가 갱신되었습니다.`
-                  : (weeklyReport?.summary || '금융 규제 동향을 분석 중입니다.')}
+                  ? `신규 ${lastResult.result!.total_new}건 수집 완료. 스테이블코인·STO 관련 국내·국제 규제 문서가 갱신되었습니다.`
+                  : (weeklyReport?.summary || '스테이블코인·STO 관련 규제·국제 권고 동향을 분석 중입니다.')}
               </h1>
               <div className="flex flex-wrap items-center gap-4 text-sm text-slate-500">
                 <span className="flex items-center gap-1.5">
@@ -181,21 +190,107 @@ export default function UnifiedDashboard() {
               <Progress value={jobProgress.progress} className="h-2 rounded-full" />
             </div>
           )}
+          {/* 실현 가능성·데모 시나리오 안내 (평가위원·데모용) */}
+          <Collapsible open={demoGuideOpen} onOpenChange={setDemoGuideOpen} className="mt-6 pt-6 border-t border-slate-100">
+            <CollapsibleTrigger asChild>
+              <Button variant="ghost" size="sm" className="text-slate-600 hover:text-slate-900 gap-2 -ml-2">
+                {demoGuideOpen ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+                실현 가능성 · 데모 시나리오 안내
+              </Button>
+            </CollapsibleTrigger>
+            <CollapsibleContent>
+              <div className="mt-4 p-4 rounded-xl bg-slate-50 border border-slate-100 space-y-4">
+                <div>
+                  <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">타깃 사용자</p>
+                  <p className="text-sm text-slate-700">금융당국(FSC/FSS) · 샌드박스 신청 기업 · 전문 서비스 제공자</p>
+                </div>
+                <div>
+                  <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">로드맵 (3단계)</p>
+                  <ol className="text-sm text-slate-700 list-decimal list-inside space-y-0.5">
+                    <li>솔루션 고도화</li>
+                    <li>샌드박스 시범 적용</li>
+                    <li>제도화 지원</li>
+                  </ol>
+                </div>
+                <div>
+                  <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">권장 데모 흐름 (4단계)</p>
+                  <ol className="text-sm text-slate-700 space-y-1.5">
+                    <li className="flex items-center gap-2">
+                      <span className="font-medium text-slate-500">1.</span>
+                      <NavLink to="/gap-map" className="text-indigo-600 hover:underline inline-flex items-center gap-1"><Map className="w-4 h-4 shrink-0" /> Gap Map</NavLink>
+                      <span>에서 상위 사각지대·LC 근거 보기 확인</span>
+                    </li>
+                    <li className="flex items-center gap-2">
+                      <span className="font-medium text-slate-500">2.</span>
+                      <NavLink to="/sandbox/checklist" className="text-indigo-600 hover:underline inline-flex items-center gap-1"><ClipboardList className="w-4 h-4 shrink-0" /> Sandbox 체크리스트</NavLink>
+                      <span>에서 「데모 시나리오 적용」 → 자가진단 제출</span>
+                    </li>
+                    <li className="flex items-center gap-2">
+                      <span className="font-medium text-slate-500">3.</span>
+                      <span>같은 페이지 또는 Gap Map에서 「샌드박스 시뮬레이션」 실행</span>
+                    </li>
+                    <li className="flex items-center gap-2">
+                      <span className="font-medium text-slate-500">4.</span>
+                      <span>검토 포인트·보완 방안 확인</span>
+                    </li>
+                  </ol>
+                </div>
+                <p className="text-xs text-slate-500 pt-1 border-t border-slate-200">
+                  성공 지표: Hallucination Rate 5% 미만 (아래 RAG KPI 참고)
+                </p>
+              </div>
+            </CollapsibleContent>
+          </Collapsible>
+          {/* RAG KPI: 환각률 (최근 N건) */}
+          {metricsSummary != null && (
+            <div className="mt-4 p-4 rounded-xl bg-slate-50 border border-slate-100">
+              <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">RAG 품질 KPI</p>
+              <div className="flex flex-wrap items-center gap-4">
+                <div className="flex items-baseline gap-2">
+                  <span className="text-2xl font-bold text-slate-900">
+                    {metricsSummary.hallucination_rate_recent_pct != null
+                      ? `${metricsSummary.hallucination_rate_recent_pct}%`
+                      : '—'}
+                  </span>
+                  <span className="text-sm text-slate-500">환각률 (최근 평가)</span>
+                </div>
+                <span className="text-slate-400">|</span>
+                <div>
+                  <span className="text-sm font-medium text-slate-600">목표 </span>
+                  <span className="text-sm font-bold text-emerald-600">{metricsSummary.hallucination_goal_pct ?? 5}% 미만</span>
+                </div>
+                {metricsSummary.evaluation_count != null && metricsSummary.evaluation_count > 0 && (
+                  <>
+                    <span className="text-slate-400">|</span>
+                    <span className="text-xs text-slate-500">평가 {metricsSummary.evaluation_count}회 반영</span>
+                  </>
+                )}
+              </div>
+            </div>
+          )}
         </div>
       </section>
 
       {/* Key Metrics - 수집 직후에는 방금 수집한 건수(lastResult)를 우선 표시 */}
       {(() => {
-        const newThisWeek = (lastResult?.status === 'completed' && lastResult?.result?.total_new != null)
-          ? lastResult.result.total_new
-          : (weeklyReport?.statistics?.total_documents ?? 0);
+        // 이번 주 신규: 백엔드 documents_this_week(국내+국제) 우선, 없으면 수집 직후 total_new, 없으면 주간보고서 합계
+        const newThisWeek = (stats?.documents_this_week != null && stats.documents_this_week > 0)
+          ? stats.documents_this_week
+          : (lastResult?.status === 'completed' && lastResult?.result?.total_new != null)
+            ? lastResult.result.total_new
+            : (weeklyReport?.statistics?.total_documents ?? 0);
+        const domesticWeek = stats?.domestic_this_week ?? 0;
+        const internationalWeek = stats?.international_this_week ?? 0;
+        const subLabel = (domesticWeek > 0 || internationalWeek > 0)
+          ? `국내 ${domesticWeek} · 국제 ${internationalWeek}`
+          : null;
         return (
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {[
-          { label: '총 수집 문서', value: stats?.total_documents || 0, icon: FileText, color: 'bg-slate-900', change: null },
-          { label: '이번 주 신규', value: newThisWeek, icon: TrendingUp, color: 'bg-emerald-600', change: newThisWeek > 0 ? `+${newThisWeek}` : null },
-          { label: '활성 알림', value: stats?.active_alerts || 0, icon: AlertTriangle, color: 'bg-amber-500', change: null },
-          { label: '긴급 알림', value: weeklyReport?.statistics?.urgent_alerts || 0, icon: Clock, color: 'bg-rose-500', change: null },
+          { label: '총 수집 문서', value: stats?.total_documents || 0, icon: FileText, color: 'bg-slate-900', change: null, subLabel: null },
+          { label: '이번 주 신규', value: newThisWeek, icon: TrendingUp, color: 'bg-emerald-600', change: newThisWeek > 0 ? `+${newThisWeek}` : null, subLabel },
+          { label: '활성 알림', value: stats?.active_alerts || 0, icon: AlertTriangle, color: 'bg-amber-500', change: null, subLabel: null },
+          { label: '긴급 알림', value: weeklyReport?.statistics?.urgent_alerts || 0, icon: Clock, color: 'bg-rose-500', change: null, subLabel: null },
         ].map((item, i) => (
           <Card key={i} className="rounded-2xl border border-[#e9e9e9] bg-white shadow-sm hover:shadow transition-shadow">
             <CardContent className="p-5">
@@ -203,6 +298,7 @@ export default function UnifiedDashboard() {
                 <div>
                   <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">{item.label}</p>
                   <p className="text-2xl font-bold text-slate-900 mt-1.5 tracking-tight">{item.value.toLocaleString()}</p>
+                  {item.subLabel && <p className="text-[11px] text-slate-500 mt-0.5">{item.subLabel}</p>}
                   {item.change && <p className="text-xs font-medium text-emerald-600 mt-1">{item.change}</p>}
                 </div>
                 <div className={`w-12 h-12 rounded-2xl ${item.color} flex items-center justify-center`}>

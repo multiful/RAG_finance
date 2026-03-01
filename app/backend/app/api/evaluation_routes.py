@@ -167,14 +167,18 @@ async def get_metrics_summary():
             avg_precision = sum(e.get("context_precision", 0) for e in eval_history) / len(eval_history)
             avg_recall = sum(e.get("context_recall", 0) for e in eval_history) / len(eval_history)
             avg_overall = sum(e.get("overall_score", 0) for e in eval_history) / len(eval_history)
-            
+            # 환각률 = 1 - faithfulness (목표 5% 미만)
+            hallucination_rate_recent = round((1.0 - avg_faithfulness) * 100, 2)
+
             rag_metrics = {
                 "avg_faithfulness": round(avg_faithfulness, 4),
                 "avg_answer_relevancy": round(avg_relevancy, 4),
                 "avg_context_precision": round(avg_precision, 4),
                 "avg_context_recall": round(avg_recall, 4),
                 "avg_overall_score": round(avg_overall, 4),
-                "evaluation_count": len(eval_history)
+                "evaluation_count": len(eval_history),
+                "hallucination_rate_recent_pct": hallucination_rate_recent,
+                "hallucination_goal_pct": 5.0,
             }
         else:
             rag_metrics = {
@@ -184,7 +188,9 @@ async def get_metrics_summary():
                 "avg_context_recall": 0,
                 "avg_overall_score": 0,
                 "evaluation_count": 0,
-                "note": "평가 데이터 없음 - /evaluation/run 실행 필요"
+                "hallucination_rate_recent_pct": None,
+                "hallucination_goal_pct": 5.0,
+                "note": "평가 데이터 없음 - /evaluation/run 실행 필요",
             }
         
         return {

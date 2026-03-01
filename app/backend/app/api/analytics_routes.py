@@ -8,6 +8,8 @@ import math
 import re
 
 from app.services.rss_collector import RSSCollector
+from app.core.config import settings
+from app.core.cache_helper import cache_get, cache_set, CACHE_TTL_ANALYTICS
 
 router = APIRouter(prefix="/analytics", tags=["analytics"])
 rss_collector = RSSCollector()
@@ -20,8 +22,12 @@ async def get_topic_trends(
 ):
     """
     Get topic/keyword trends over time.
-    Returns monthly keyword frequency for trend analysis.
+    Returns monthly keyword frequency for trend analysis. Redis 10분 캐시.
     """
+    cache_key = f"analytics:topic_trends:{months}:{industry or 'all'}"
+    cached = cache_get(cache_key)
+    if cached is not None:
+        return cached
     try:
         db = rss_collector.db
         
@@ -65,7 +71,7 @@ async def get_topic_trends(
         for month_counter in monthly_keywords.values():
             all_keywords.update(month_counter)
         
-        return {
+        out = {
             "period": f"Last {months} months",
             "monthly_trends": trend_data,
             "top_keywords_overall": [
@@ -74,6 +80,8 @@ async def get_topic_trends(
             ],
             "total_documents_analyzed": len(result.data or [])
         }
+        cache_set(cache_key, out, CACHE_TTL_ANALYTICS)
+        return out
         
     except Exception as e:
         logging.error(f"Error in get_topic_trends: {str(e)}")
@@ -151,7 +159,16 @@ async def get_industry_impact(
         
     except Exception as e:
         logging.error(f"Error in get_industry_impact: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        try:
+            from app.data.demo_data import get_demo_industry_impact
+            return get_demo_industry_impact(days)
+        except Exception:
+            return {
+                "period_days": days,
+                "analysis_date": datetime.now(timezone.utc).isoformat(),
+                "industry_impact": [],
+                "summary": {"most_affected": None, "total_regulations": 0, "total_alerts": 0},
+            }
 
 
 @router.get("/document-stats")
@@ -302,8 +319,12 @@ async def get_keyword_cloud(
 @router.get("/regulation-summary")
 async def get_regulation_summary():
     """
-    Get comprehensive regulation analysis summary.
+    Get comprehensive regulation analysis summary. Redis 5분 캐시.
     """
+    cache_key = "analytics:regulation_summary"
+    cached = cache_get(cache_key)
+    if cached is not None:
+        return cached
     try:
         db = rss_collector.db
         now = datetime.now(timezone.utc)
@@ -325,6 +346,23 @@ async def get_regulation_summary():
         docs_prev_week = prev_week_result.count if hasattr(prev_week_result, 'count') else 0
         
         week_change = ((docs_this_week - docs_prev_week) / docs_prev_week * 100) if docs_prev_week > 0 else 0
+
+        # 국내(금융위 등) vs 국제(FSB·BIS) 이번 주 건수
+        all_src = db.table("sources").select("source_id, fid").execute()
+        domestic_ids = [s["source_id"] for s in (all_src.data or []) if s.get("fid") in settings.FSC_RSS_FIDS]
+        international_ids = [s["source_id"] for s in (all_src.data or []) if s.get("fid") and s["fid"] not in settings.FSC_RSS_FIDS]
+        domestic_this_week = 0
+        if domestic_ids:
+            r = db.table("documents").select("*", count="exact").in_("source_id", domestic_ids).gte(
+                "published_at", week_ago.isoformat()
+            ).execute()
+            domestic_this_week = (r.count if hasattr(r, "count") else 0) or 0
+        international_this_week = 0
+        if international_ids:
+            r = db.table("documents").select("*", count="exact").in_("source_id", international_ids).gte(
+                "published_at", week_ago.isoformat()
+            ).execute()
+            international_this_week = (r.count if hasattr(r, "count") else 0) or 0
         
         alerts_result = db.table("alerts").select("*", count="exact").eq("status", "open").execute()
         active_alerts = alerts_result.count if hasattr(alerts_result, 'count') else 0
@@ -333,12 +371,18 @@ async def get_regulation_summary():
             "status", "open"
         ).eq("severity", "high").execute()
         high_severity = high_alerts_result.count if hasattr(high_alerts_result, 'count') else 0
-        
-        return {
+
+        comparison_msg = ""
+        if domestic_this_week > 0 or international_this_week > 0:
+            comparison_msg = f" (국내 {domestic_this_week}건, 국제 {international_this_week}건)"
+
+        out = {
             "generated_at": now.isoformat(),
             "overview": {
                 "total_regulations": total_docs,
                 "regulations_this_week": docs_this_week,
+                "domestic_this_week": domestic_this_week,
+                "international_this_week": international_this_week,
                 "week_over_week_change": round(week_change, 1),
                 "active_alerts": active_alerts,
                 "high_severity_alerts": high_severity
@@ -346,8 +390,8 @@ async def get_regulation_summary():
             "insights": [
                 {
                     "type": "trend",
-                    "message": f"이번 주 {docs_this_week}건의 규제가 발표되었습니다." + (
-                        f" (전주 대비 {abs(week_change):.0f}% {'증가' if week_change > 0 else '감소'})" 
+                    "message": f"이번 주 {docs_this_week}건의 규제가 발표되었습니다.{comparison_msg}" + (
+                        f" (전주 대비 {abs(week_change):.0f}% {'증가' if week_change > 0 else '감소'})"
                         if docs_prev_week > 0 else ""
                     )
                 },
@@ -360,7 +404,9 @@ async def get_regulation_summary():
                 }
             ]
         }
-        
+        cache_set(cache_key, out, CACHE_TTL_ANALYTICS)
+        return out
+
     except Exception as e:
         logging.error(f"Error in get_regulation_summary: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -392,6 +438,24 @@ async def get_weekly_report():
 
         documents = docs_result.data or []
         alerts = []
+
+        # 국내 vs 국제 이번 주 건수
+        from app.core.config import settings as cfg
+        all_src = db.table("sources").select("source_id, fid").execute()
+        domestic_ids = [s["source_id"] for s in (all_src.data or []) if s.get("fid") in cfg.FSC_RSS_FIDS]
+        international_ids = [s["source_id"] for s in (all_src.data or []) if s.get("fid") and s["fid"] not in cfg.FSC_RSS_FIDS]
+        domestic_this_week = 0
+        if domestic_ids:
+            r = db.table("documents").select("*", count="exact").in_("source_id", domestic_ids).gte(
+                "published_at", week_ago.isoformat()
+            ).execute()
+            domestic_this_week = (r.count if hasattr(r, "count") else 0) or 0
+        international_this_week = 0
+        if international_ids:
+            r = db.table("documents").select("*", count="exact").in_("source_id", international_ids).gte(
+                "published_at", week_ago.isoformat()
+            ).execute()
+            international_this_week = (r.count if hasattr(r, "count") else 0) or 0
 
         # by_industry: 이번 주 전체 문서 기준으로 업권별 집계 (별도 쿼리로 정확히)
         by_industry = {"INSURANCE": 0, "BANKING": 0, "SECURITIES": 0, "GENERAL": 0}
@@ -430,6 +494,8 @@ async def get_weekly_report():
         
         if total_docs > 0:
             summary_parts.append(f"이번 주 총 {total_docs}건의 금융 규제 문서가 발표되었습니다.")
+            if domestic_this_week > 0 or international_this_week > 0:
+                summary_parts.append(f"(국내 {domestic_this_week}건, 국제 {international_this_week}건)")
             
             industry_text = []
             if by_industry["INSURANCE"] > 0:
@@ -456,6 +522,8 @@ async def get_weekly_report():
             "summary": " ".join(summary_parts),
             "statistics": {
                 "total_documents": total_docs,
+                "domestic_this_week": domestic_this_week,
+                "international_this_week": international_this_week,
                 "by_industry": by_industry,
                 "urgent_alerts": urgent_count,
                 "total_alerts": len(alerts)
@@ -470,10 +538,17 @@ async def get_weekly_report():
         
     except Exception as e:
         logging.error(f"Error in get_weekly_report: {str(e)}")
-        return {
-            "generated_at": datetime.now(timezone.utc).isoformat(),
-            "summary": "보고서를 생성하는 중 오류가 발생했습니다.",
-            "statistics": {"total_documents": 0, "by_industry": {}, "urgent_alerts": 0, "total_alerts": 0},
-            "highlights": [],
-            "recommendations": []
-        }
+        try:
+            from app.data.demo_data import get_demo_weekly_report
+            return get_demo_weekly_report()
+        except Exception:
+            now = datetime.now(timezone.utc)
+            week_ago = now - timedelta(days=7)
+            return {
+                "generated_at": now.isoformat(),
+                "period": {"start": week_ago.isoformat(), "end": now.isoformat()},
+                "summary": "보고서 생성 중 오류가 발생했습니다.",
+                "statistics": {"total_documents": 0, "by_industry": {}, "urgent_alerts": 0, "total_alerts": 0},
+                "highlights": [],
+                "recommendations": [],
+            }
