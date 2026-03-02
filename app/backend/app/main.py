@@ -1,7 +1,7 @@
 """Main FastAPI application with Phase A/B Architecture."""
 import asyncio
 import logging
-from fastapi import FastAPI
+from fastapi import FastAPI, Response
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 from datetime import datetime
@@ -164,6 +164,12 @@ async def root():
             "references": f"{settings.API_V1_PREFIX}/references"
         }
     }
+
+
+@app.head("/")
+async def root_head():
+    """Uptime 모니터 등 HEAD 요청 지원 (405 방지)."""
+    return Response(status_code=200)
 
 
 @app.get("/health")
