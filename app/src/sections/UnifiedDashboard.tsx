@@ -395,10 +395,28 @@ export default function UnifiedDashboard() {
                         </div>
                       </div>
                       <a 
-                        href={doc.url && (doc.url.includes('/seed/doc') || (doc.url.includes('fsc.go.kr') && doc.url.includes('#seed-'))) ? 'https://www.fsc.go.kr' : (doc.url || '#')} 
+                        href={(() => {
+                          const u = doc.url || '';
+                          const isSeed = u.includes('/seed/doc') || (u.includes('fsc.go.kr') && u.includes('#seed-'));
+                          if (!isSeed) return u || '#';
+                          const cat = (doc.category || '').toLowerCase();
+                          const title = (doc.title || '').toLowerCase();
+                          if (cat.includes('bis') || title.includes('bis')) return 'https://www.bis.org';
+                          if (cat.includes('fsb') || title.includes('fsb')) return 'https://www.fsb.org';
+                          return 'https://www.fsc.go.kr';
+                        })()}
                         target="_blank" 
                         rel="noopener noreferrer"
-                        title={doc.url && (doc.url.includes('/seed/doc') || doc.url.includes('#seed-')) ? '시드 데이터 (원문은 금융위 홈으로 연결됩니다)' : '원문 보기'}
+                        title={(() => {
+                          const u = doc.url || '';
+                          const isSeed = u.includes('/seed/doc') || (u.includes('fsc.go.kr') && u.includes('#seed-'));
+                          if (!isSeed) return '원문 보기';
+                          const cat = (doc.category || '').toLowerCase();
+                          const title = (doc.title || '').toLowerCase();
+                          if (cat.includes('bis') || title.includes('bis')) return '시드 데이터 (원문: BIS)';
+                          if (cat.includes('fsb') || title.includes('fsb')) return '시드 데이터 (원문: FSB)';
+                          return '시드 데이터 (원문: 금융위 홈)';
+                        })()}
                         className="p-2 rounded-lg hover:bg-slate-200 text-slate-400 hover:text-slate-700 transition-colors duration-150"
                       >
                         <ExternalLink className="w-4 h-4" />
