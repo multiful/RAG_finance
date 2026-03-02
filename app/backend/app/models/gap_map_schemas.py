@@ -14,7 +14,7 @@ class RiskAxisScore(BaseModel):
     axis_id: str = Field(..., description="축 ID (R1~R10)")
     name_ko: str = Field(..., description="한글 축명")
     gi: float = Field(..., ge=0.0, le=1.0, description="Global Impact (0~1)")
-    lc: float = Field(..., ge=0.0, le=1.0, description="Legal Coverage (0=직접규율, 1=미포섭)")
+    lc: float = Field(..., ge=0.0, le=1.0, description="Local Coverage (0=미포섭, 1=직접 규율)")
     gap: float = Field(..., ge=0.0, le=1.0, description="Gap = GI × (1 - LC)")
 
 

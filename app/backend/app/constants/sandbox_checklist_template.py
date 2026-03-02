@@ -4,11 +4,20 @@ KAI 문서(page_20, page_22) 기반 Sandbox Risk-Based Checklist 템플릿.
 - 설계 원칙: 증분적 결합 관점, 국제 기준 호환성, 정량적 측정 가능성
 - 실무 진단: R3·R4 기술 무결성, R5·R9 책임 소재·분쟁 해결
 - 선택지: yes / no / partial
+- 체크리스트 로직 플로우: page_20 Step 1→2→3→Output
 """
 from typing import List, Dict, Any
 
 CHECKLIST_GROUP_R3R4 = "technical_integrity"  # R3·R4 기술적 무결성 및 복원력
 CHECKLIST_GROUP_R5R9 = "liability_governance"  # R5·R9 책임 소재 및 분쟁 해결
+
+# 체크리스트 작동 로직 (page_20 Checklist Logic Flow)
+CHECKLIST_LOGIC_FLOW: List[Dict[str, str]] = [
+    {"step": 1, "title_ko": "10대 리스크 축 정의", "description_ko": "통합 리스크 분류체계 기준"},
+    {"step": 2, "title_ko": "실무형 질문 구성", "description_ko": "R3·R4, R5·R9 그룹별 진단 항목"},
+    {"step": 3, "title_ko": "기업 자가 진단", "description_ko": "yes/no/partial 응답"},
+    {"step": "output", "title_ko": "Gap 보완 계획 수립", "description_ko": "아니오/부분적 응답 영역은 높은 Gap Score와 연결되어 집중 관리 대상"},
+]
 
 # 설계 원칙 3개 (page_20)
 DESIGN_PRINCIPLES: List[Dict[str, str]] = [
