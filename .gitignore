@@ -70,6 +70,8 @@ yarn-debug.log*
 .idea/
 *.sublime-workspace
 *.sublime-project
+.cursor/
+.cursorrules
 
 # -----------------------------
 # OS generated
@@ -119,3 +121,7 @@ __pycache__/
 
 # Cursor/IDE 생성 에셋 (올리지 않음)
 assets/
+
+# 임시/QA 산출물 (저장소에서 제거)
+QAResponse
+qa_check.txt
