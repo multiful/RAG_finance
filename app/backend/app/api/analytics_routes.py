@@ -272,7 +272,10 @@ async def get_keyword_cloud(
         doc_freq_en = Counter()
         for doc in docs:
             title = doc.get("title", "")
-            words_ko = re.findall(r'[가-힣]{2,}', title)
+            category = doc.get("category", "")
+            text_ko = title
+            text_en = f"{title} {category}"
+            words_ko = re.findall(r'[가-힣]{2,}', text_ko)
             seen_ko = set()
             for w in words_ko:
                 if len(w) < 2 or w in minimal_stop:
@@ -281,7 +284,7 @@ async def get_keyword_cloud(
                 seen_ko.add(w)
             for w in seen_ko:
                 doc_freq[w] += 1
-            words_en = re.findall(r'[a-zA-Z]{2,}', title)
+            words_en = re.findall(r'[a-zA-Z]{2,}', text_en)
             seen_en = set()
             for w in (x.lower() for x in words_en):
                 if w in stop_en:
@@ -293,15 +296,17 @@ async def get_keyword_cloud(
 
         # 등장 문서 비율이 max_df_ratio 초과인 단어 제외
         max_df_ratio = 0.55
+        max_df_ratio_en = 0.75  # 영어는 문서 수가 적어 비율 완화
         idf_min = 0.4
-        def build_top(term_tot: Counter, doc_fr: Counter, lim: int):
+        def build_top(term_tot: Counter, doc_fr: Counter, lim: int, use_en_ratio: bool = False):
+            ratio_cap = max_df_ratio_en if use_en_ratio else max_df_ratio
             candidates = []
             for w, total_count in term_tot.most_common(lim * 3):
                 df = doc_fr.get(w, 0)
                 if df == 0:
                     continue
                 ratio = df / N
-                if ratio > max_df_ratio:
+                if ratio > ratio_cap:
                     continue
                 idf = math.log(N / (df + 1) + 1)
                 if idf < idf_min:
@@ -311,8 +316,8 @@ async def get_keyword_cloud(
             candidates.sort(key=lambda x: -x[2])
             return [(w, c) for w, c, _ in candidates[:lim]]
 
-        top = build_top(term_total, doc_freq, limit)
-        top_en = build_top(term_total_en, doc_freq_en, limit)
+        top = build_top(term_total, doc_freq, limit, False)
+        top_en = build_top(term_total_en, doc_freq_en, limit, True)
         max_count = top[0][1] if top else 1
         max_count_en = top_en[0][1] if top_en else 1
 
