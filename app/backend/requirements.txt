@@ -1,4 +1,6 @@
 # Render 배포: PYTHON_VERSION=3.11.9 설정 권장 (llama-index 등 <3.12 필요). 캐시 초기화 후 재배포.
+# 하위 의존성 중 scikit-learn==1.4.1 요구 시 PyPI에 없어 실패하므로, 제약으로 1.4.2 고정.
+-c constraints.txt
 # =========================
 # FastAPI
 # =========================
