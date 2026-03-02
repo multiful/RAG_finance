@@ -32,7 +32,8 @@ async def lifespan(app: FastAPI):
     print(f"[START] Starting {settings.APP_NAME}")
     print(f"[INFO] Phase A: Data Ingestion (LLM Ops)")
     print(f"[INFO] Phase B: Serving Service (FastAPI + Redis)")
-    print(f"[INFO] LangSmith enabled: {bool(settings.LANGSMITH_API_KEY)}")
+    langsmith_on = bool(settings.LANGSMITH_API_KEY) and getattr(settings, "LANGCHAIN_TRACING_V2", True)
+    print(f"[INFO] LangSmith: {'enabled (tracing on)' if langsmith_on else 'key set but tracing off' if settings.LANGSMITH_API_KEY else 'disabled'}")
     print(f"[INFO] LlamaParse enabled: {bool(settings.LLAMAPARSE_API_KEY)}")
     
     # Check Redis (미연결 시 인메모리 폴백으로 서버는 정상 기동)

@@ -14,7 +14,10 @@ import json
 
 from langsmith import Client
 from langsmith.run_trees import RunTree
-from langchain.callbacks.tracers.langchain import LangChainTracer
+try:
+    from langchain_core.tracers.langchain import LangChainTracer
+except ImportError:
+    from langchain.callbacks.tracers.langchain import LangChainTracer  # langchain < 0.2
 from langchain_core.callbacks import Callbacks
 
 from app.core.config import settings
@@ -28,12 +31,16 @@ class LangSmithTracer:
         self.tracer = None
         
         if settings.LANGSMITH_API_KEY:
-            # Set environment variables for LangSmith
+            # 트레이싱 활성: API 키 + ENABLE_TRACING + LANGCHAIN_TRACING_V2 모두 true일 때만
+            tracing_on = (
+                getattr(settings, "ENABLE_TRACING", True)
+                and getattr(settings, "LANGCHAIN_TRACING_V2", True)
+            )
             os.environ["LANGCHAIN_API_KEY"] = settings.LANGSMITH_API_KEY
             os.environ["LANGCHAIN_ENDPOINT"] = settings.LANGSMITH_ENDPOINT
             os.environ["LANGCHAIN_PROJECT"] = settings.LANGSMITH_PROJECT
-            os.environ["LANGCHAIN_TRACING_V2"] = "true"
-            
+            os.environ["LANGCHAIN_TRACING_V2"] = "true" if tracing_on else "false"
+
             # Initialize client
             self.client = Client(
                 api_key=settings.LANGSMITH_API_KEY,
@@ -46,10 +53,11 @@ class LangSmithTracer:
             )
     
     def is_enabled(self) -> bool:
-        """LangSmith 트레이싱 활성 여부. API 키가 있고 ENABLE_TRACING=True일 때 동작."""
+        """LangSmith 트레이싱 활성 여부. API 키 + ENABLE_TRACING + LANGCHAIN_TRACING_V2 모두 True일 때."""
         return (
             self.client is not None
             and getattr(settings, "ENABLE_TRACING", True)
+            and getattr(settings, "LANGCHAIN_TRACING_V2", True)
         )
     
     def create_run(

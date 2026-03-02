@@ -378,8 +378,9 @@ class VectorStore:
         try:
             from sentence_transformers import CrossEncoder
             
-            # Load cross-encoder (cached)
-            model = CrossEncoder('cross-encoder/ms-marco-MiniLM-L-6-v2')
+            # Load cross-encoder (cached). RERANK_MODEL으로 교체 가능
+            model_name = getattr(settings, "RERANK_MODEL", "cross-encoder/ms-marco-MiniLM-L-6-v2")
+            model = CrossEncoder(model_name)
             
             # Create query-document pairs
             pairs = [

@@ -74,12 +74,26 @@ class Settings(BaseSettings):
     CHUNK_OVERLAP: int = 100
     TOP_K_RETRIEVAL: int = 10
     TOP_K_RERANK: int = 5
-    ENABLE_RERANKING: bool = True   # Cross-Encoder 리랭킹 (정확도 개선)
+    ENABLE_RERANKING: bool = True   # Cross-Encoder 리랭킹 (검색 정확도 개선, 가성비 높음)
+    RERANK_MODEL: str = "cross-encoder/ms-marco-MiniLM-L-6-v2"
+    # Hybrid Search 가중치 (금융 용어 정확도: 키워드 비중 올리면 용어 매칭 강화)
+    HYBRID_VECTOR_WEIGHT: float = 0.7
+    HYBRID_KEYWORD_WEIGHT: float = 0.3
+    HYBRID_SIMILARITY_THRESHOLD: float = 0.3
     ENABLE_TRACING: bool = True     # LangSmith 트레이싱 (API 키 설정 시 동작)
     
-    # LangGraph
+    # LangGraph / Agentic RAG
     MAX_AGENT_ITERATIONS: int = 5
     AGENT_TIMEOUT_SECONDS: int = 120
+    # 정보 부족 시 외부 검색 사용 (선택). .env에 키 설정 시 활성화
+    TAVILY_API_KEY: str = ""
+    SERPER_API_KEY: str = ""
+    ENABLE_WEB_SEARCH_WHEN_INSUFFICIENT: bool = True  # True면 키 있을 때만 웹검색 시도
+    # Tavily 검색 옵션 (Playground의 Additional fields와 대응)
+    TAVILY_SEARCH_DEPTH: str = "advanced"   # basic | advanced (정보 부족 시 더 깊이 검색)
+    TAVILY_MAX_RESULTS: int = 5
+    TAVILY_SEARCH_TOPIC: str = "general"    # general | finance 등 (금융 RAG면 finance 권장)
+    TAVILY_INCLUDE_ANSWER: str = "none"     # none | true (검색 요약 포함 여부)
     
     # Ragas Evaluation
     RAGAS_TEST_SIZE: int = 100

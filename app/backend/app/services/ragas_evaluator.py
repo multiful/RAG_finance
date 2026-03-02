@@ -203,9 +203,11 @@ class RAGASEvaluator:
                 llm=self.llm,
                 embeddings=self.embeddings,
             )
-            
-            scores = result.to_pandas().mean()
-            
+            # ragas 0.1.x: Result.to_pandas() 또는 dict-like
+            if hasattr(result, "to_pandas"):
+                scores = result.to_pandas().mean()
+            else:
+                scores = {k: (sum(v) / len(v)) if v else 0 for k, v in result.items()}
             faith_score = float(scores.get("faithfulness", 0))
             relevancy_score = float(scores.get("answer_relevancy", 0))
             precision_score = float(scores.get("context_precision", 0))

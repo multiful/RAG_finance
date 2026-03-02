@@ -18,9 +18,13 @@ from ragas.metrics import (
     answer_relevancy,
     context_precision,
     context_recall,
-    answer_similarity,
-    answer_correctness
 )
+try:
+    from ragas.metrics import answer_correctness
+    _HAS_ANSWER_CORRECTNESS = True
+except ImportError:
+    _HAS_ANSWER_CORRECTNESS = False
+    answer_correctness = None
 from datasets import Dataset
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 
@@ -110,29 +114,37 @@ class RagasEvaluator:
         dataset = Dataset.from_dict(data)
         
         # Run evaluation
+        metrics_list = [faithfulness, answer_relevancy, context_precision, context_recall]
+        if _HAS_ANSWER_CORRECTNESS and answer_correctness is not None:
+            metrics_list.append(answer_correctness)
         try:
             result = evaluate(
                 dataset,
-                metrics=[
-                    faithfulness,
-                    answer_relevancy,
-                    context_precision,
-                    context_recall,
-                    answer_correctness
-                ],
+                metrics=metrics_list,
                 llm=self.llm,
                 embeddings=self.embeddings
             )
-            
-            # Extract scores
-            scores = {
-                "groundedness": result.get("faithfulness", [0])[0],
-                "faithfulness": result.get("faithfulness", [0])[0],
-                "answer_relevancy": result.get("answer_relevancy", [0])[0],
-                "context_precision": result.get("context_precision", [0])[0],
-                "context_recall": result.get("context_recall", [0])[0],
-                "answer_correctness": result.get("answer_correctness", [0])[0]
-            }
+            # ragas 0.1.x: dict-like or Result with to_pandas()
+            if hasattr(result, "to_pandas"):
+                df = result.to_pandas()
+                row = df.iloc[0] if len(df) else {}
+                scores = {
+                    "groundedness": float(row.get("faithfulness", 0)),
+                    "faithfulness": float(row.get("faithfulness", 0)),
+                    "answer_relevancy": float(row.get("answer_relevancy", 0)),
+                    "context_precision": float(row.get("context_precision", 0)),
+                    "context_recall": float(row.get("context_recall", 0)),
+                    "answer_correctness": float(row.get("answer_correctness", 0)),
+                }
+            else:
+                scores = {
+                    "groundedness": (result.get("faithfulness") or [0])[0],
+                    "faithfulness": (result.get("faithfulness") or [0])[0],
+                    "answer_relevancy": (result.get("answer_relevancy") or [0])[0],
+                    "context_precision": (result.get("context_precision") or [0])[0],
+                    "context_recall": (result.get("context_recall") or [0])[0],
+                    "answer_correctness": (result.get("answer_correctness") or [0])[0],
+                }
             
             # Calculate overall score (weighted average)
             scores["overall_score"] = (
@@ -192,34 +204,49 @@ class RagasEvaluator:
         
         dataset = Dataset.from_dict(data)
         
-        # Run evaluation
+        metrics_batch = [faithfulness, answer_relevancy, context_precision, context_recall]
+        if _HAS_ANSWER_CORRECTNESS and answer_correctness is not None:
+            metrics_batch.append(answer_correctness)
         try:
             ragas_result = evaluate(
                 dataset,
-                metrics=[
-                    faithfulness,
-                    answer_relevancy,
-                    context_precision,
-                    context_recall,
-                    answer_correctness
-                ],
+                metrics=metrics_batch,
                 llm=self.llm,
                 embeddings=self.embeddings
             )
-            
+            # ragas 0.1.x: dict-like 또는 to_pandas()
+            if hasattr(ragas_result, "to_pandas"):
+                df = ragas_result.to_pandas()
+                n = len(test_cases)
+                def col(name):
+                    return df[name].tolist() if name in df.columns else [0.0] * n
+                faith_col = col("faithfulness")
+                rel_col = col("answer_relevancy")
+                prec_col = col("context_precision")
+                rec_col = col("context_recall")
+            else:
+                faith_col = ragas_result.get("faithfulness") or [0] * len(test_cases)
+                rel_col = ragas_result.get("answer_relevancy") or [0] * len(test_cases)
+                prec_col = ragas_result.get("context_precision") or [0] * len(test_cases)
+                rec_col = ragas_result.get("context_recall") or [0] * len(test_cases)
             # Convert to EvaluationResult objects
             for i, case in enumerate(test_cases):
+                g = faith_col[i] if i < len(faith_col) else 0
+                f = faith_col[i] if i < len(faith_col) else 0
+                ar = rel_col[i] if i < len(rel_col) else 0
+                cp = prec_col[i] if i < len(prec_col) else 0
+                cr = rec_col[i] if i < len(rec_col) else 0
                 result = EvaluationResult(
                     question_id=case.get("question_id", f"q{i}"),
                     question=case["question"],
                     answer=case["answer"],
                     ground_truth=case.get("ground_truth", ""),
                     contexts=case.get("contexts", []),
-                    groundedness=ragas_result.get("faithfulness", [0] * len(test_cases))[i],
-                    faithfulness=ragas_result.get("faithfulness", [0] * len(test_cases))[i],
-                    answer_relevancy=ragas_result.get("answer_relevancy", [0] * len(test_cases))[i],
-                    context_precision=ragas_result.get("context_precision", [0] * len(test_cases))[i],
-                    context_recall=ragas_result.get("context_recall", [0] * len(test_cases))[i],
+                    groundedness=g,
+                    faithfulness=f,
+                    answer_relevancy=ar,
+                    context_precision=cp,
+                    context_recall=cr,
                     overall_score=0.0
                 )
                 

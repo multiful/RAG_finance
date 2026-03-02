@@ -205,6 +205,9 @@ async def adaptive_retrieval_node(state: AgentState) -> AgentState:
                 query=sq,
                 query_embedding=query_embedding,
                 top_k=settings.TOP_K_RETRIEVAL,
+                vector_weight=getattr(settings, "HYBRID_VECTOR_WEIGHT", 0.7),
+                keyword_weight=getattr(settings, "HYBRID_KEYWORD_WEIGHT", 0.3),
+                similarity_threshold=getattr(settings, "HYBRID_SIMILARITY_THRESHOLD", 0.3),
                 filters={}
             )
             
@@ -226,7 +229,6 @@ async def adaptive_retrieval_node(state: AgentState) -> AgentState:
         
         # Sort by similarity and take top results
         all_chunks.sort(key=lambda x: x.get("similarity", 0), reverse=True)
-        state["retrieved_chunks"] = all_chunks[:10]
         
         # Calculate retrieval score
         if all_chunks:
@@ -237,6 +239,36 @@ async def adaptive_retrieval_node(state: AgentState) -> AgentState:
             state["retrieval_score"] = 0.0
             state["needs_more_retrieval"] = state["retrieval_attempts"] < 2
         
+        # Agentic RAG: 정보 부족 시 외부 웹 검색으로 보강 (SERPER/TAVILY API 키 있을 때)
+        if (
+            state.get("needs_more_retrieval")
+            and state["retrieval_attempts"] >= 1
+            and getattr(settings, "ENABLE_WEB_SEARCH_WHEN_INSUFFICIENT", True)
+        ):
+            try:
+                from app.tools.web_search import web_search_for_context, is_web_search_available
+                if is_web_search_available():
+                    web_results = await web_search_for_context(query, num=5)
+                    for i, w in enumerate(web_results):
+                        all_chunks.append({
+                            "chunk_id": f"web-{i}",
+                            "document_id": "",
+                            "document_title": f"[웹검색] {w.get('title', '')}",
+                            "published_at": "",
+                            "url": w.get("url", ""),
+                            "chunk_text": w.get("snippet", ""),
+                            "snippet": (w.get("snippet", ""))[:200],
+                            "similarity": 0.5,
+                            "source": "web",
+                        })
+                    state["needs_more_retrieval"] = False  # 보강했으므로 추가 벡터 검색 중단
+                    state["messages"] = list(state["messages"]) + [
+                        AIMessage(content=f"Added {len(web_results)} web search results for context.")
+                    ]
+            except Exception as web_err:
+                print(f"[policy_agent] Web search fallback error: {web_err}")
+        
+        state["retrieved_chunks"] = all_chunks[:10]
         state["messages"] = list(state["messages"]) + [
             AIMessage(content=f"Retrieved {len(all_chunks)} chunks. Avg similarity: {state['retrieval_score']:.2f}")
         ]
