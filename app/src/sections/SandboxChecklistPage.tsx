@@ -135,19 +135,11 @@ export default function SandboxChecklistPage() {
           <ClipboardCheck className="w-7 h-7 text-emerald-700" />
           Sandbox용 Risk-Based Checklist
         </h1>
-        <p className="text-slate-500 mt-1">
-          스테이블코인·STO 결합 환경 리스크에 대한 자가 진단. 국제 기준 대비 국내 규제 Gap 해소를 위한 체크리스트입니다.
-        </p>
-        {/* 데모 시나리오 안내 및 한 번에 적용 */}
-        <div className="mt-4 p-4 rounded-xl bg-indigo-50 border border-indigo-100">
-          <div className="flex items-start gap-3">
-            <Info className="w-5 h-5 text-indigo-600 shrink-0 mt-0.5" />
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-semibold text-indigo-900 mb-1">데모 시나리오 (4단계)</p>
-              <p className="text-xs text-indigo-800 mb-3">
-                1) 아래 &quot;데모 시나리오 적용&quot; 클릭 → 2) 자가진단 제출 → 3) 샌드박스 시뮬레이션 실행 → 4) 검토 포인트·보완 방안 확인
-              </p>
-              <Button
+        <p className="text-slate-500 mt-1 text-sm">스테이블코인·STO 리스크 자가 진단 체크리스트</p>
+        <div className="mt-4 p-3 rounded-xl bg-indigo-50 border border-indigo-100 flex flex-wrap items-center gap-2">
+          <Info className="w-4 h-4 text-indigo-600 shrink-0" />
+          <span className="text-xs text-indigo-800">데모 시나리오 적용 → 자가진단 제출 → 시뮬레이션 실행</span>
+          <Button
                 type="button"
                 variant="outline"
                 size="sm"
@@ -173,8 +165,6 @@ export default function SandboxChecklistPage() {
                 <PlayCircle className="w-4 h-4 mr-2" />
                 데모 시나리오 적용
               </Button>
-            </div>
-          </div>
         </div>
       </header>
 

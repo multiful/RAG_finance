@@ -18,8 +18,6 @@ import {
   ExternalLink,
   Loader2,
   Calendar,
-  Map,
-  ClipboardList,
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
@@ -190,55 +188,15 @@ export default function UnifiedDashboard() {
               <Progress value={jobProgress.progress} className="h-2 rounded-full" />
             </div>
           )}
-          {/* 실현 가능성·데모 시나리오 안내 (평가위원·데모용) */}
-          <Collapsible open={demoGuideOpen} onOpenChange={setDemoGuideOpen} className="mt-6 pt-6 border-t border-slate-100">
+          <Collapsible open={demoGuideOpen} onOpenChange={setDemoGuideOpen} className="mt-4 pt-4 border-t border-slate-100">
             <CollapsibleTrigger asChild>
-              <Button variant="ghost" size="sm" className="text-slate-600 hover:text-slate-900 gap-2 -ml-2">
-                {demoGuideOpen ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
-                실현 가능성 · 데모 시나리오 안내
+              <Button variant="ghost" size="sm" className="text-slate-500 hover:text-slate-700 gap-2 -ml-2 text-xs">
+                {demoGuideOpen ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
+                데모 흐름
               </Button>
             </CollapsibleTrigger>
             <CollapsibleContent>
-              <div className="mt-4 p-4 rounded-xl bg-slate-50 border border-slate-100 space-y-4">
-                <div>
-                  <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">타깃 사용자</p>
-                  <p className="text-sm text-slate-700">금융당국(FSC/FSS) · 샌드박스 신청 기업 · 전문 서비스 제공자</p>
-                </div>
-                <div>
-                  <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">로드맵 (3단계)</p>
-                  <ol className="text-sm text-slate-700 list-decimal list-inside space-y-0.5">
-                    <li>솔루션 고도화</li>
-                    <li>샌드박스 시범 적용</li>
-                    <li>제도화 지원</li>
-                  </ol>
-                </div>
-                <div>
-                  <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">권장 데모 흐름 (4단계)</p>
-                  <ol className="text-sm text-slate-700 space-y-1.5">
-                    <li className="flex items-center gap-2">
-                      <span className="font-medium text-slate-500">1.</span>
-                      <NavLink to="/gap-map" className="text-indigo-600 hover:underline inline-flex items-center gap-1"><Map className="w-4 h-4 shrink-0" /> Gap Map</NavLink>
-                      <span>에서 상위 사각지대·LC 근거 보기 확인</span>
-                    </li>
-                    <li className="flex items-center gap-2">
-                      <span className="font-medium text-slate-500">2.</span>
-                      <NavLink to="/sandbox/checklist" className="text-indigo-600 hover:underline inline-flex items-center gap-1"><ClipboardList className="w-4 h-4 shrink-0" /> Sandbox 체크리스트</NavLink>
-                      <span>에서 「데모 시나리오 적용」 → 자가진단 제출</span>
-                    </li>
-                    <li className="flex items-center gap-2">
-                      <span className="font-medium text-slate-500">3.</span>
-                      <span>같은 페이지 또는 Gap Map에서 「샌드박스 시뮬레이션」 실행</span>
-                    </li>
-                    <li className="flex items-center gap-2">
-                      <span className="font-medium text-slate-500">4.</span>
-                      <span>검토 포인트·보완 방안 확인</span>
-                    </li>
-                  </ol>
-                </div>
-                <p className="text-xs text-slate-500 pt-1 border-t border-slate-200">
-                  성공 지표: Hallucination Rate 5% 미만 (아래 RAG KPI 참고)
-                </p>
-              </div>
+              <p className="mt-2 text-xs text-slate-500">Gap Map → Sandbox 체크리스트(데모 시나리오 적용) → 시뮬레이션 실행</p>
             </CollapsibleContent>
           </Collapsible>
           {/* RAG KPI: 환각률 (최근 N건) */}

@@ -97,9 +97,7 @@ export default function PolicySimulatePage() {
             <GitCompare className="w-5 h-5 text-indigo-600" />
             규제 변경 시뮬레이션
           </CardTitle>
-          <CardDescription>
-            스테이블코인·STO·가상자산 관련 정책 문서를 포함해, 두 문서(국내·국제)를 선택하면 조항별 변경 영향(추가/수정/삭제·리스크·영향 업무)을 분석합니다.
-          </CardDescription>
+          <CardDescription>두 문서(국내·국제) 선택 시 조항별 변경 영향 분석</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           {loadingDocs ? (
@@ -108,13 +106,9 @@ export default function PolicySimulatePage() {
               문서 목록 불러오는 중...
             </div>
           ) : documents.length === 0 ? (
-            <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-amber-800 text-sm flex flex-col gap-3">
+            <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-amber-800 text-sm flex flex-col gap-2">
               <p className="font-medium">선택 가능한 문서가 없습니다.</p>
-              <p>설정 → 데이터 수집에서 「지금 수집」을 실행한 뒤, 파이프라인에서 파싱·인덱싱이 완료되면 이 목록에 실제 문서가 표시됩니다.</p>
-              <p className="text-amber-700">
-                시드 데이터 사용: <code className="bg-amber-100 px-1 rounded">app/backend</code> 폴더에서{' '}
-                <code className="bg-amber-100 px-1 rounded">python -m scripts.seed_data</code> 실행 후 아래 새로고침을 누르세요.
-              </p>
+              <p>설정 → 데이터 수집에서 지금 수집 후 새로고침. (시드: app/backend에서 python -m scripts.seed_data 실행 후 새로고침)</p>
               <Button type="button" variant="outline" size="sm" onClick={loadDocuments} className="self-start">
                 <RefreshCw className="w-4 h-4 mr-2" />
                 문서 목록 새로고침
@@ -235,9 +229,7 @@ export default function PolicySimulatePage() {
               <FileText className="w-4 h-4" />
               시뮬레이션 결과
             </CardTitle>
-            <CardDescription>
-              {result.old_doc_title} → {result.new_doc_title}
-            </CardDescription>
+            <CardDescription>{result.old_doc_title} → {result.new_doc_title}</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="flex flex-wrap items-center gap-3">

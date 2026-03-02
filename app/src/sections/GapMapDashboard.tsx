@@ -252,9 +252,7 @@ export default function GapMapDashboard() {
               <FileText className="w-5 h-5" />
               국내·국제 규제 문서 비교 (최근 {comparison.period_days}일)
             </CardTitle>
-            <p className="text-sm text-slate-600">
-              국제(FSB·BIS 등) 기준과 국내(금융위·금감원) 수집 문서를 대조해 Gap Map 해석에 반영합니다.
-            </p>
+            <p className="text-sm text-slate-600">국내·국제 수집 문서 대조 반영</p>
           </CardHeader>
           <CardContent>
             <div className="grid grid-cols-2 gap-4">
@@ -288,9 +286,7 @@ export default function GapMapDashboard() {
             <BarChart3 className="w-5 h-5" />
             스테이블코인·STO 결합 리스크 축별 GI vs LC
           </CardTitle>
-          <p className="text-sm text-slate-600 font-normal mt-1">
-            막대가 GI는 높은데 LC가 낮은 축 = 국제 기준에 비해 우리나라 규제가 미흡한 축
-          </p>
+          <p className="text-sm text-slate-600 font-normal mt-1">GI 높고 LC 낮은 축 = 규제 미흡 축</p>
         </CardHeader>
         <CardContent>
           <div className="h-[380px] w-full">
@@ -384,9 +380,7 @@ export default function GapMapDashboard() {
             <FlaskConical className="w-5 h-5" />
             샌드박스 시나리오 시뮬레이션
           </CardTitle>
-          <p className="text-sm text-slate-500">
-            Gap Map 상위 사각지대를 기준으로, 금융규제 샌드박스 적용 시 검토 포인트·완화 가능성·권고를 RAG(국제·국내 문서) 기반으로 생성합니다.
-          </p>
+          <p className="text-sm text-slate-500">상위 사각지대 기준 검토 포인트·권고 RAG 생성</p>
         </CardHeader>
         <CardContent className="space-y-4">
           <Button
