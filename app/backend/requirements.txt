@@ -33,7 +33,8 @@ langchain-core==0.1.26
 langchain-openai==0.0.8
 langchain-community==0.0.21
 langgraph==0.0.26
-langsmith==0.0.92
+# langchain 0.1.9 요구: langsmith>=0.1.0,<0.2.0 (0.0.92는 충돌)
+langsmith>=0.1.0,<0.2.0
 
 # =========================
 # LlamaParse / LlamaIndex
