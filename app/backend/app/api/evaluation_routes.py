@@ -1,12 +1,15 @@
 """
 Evaluation & Advanced Agent API Routes
 RAGAS 평가 및 LangGraph 에이전트 엔드포인트
+KAI(핵심 성과 지표) 목표치는 competition 문서 page_29 기준.
 """
 from fastapi import APIRouter, HTTPException, Query, BackgroundTasks
 from typing import Optional, Dict, Any
 from pydantic import BaseModel
 from datetime import datetime, timezone
 import logging
+
+from app.constants.kai_targets import get_kai_targets_summary, check_kai_pass, KAI_TARGETS
 
 router = APIRouter(prefix="/evaluation", tags=["evaluation"])
 
@@ -144,6 +147,15 @@ async def agent_ask_question(request: AgentQuestionRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.get("/kai-targets")
+async def get_kai_targets():
+    """
+    KAI(핵심 성과 지표) 목표치 조회.
+    competition 문서 page_29 파일럿 검증 계획 기준: Hallucination <5%, 정확도 >95%, 응답 <3초, 만족도 >4.0
+    """
+    return get_kai_targets_summary()
+
+
 @router.get("/metrics/summary")
 async def get_metrics_summary():
     """
@@ -170,6 +182,11 @@ async def get_metrics_summary():
             # 환각률 = 1 - faithfulness (목표 5% 미만)
             hallucination_rate_recent = round((1.0 - avg_faithfulness) * 100, 2)
 
+            # KAI 목표 충족 여부 (page_29: Hallucination <5%, 정확도 >95% 등)
+            kai_hallucination_pass = hallucination_rate_recent is not None and check_kai_pass(hallucination_rate_recent, "hallucination_rate_pct")
+            accuracy_pct = (avg_faithfulness * 100) if avg_faithfulness else None
+            kai_accuracy_pass = accuracy_pct is not None and check_kai_pass(accuracy_pct, "accuracy_pct")
+
             rag_metrics = {
                 "avg_faithfulness": round(avg_faithfulness, 4),
                 "avg_answer_relevancy": round(avg_relevancy, 4),
@@ -179,6 +196,11 @@ async def get_metrics_summary():
                 "evaluation_count": len(eval_history),
                 "hallucination_rate_recent_pct": hallucination_rate_recent,
                 "hallucination_goal_pct": 5.0,
+                "kai": {
+                    "hallucination_target_met": kai_hallucination_pass,
+                    "accuracy_pct": round(accuracy_pct, 2) if accuracy_pct is not None else None,
+                    "accuracy_target_met": kai_accuracy_pass,
+                },
             }
         else:
             rag_metrics = {
@@ -190,6 +212,11 @@ async def get_metrics_summary():
                 "evaluation_count": 0,
                 "hallucination_rate_recent_pct": None,
                 "hallucination_goal_pct": 5.0,
+                "kai": {
+                    "hallucination_target_met": None,
+                    "accuracy_pct": None,
+                    "accuracy_target_met": None,
+                },
                 "note": "평가 데이터 없음 - /evaluation/run 실행 필요",
             }
         

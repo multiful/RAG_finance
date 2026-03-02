@@ -22,6 +22,7 @@ from app.api.evaluation_routes import router as evaluation_router
 from app.api.gap_map_routes import router as gap_map_router
 from app.api.sandbox_checklist_routes import router as sandbox_checklist_router
 from app.api.sandbox_simulate_routes import router as sandbox_simulate_router
+from app.api.references_routes import router as references_router
 
 
 @asynccontextmanager
@@ -128,6 +129,7 @@ app.include_router(evaluation_router, prefix=f"{settings.API_V1_PREFIX}", tags=[
 app.include_router(gap_map_router, prefix=settings.API_V1_PREFIX)
 app.include_router(sandbox_checklist_router, prefix=settings.API_V1_PREFIX)
 app.include_router(sandbox_simulate_router, prefix=settings.API_V1_PREFIX)
+app.include_router(references_router, prefix=settings.API_V1_PREFIX)
 
 
 @app.get("/")
@@ -158,7 +160,8 @@ async def root():
             "main": f"{settings.API_V1_PREFIX}",
             "advanced": f"{settings.API_V1_PREFIX}/advanced",
             "pipeline": f"{settings.API_V1_PREFIX}/pipeline",
-            "alerts": f"{settings.API_V1_PREFIX}/alerts"
+            "alerts": f"{settings.API_V1_PREFIX}/alerts",
+            "references": f"{settings.API_V1_PREFIX}/references"
         }
     }
 

@@ -14,6 +14,7 @@ from app.constants.sandbox_checklist_template import (
     GROUP_LABELS,
     CHECKLIST_GROUP_R3R4,
     CHECKLIST_GROUP_R5R9,
+    CHECKLIST_LOGIC_FLOW,
 )
 from app.services.gap_map_service import get_top_blind_spots
 
@@ -23,9 +24,10 @@ _submissions: List[Dict[str, Any]] = []
 
 
 def get_checklist_template() -> Dict[str, Any]:
-    """KAI 기반 Sandbox 체크리스트 템플릿 반환."""
+    """KAI 기반 Sandbox 체크리스트 템플릿 반환 (page_20 로직 플로우 포함)."""
     return {
         "design_principles": DESIGN_PRINCIPLES,
+        "logic_flow": CHECKLIST_LOGIC_FLOW,
         "groups": [
             {"id": CHECKLIST_GROUP_R3R4, "label": GROUP_LABELS[CHECKLIST_GROUP_R3R4]},
             {"id": CHECKLIST_GROUP_R5R9, "label": GROUP_LABELS[CHECKLIST_GROUP_R5R9]},

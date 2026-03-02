@@ -20,6 +20,7 @@ from app.services.gap_map_service import (
     _compute_gi_from_components,
 )
 from app.constants.risk_axes import RISK_AXIS_IDS
+from app.constants.lc_labeling import get_lc_labeling_meta
 from app.models.gap_map_schemas import (
     GapMapResponse,
     TopBlindSpotsResponse,
@@ -96,6 +97,12 @@ async def api_get_gap_map_heatmap():
         logging.error(f"Error in api_get_gap_map_heatmap: {e}")
         fallback = get_gap_map_fallback()
         return [GapMapHeatmapRow(axis_id=s.axis_id, name_ko=s.name_ko, gi=s.gi, lc=s.lc, gap=s.gap) for s in fallback]
+
+
+@router.get("/lc-criteria")
+async def api_get_lc_criteria():
+    """LC (Local Coverage) 라벨링 기준 및 분석 대상 법령 (KAI page_16)."""
+    return get_lc_labeling_meta()
 
 
 @router.get("/lc-evidence", response_model=LCEvidenceResponse)

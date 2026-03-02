@@ -43,8 +43,8 @@ RISK_AXIS_DESCRIPTIONS: Dict[str, str] = {
     "R10": "상호운용성·원자적 스왑 실패 리스크",
 }
 
-# 초기 GI(Global Impact), LC(Legal Coverage) — 논문·슬라이드 기준. Gap은 서비스에서 계산.
-# LC: 0.0 = 직접 규율, 0.5 = 간접·일반 원칙, 1.0 = 미포섭
+# 초기 GI(Global Importance), LC(Local Coverage) — 논문·슬라이드(page_18) 기준. Gap은 서비스에서 계산.
+# LC: 0.0 = 미포섭, 0.5 = 간접·일반 원칙, 1.0 = 직접 규율 (국내 법제가 해당 리스크를 얼마나 규율하는지)
 RISK_AXIS_INITIAL_GI_LC: List[Dict[str, Any]] = [
     {"axis_id": "R1", "gi": 0.50, "lc": 0.5},
     {"axis_id": "R2", "gi": 0.56, "lc": 0.0},
