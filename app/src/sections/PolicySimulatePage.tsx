@@ -2,8 +2,8 @@
  * 규제 변경 시뮬레이션 (Policy Simulate)
  * 문서 A(기준) vs 문서 B(비교) 선택 → LLM 규제 영향 분석. 국내·국제 문서 비교 가능.
  */
-import { useEffect, useState } from 'react';
-import { GitCompare, Loader2, FileText, AlertTriangle } from 'lucide-react';
+import { useCallback, useEffect, useState } from 'react';
+import { GitCompare, Loader2, FileText, AlertTriangle, RefreshCw } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -39,23 +39,21 @@ export default function PolicySimulatePage() {
   const [simulating, setSimulating] = useState(false);
   const [result, setResult] = useState<PolicyDiffResponse | null>(null);
 
-  useEffect(() => {
-    let cancelled = false;
+  const loadDocuments = useCallback(() => {
     setLoadingDocs(true);
     getDocuments({
       page: 1,
       page_size: 200,
       ...(topicStablecoinStoOnly ? { topic: 'stablecoin_sto' } : {}),
     })
-      .then((res) => {
-        if (!cancelled) setDocuments(res.documents || []);
-      })
+      .then((res) => setDocuments(res.documents || []))
       .catch(() => toast.error('문서 목록을 불러오지 못했습니다.'))
-      .finally(() => {
-        if (!cancelled) setLoadingDocs(false);
-      });
-    return () => { cancelled = true; };
+      .finally(() => setLoadingDocs(false));
   }, [topicStablecoinStoOnly]);
+
+  useEffect(() => {
+    loadDocuments();
+  }, [loadDocuments]);
 
   const isInternational = (cat: string | undefined) => {
     if (!cat) return false;
@@ -110,9 +108,17 @@ export default function PolicySimulatePage() {
               문서 목록 불러오는 중...
             </div>
           ) : documents.length === 0 ? (
-            <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-amber-800 text-sm flex flex-col gap-2">
+            <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-amber-800 text-sm flex flex-col gap-3">
               <p className="font-medium">선택 가능한 문서가 없습니다.</p>
               <p>설정 → 데이터 수집에서 「지금 수집」을 실행한 뒤, 파이프라인에서 파싱·인덱싱이 완료되면 이 목록에 실제 문서가 표시됩니다.</p>
+              <p className="text-amber-700">
+                시드 데이터 사용: <code className="bg-amber-100 px-1 rounded">app/backend</code> 폴더에서{' '}
+                <code className="bg-amber-100 px-1 rounded">python -m scripts.seed_data</code> 실행 후 아래 새로고침을 누르세요.
+              </p>
+              <Button type="button" variant="outline" size="sm" onClick={loadDocuments} className="self-start">
+                <RefreshCw className="w-4 h-4 mr-2" />
+                문서 목록 새로고침
+              </Button>
             </div>
           ) : (
             <>
@@ -126,6 +132,10 @@ export default function PolicySimulatePage() {
                   />
                   가상자산·토큰증권·스테이블코인 관련 문서만 보기
                 </label>
+                <Button type="button" variant="ghost" size="sm" onClick={loadDocuments} disabled={loadingDocs}>
+                  <RefreshCw className={`w-4 h-4 mr-1 ${loadingDocs ? 'animate-spin' : ''}`} />
+                  새로고침
+                </Button>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-2">

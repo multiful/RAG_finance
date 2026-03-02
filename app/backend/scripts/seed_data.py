@@ -59,6 +59,9 @@ def seed_documents(db):
         ("보험업 디지털 전환 가이드라인", "보도자료", 5),
         ("은행 BIS 자본규제 대응 안내", "공지사항", 6),
         ("증권사 전자공시 의무 강화", "정책자료", 7),
+        # 국제 문서 (규제 시뮬레이션에서 국내·국제 비교용)
+        ("FSB Policy Documents on Stablecoins and Crypto Assets", "FSB Policy Documents", 8),
+        ("BIS Research on Tokenised Securities and STO", "BIS Research Papers", 9),
     ]
     rows = []
     for title, category, i in docs:
