@@ -168,12 +168,14 @@ class HybridRetriever:
         query_embedding = await self.embeddings.aembed_query(query)
         
         # Hybrid search
+        from app.core.config import settings
         results = await self.vector_store.hybrid_search(
             query=query,
             query_embedding=query_embedding,
             top_k=top_k,
-            vector_weight=0.7,
-            keyword_weight=0.3,
+            vector_weight=getattr(settings, "HYBRID_VECTOR_WEIGHT", 0.7),
+            keyword_weight=getattr(settings, "HYBRID_KEYWORD_WEIGHT", 0.3),
+            similarity_threshold=getattr(settings, "HYBRID_SIMILARITY_THRESHOLD", 0.3),
             filters=filters
         )
         

@@ -101,29 +101,14 @@ async def parse_document(
     file: UploadFile = File(...),
     file_type: str = Query(..., description="File type: pdf, hwp, hwpx")
 ):
-    """Parse document using LlamaParse.
+    """PDF/HWP 업로드 → LlamaParse(API 키 있음) 또는 pdfplumber/olefile fallback.
     
-    Extracts text, tables, and structure from PDF/HWP files.
+    **플로우**: 업로드 파일 임시 저장 → parse_and_chunk_document() → 마크다운·테이블 추출·청킹.
+    LLAMAPARSE_API_KEY가 설정되어 있으면 LlamaParse API로 파싱하고, 없으면 로컬 fallback 사용.
+    반환 chunks의 metadata.parser에 'llamaparse' | 'pdfplumber' 등 파싱 출처가 포함됨.
     
     Returns:
-        {
-            "text": "full markdown text",
-            "pages": ["page1", "page2", ...],
-            "tables": [
-                {
-                    "headers": [...],
-                    "rows": [...],
-                    "page": 1
-                }
-            ],
-            "chunks": [
-                {
-                    "chunk_index": 0,
-                    "chunk_text": "...",
-                    "tables": [...]
-                }
-            ]
-        }
+        filename, file_type, text(전체), chunks(청크 목록), total_chunks, parsing_source(사용된 파서)
     """
     try:
         # Save uploaded file
@@ -139,12 +124,17 @@ async def parse_document(
             # Combine all text
             full_text = "\n\n".join([c["chunk_text"] for c in chunks])
             
+            parsing_source = (
+                chunks[0].get("metadata", {}).get("parser", "unknown")
+                if chunks else "unknown"
+            )
             return {
                 "filename": file.filename,
                 "file_type": file_type,
                 "text": full_text,
                 "chunks": chunks,
-                "total_chunks": len(chunks)
+                "total_chunks": len(chunks),
+                "parsing_source": parsing_source,
             }
             
         finally:
@@ -379,8 +369,40 @@ async def get_observability_status():
     return {
         "enabled": tracer.is_enabled(),
         "project": settings.LANGSMITH_PROJECT if tracer.is_enabled() else None,
-        "endpoint": settings.LANGSMITH_ENDPOINT if tracer.is_enabled() else None
+        "endpoint": settings.LANGSMITH_ENDPOINT if tracer.is_enabled() else None,
+        "hint": "LANGCHAIN_TRACING_V2=true in .env to enable tracing (false = off)",
     }
+
+
+@router.post("/observability/verify")
+async def verify_langsmith():
+    """LangSmith 동작 확인: 테스트 run 1건 생성 후 run_id·대시보드 링크 반환."""
+    if not tracer.is_enabled():
+        return {
+            "ok": False,
+            "error": "LangSmith not enabled",
+            "hint": "Set LANGSMITH_API_KEY and LANGCHAIN_TRACING_V2=true in .env, then restart.",
+        }
+    try:
+        run = tracer.create_run(
+            name="observability_verify",
+            run_type="chain",
+            inputs={"check": "ping", "source": "api"},
+        )
+        if not run:
+            return {"ok": False, "error": "Failed to create run"}
+        tracer.end_run(run, outputs={"status": "ok"})
+        base = (settings.LANGSMITH_ENDPOINT or "").replace("api.smith.langchain.com", "smith.langchain.com").rstrip("/")
+        project = getattr(settings, "LANGSMITH_PROJECT", "default")
+        dashboard_url = f"{base}/o/default/projects/p/{project}/r/{run.id}" if base else None
+        return {
+            "ok": True,
+            "run_id": str(run.id),
+            "dashboard_url": dashboard_url,
+            "message": "Trace sent. Open dashboard_url in browser to verify.",
+        }
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
 
 
 @router.get("/observability/stats")

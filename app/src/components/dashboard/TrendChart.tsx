@@ -38,27 +38,38 @@ interface TrendChartProps {
   chartType?: 'line' | 'bar' | 'bubble';
 }
 
+interface TooltipPayloadItem {
+  score?: number;
+  topicCount?: number;
+  topTopic?: string;
+  payload?: { score?: number; topicCount?: number; topTopic?: string };
+}
+
 interface CustomTooltipProps {
   active?: boolean;
-  payload?: Record<string, unknown>[];
+  payload?: { payload?: TooltipPayloadItem }[];
   label?: string;
 }
 
-const CustomTooltip = ({ active, payload, label }: CustomTooltipProps) => {
+const CustomTooltip = ({ active, payload }: CustomTooltipProps) => {
   if (active && payload && payload.length) {
-    const data = payload[0].payload;
+    const data = payload[0].payload as TooltipPayloadItem | undefined;
+    if (!data) return null;
+    const score = data?.score ?? (data as { score?: number })?.score;
+    const topicCount = data?.topicCount ?? (data as { topicCount?: number })?.topicCount;
+    const topTopic = data?.topTopic ?? (data as { topTopic?: string })?.topTopic;
     return (
       <div className="bg-white p-3 rounded-lg shadow-lg border border-lavender-100">
-        <p className="text-sm font-medium">{label}</p>
+        <p className="text-sm font-medium">트렌드</p>
         <p className="text-lg font-bold text-primary">
-          Surge Score: {data.score.toFixed(1)}
+          Surge Score: {typeof score === 'number' ? score.toFixed(1) : '—'}
         </p>
         <p className="text-sm text-muted-foreground">
-          토픽 수: {data.topicCount}
+          토픽 수: {topicCount ?? '—'}
         </p>
-        {data.topTopic && (
+        {topTopic && (
           <p className="text-xs text-muted-foreground mt-1">
-            주요: {data.topTopic}
+            주요: {topTopic}
           </p>
         )}
       </div>

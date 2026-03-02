@@ -215,17 +215,23 @@ class ComplianceTrackerService:
     ) -> List[ComplianceTask]:
         """Get compliance tasks with filters."""
         
-        query = self.db.table("compliance_tasks").select(
-            "*, documents(title)"
-        ).order("due_date", nullsfirst=False).limit(limit)
-        
-        if status:
-            query = query.eq("status", status.value)
-        
-        if assigned_to:
-            query = query.eq("assigned_to", assigned_to)
-        
-        result = query.execute()
+        try:
+            query = self.db.table("compliance_tasks").select(
+                "*, documents(title)"
+            ).order("due_date", nullsfirst=False).limit(limit)
+            
+            if status:
+                query = query.eq("status", status.value)
+            
+            if assigned_to:
+                query = query.eq("assigned_to", assigned_to)
+            
+            result = query.execute()
+        except Exception as e:
+            # Table might not exist yet
+            import logging
+            logging.warning(f"compliance_tasks table not found: {e}")
+            return []
         
         if not result.data:
             return []

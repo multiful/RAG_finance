@@ -13,6 +13,8 @@ import {
   TrendingUp,
   ChevronDown,
   Shield,
+  BadgeCheck,
+  Download,
 } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -31,7 +33,9 @@ import {
 } from '@/components/ui/sheet';
 import { SourceCardGrid } from '@/components/dashboard/SourceCard';
 import CitationHighlighter, { ConfidenceGauge } from '@/components/CitationHighlighter';
-import { askQuestion } from '@/lib/api';
+import { toast } from 'sonner';
+import { askQuestion, askAgentQuestion } from '@/lib/api';
+import { EXAMPLE_QUESTION_SOURCE_CHIP, SOURCE_LABEL_FULL, SOURCE_LABEL_ORIGIN, VERIFIER_SYSTEM_LABEL } from '@/lib/constants';
 import type { Citation } from '@/types';
 
 interface Message {
@@ -44,12 +48,26 @@ interface Message {
   citation_coverage?: number;
   hallucination_flag?: boolean;
   timestamp: Date;
+  agent_metadata?: {
+    question_type?: string;
+    agent_iterations?: number;
+    engine?: string;
+  };
 }
 
 interface QATemplate {
   category: string;
   questions: string[];
 }
+
+/** QA 입력란 근처 예시 질문 칩 (클릭 시 자동 입력) — 스테이블코인·STO·금융 규제 */
+const EXAMPLE_QUESTION_CHIPS = [
+  '스테이블코인 규제 현황은?',
+  '토큰증권(STO) 제도 요건은?',
+  '가상자산 시장 규제 방향은?',
+  EXAMPLE_QUESTION_SOURCE_CHIP,
+  '국제기구(FSB) 스테이블코인 권고는?',
+];
 
 const INDUSTRY_TEMPLATES: Record<string, { icon: React.ElementType; label: string; color: string; templates: QATemplate[] }> = {
   insurance: {
@@ -183,6 +201,7 @@ export default function NewQASection() {
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [complianceMode, setComplianceMode] = useState(false);
+  const [agentMode, setAgentMode] = useState(true);
   const [selectedCitation, setSelectedCitation] = useState<Citation | null>(null);
   const [inspectorOpen, setInspectorOpen] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -211,29 +230,61 @@ export default function NewQASection() {
     setLoading(true);
 
     try {
-      const response = await askQuestion({ 
-        question: userMessage.content,
-        compliance_mode: complianceMode
-      });
-
-      const assistantMessage: Message = {
-        id: (Date.now() + 1).toString(),
-        type: 'assistant',
-        content: response.answer,
-        citations: response.citations,
-        confidence: response.confidence,
-        groundedness_score: response.groundedness_score,
-        citation_coverage: response.citation_coverage,
-        hallucination_flag: (response.confidence ?? 0) < 0.4,
-        timestamp: new Date(),
-      };
+      let assistantMessage: Message;
+      
+      if (agentMode) {
+        const response = await askAgentQuestion(userMessage.content);
+        assistantMessage = {
+          id: (Date.now() + 1).toString(),
+          type: 'assistant',
+          content: response.answer,
+          citations: response.citations,
+          confidence: response.confidence,
+          groundedness_score: response.groundedness_score,
+          citation_coverage: response.citation_coverage,
+          hallucination_flag: (response.confidence ?? 0) < 0.4,
+          timestamp: new Date(),
+          agent_metadata: {
+            question_type: response.metadata?.question_type,
+            agent_iterations: response.metadata?.agent_iterations,
+            engine: response.metadata?.engine,
+          },
+        };
+      } else {
+        const response = await askQuestion({ 
+          question: userMessage.content,
+          compliance_mode: complianceMode
+        });
+        assistantMessage = {
+          id: (Date.now() + 1).toString(),
+          type: 'assistant',
+          content: response.answer,
+          citations: response.citations,
+          confidence: response.confidence,
+          groundedness_score: response.groundedness_score,
+          citation_coverage: response.citation_coverage,
+          hallucination_flag: (response.confidence ?? 0) < 0.4,
+          timestamp: new Date(),
+        };
+      }
 
       setMessages((prev) => [...prev, assistantMessage]);
-    } catch {
+    } catch (err: unknown) {
+      const detail = err && typeof err === 'object' && 'response' in err
+        ? (err as { response?: { data?: { detail?: string | unknown } } }).response?.data?.detail
+        : null;
+      const errText = typeof detail === 'string'
+        ? detail
+        : Array.isArray(detail) && detail[0] && typeof detail[0] === 'object' && 'msg' in detail[0]
+          ? String((detail[0] as { msg: string }).msg)
+          : err instanceof Error
+            ? err.message
+            : '요청을 처리할 수 없습니다.';
+      toast.error(errText, { duration: 6000 });
       const errorMessage: Message = {
         id: (Date.now() + 1).toString(),
         type: 'assistant',
-        content: '죄송합니다. 근거 문서를 분석하는 중 오류가 발생했습니다.',
+        content: `죄송합니다. 오류가 발생했습니다.\n\n${errText}\n\nAPI 키 설정, 네트워크, 서버 상태를 확인해 주세요.`,
         timestamp: new Date(),
       };
       setMessages((prev) => [...prev, errorMessage]);
@@ -247,38 +298,163 @@ export default function NewQASection() {
     setInspectorOpen(true);
   };
 
+  const exportAuditLog = () => {
+    const auditLog = {
+      export_date: new Date().toISOString(),
+      session_id: `session_${Date.now()}`,
+      compliance_mode: complianceMode,
+      total_queries: messages.filter(m => m.type === 'user').length,
+      conversations: messages.map((m, idx) => ({
+        sequence: idx + 1,
+        type: m.type,
+        content: m.content,
+        timestamp: m.timestamp.toISOString(),
+        ...(m.type === 'assistant' && {
+          quality_metrics: {
+            confidence: m.confidence,
+            groundedness_score: m.groundedness_score,
+            citation_coverage: m.citation_coverage,
+            hallucination_flag: m.hallucination_flag
+          },
+          citations: m.citations?.map(c => ({
+            document_id: c.document_id,
+            document_title: c.document_title,
+            chunk_id: c.chunk_id,
+            published_at: c.published_at,
+            url: c.url
+          }))
+        })
+      }))
+    };
+
+    const blob = new Blob([JSON.stringify(auditLog, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `audit_log_${new Date().toISOString().split('T')[0]}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   const lastAssistant =
     messages.length > 0 && messages[messages.length - 1].type === 'assistant'
       ? messages[messages.length - 1]
       : null;
 
   return (
-    <div className="h-[calc(100vh-140px)] max-w-6xl mx-auto flex flex-col gap-6">
-      {/* Header */}
-      <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
+    <div className="h-[calc(100vh-180px)] max-w-7xl mx-auto flex flex-col gap-6">
+      {/* Premium Header */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
         <div>
-          <h2 className="text-3xl font-bold tracking-tight text-slate-900">
-            Q&amp;A Workspace
-          </h2>
-          <p className="text-slate-500 mt-2 text-lg">
-            금융정책 문서 기반 인공지능 분석 및 근거 기반 답변
-          </p>
+          <div className="flex items-center gap-3 mb-2">
+            <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-blue-600 to-indigo-600 flex items-center justify-center shadow-lg shadow-blue-500/25">
+              <Search className="w-6 h-6 text-white" />
+            </div>
+            <div>
+              <h2 className="text-2xl font-bold tracking-tight text-slate-900">
+                AI 질의
+              </h2>
+              <p className="text-sm text-slate-500">
+                공식 문서 기반 · 출처 추적 · 실시간 분석
+              </p>
+            </div>
+          </div>
         </div>
-        <div className="flex items-center gap-3 bg-white p-3 rounded-2xl shadow-sm border border-slate-100">
-          <div className={`p-2 rounded-lg ${complianceMode ? 'bg-primary/10 text-primary' : 'bg-slate-100 text-slate-400'}`}>
-            <Shield className="w-5 h-5" />
+        <div className="flex items-center gap-3">
+          {/* Agent Mode Toggle */}
+          <div className={`
+            flex items-center gap-3 px-4 py-3 rounded-2xl transition-all duration-300
+            ${agentMode 
+              ? 'bg-gradient-to-r from-purple-50 to-indigo-50 border-2 border-purple-200' 
+              : 'bg-white border border-slate-200'
+            }
+          `}>
+            <div className={`
+              p-2 rounded-xl transition-all duration-300
+              ${agentMode 
+                ? 'bg-purple-500 text-white shadow-lg shadow-purple-500/30' 
+                : 'bg-slate-100 text-slate-400'
+              }
+            `}>
+              <Radar className="w-5 h-5" />
+            </div>
+            <div className="flex flex-col">
+              <Label htmlFor="agent-mode" className="text-sm font-semibold text-slate-900 cursor-pointer">
+                LangGraph 에이전트
+              </Label>
+              <span className="text-xs text-slate-500">멀티 스텝 분석</span>
+            </div>
+            <Switch 
+              id="agent-mode" 
+              checked={agentMode} 
+              onCheckedChange={setAgentMode}
+            />
           </div>
-          <div className="flex flex-col">
-            <Label htmlFor="compliance-mode" className="text-xs font-black uppercase tracking-tighter cursor-pointer">
-              Compliance Mode
-            </Label>
-            <span className="text-[10px] font-bold text-slate-400">Strict sentence-level citations</span>
+
+          {/* Compliance Mode Toggle */}
+          <div className={`
+            flex items-center gap-3 px-4 py-3 rounded-2xl transition-all duration-300
+            ${complianceMode 
+              ? 'bg-gradient-to-r from-blue-50 to-indigo-50 border-2 border-blue-200' 
+              : 'bg-white border border-slate-200'
+            }
+          `}>
+            <div className={`
+              p-2 rounded-xl transition-all duration-300
+              ${complianceMode 
+                ? 'bg-blue-500 text-white shadow-lg shadow-blue-500/30' 
+                : 'bg-slate-100 text-slate-400'
+              }
+            `}>
+              <Shield className="w-5 h-5" />
+            </div>
+            <div className="flex flex-col">
+              <Label htmlFor="compliance-mode" className="text-sm font-semibold text-slate-900 cursor-pointer">
+                컴플라이언스
+              </Label>
+              <span className="text-xs text-slate-500">출처 추적</span>
+            </div>
+            <Switch 
+              id="compliance-mode" 
+              checked={complianceMode} 
+              onCheckedChange={setComplianceMode}
+            />
           </div>
-          <Switch 
-            id="compliance-mode" 
-            checked={complianceMode} 
-            onCheckedChange={setComplianceMode}
-          />
+        </div>
+      </div>
+
+      {/* Premium Source Guarantee Banner */}
+      <div className="relative overflow-hidden rounded-2xl">
+        <div className="absolute inset-0 bg-gradient-to-r from-slate-900 via-slate-800 to-blue-900" />
+        <div className="absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNjAiIGhlaWdodD0iNjAiIHZpZXdCb3g9IjAgMCA2MCA2MCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48ZyBmaWxsPSJub25lIiBmaWxsLXJ1bGU9ImV2ZW5vZGQiPjxnIGZpbGw9IiNmZmYiIGZpbGwtb3BhY2l0eT0iMC4wMiI+PHBhdGggZD0iTTM2IDM0djItSDI0di0yaDEyek0zNiAzMHYySDI0di0yaDEyeiIvPjwvZz48L2c+PC9zdmc+')] opacity-50" />
+        
+        <div className="relative p-6 flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div className="flex items-center gap-4">
+            <div className="w-14 h-14 rounded-2xl bg-emerald-500/20 backdrop-blur-sm flex items-center justify-center border border-emerald-400/30">
+              <BadgeCheck className="w-7 h-7 text-emerald-400" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2 mb-1">
+                <span className="text-base font-bold text-white">공식 출처 기반 응답</span>
+                <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 text-[10px] font-bold border border-emerald-400/30">
+                  VERIFIED SOURCE
+                </span>
+              </div>
+              <p className="text-sm text-slate-400">
+                스테이블코인·STO·금융 규제 질의 지원. {SOURCE_LABEL_FULL} 공식 문서 기반, 모든 답변에 출처가 명시됩니다.
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-3">
+            <div className="text-center px-5 py-3 bg-white/5 backdrop-blur-sm rounded-xl border border-white/10">
+              <p className="text-xl font-bold text-emerald-400">100%</p>
+              <p className="text-[10px] font-semibold text-slate-500 uppercase">공식 문서</p>
+            </div>
+            <div className="text-center px-5 py-3 bg-white/5 backdrop-blur-sm rounded-xl border border-white/10">
+              <p className="text-xl font-bold text-blue-400">100%</p>
+              <p className="text-[10px] font-semibold text-slate-500 uppercase">출처 추적</p>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -303,7 +479,7 @@ export default function NewQASection() {
                   
                   <Tabs defaultValue="general" className="flex-1">
                     <TabsList className="grid grid-cols-4 mb-4">
-                      {Object.entries(INDUSTRY_TEMPLATES).map(([key, { icon: Icon, label, color }]) => (
+                      {Object.entries(INDUSTRY_TEMPLATES).map(([key, { icon: Icon, label }]) => (
                         <TabsTrigger 
                           key={key} 
                           value={key}
@@ -360,7 +536,16 @@ export default function NewQASection() {
                       {message.type === 'assistant' && (
                         <div className="space-y-4">
                           {/* Quality Metrics */}
-                          <div className="flex items-center gap-4 pb-4 border-b border-slate-50">
+                          <div className="flex flex-wrap items-center gap-3 pb-4 border-b border-slate-50">
+                            {/* Agent Badge */}
+                            {message.agent_metadata?.engine && (
+                              <Badge className="bg-purple-100 text-purple-700 border-none font-bold text-[10px] px-2 py-0.5">
+                                <Radar className="w-3 h-3 mr-1" />
+                                {message.agent_metadata.question_type || 'Agent'}
+                                {message.agent_metadata.agent_iterations && ` · ${message.agent_metadata.agent_iterations}회`}
+                              </Badge>
+                            )}
+                            
                             <div className="flex items-center gap-2">
                               <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
                                 Groundedness
@@ -390,17 +575,28 @@ export default function NewQASection() {
                               </div>
                             </div>
 
-                            {message.hallucination_flag && (
-                              <Badge
-                                variant="destructive"
-                                className="bg-rose-50 text-rose-600 border-none font-black text-[10px] px-2 py-0"
-                              >
-                                <AlertTriangle className="w-3 h-3 mr-1" />
-                                Integrity Warning
-                              </Badge>
-                            )}
+                            {(() => {
+                              const isErrorResponse = /처리 중 오류|Recursion limit|오류가 발생|요청을 처리할 수 없습니다/i.test(message.content || '');
+                              if (isErrorResponse) {
+                                return (
+                                  <Badge className="bg-amber-50 text-amber-700 border border-amber-200 font-semibold text-[10px] px-2 py-0">
+                                    <AlertTriangle className="w-3 h-3 mr-1" />
+                                    오류 안내
+                                  </Badge>
+                                );
+                              }
+                              if (message.hallucination_flag) {
+                                return (
+                                  <Badge variant="destructive" className="bg-rose-50 text-rose-600 border-none font-black text-[10px] px-2 py-0">
+                                    <AlertTriangle className="w-3 h-3 mr-1" />
+                                    Integrity Warning
+                                  </Badge>
+                                );
+                              }
+                              return null;
+                            })()}
 
-                            {!message.hallucination_flag &&
+                            {!message.hallucination_flag && !/처리 중 오류|Recursion limit|오류가 발생|요청을 처리할 수 없습니다/i.test(message.content || '') &&
                               (message.confidence ?? 0) >= 0.7 && (
                                 <Badge className="bg-emerald-50 text-emerald-600 border-none font-black text-[10px] px-2 py-0">
                                   <CheckCircle2 className="w-3 h-3 mr-1" />
@@ -439,6 +635,39 @@ export default function NewQASection() {
                               </div>
                             </div>
                           )}
+
+                          {/* Verifier 에이전트 출처 표기 (KAI page_27) — 출처·신뢰도·검증 시각 강화 */}
+                          {message.type === 'assistant' && (message.citations?.length ?? 0) > 0 && (
+                            <div className="pt-4 mt-4 border-t border-slate-100 rounded-xl bg-emerald-50/50 p-4 ring-1 ring-emerald-100/80">
+                              <p className="text-xs font-bold text-emerald-800 mb-1 flex items-center gap-2">
+                                <Shield className="w-4 h-4" />
+                                Verifier 에이전트 출처 표기 ({VERIFIER_SYSTEM_LABEL})
+                              </p>
+                              <p className="text-[10px] text-emerald-700/80 mb-3">KAI 스타일 출처 정리</p>
+                              <div className="space-y-1.5 mb-4">
+                                {(message.citations ?? []).map((citation, idx) => (
+                                  <p key={citation.chunk_id} className="text-sm text-slate-700">
+                                    <strong>출처 {idx + 1}:</strong> {citation.document_title}
+                                    {citation.published_at && (
+                                      <span className="text-slate-500 text-xs ml-1">
+                                        ({new Date(citation.published_at).toLocaleDateString('ko-KR')})
+                                      </span>
+                                    )}
+                                  </p>
+                                ))}
+                              </div>
+                              <div className="flex flex-wrap items-center gap-3 text-xs">
+                                <span className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-white border border-emerald-200 text-slate-700">
+                                  <span className="font-semibold text-emerald-700">신뢰도</span>
+                                  <span className="font-bold">{(((message.groundedness_score ?? 0) * 100) as number).toFixed(0)}%</span>
+                                </span>
+                                <span className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-white border border-emerald-200 text-slate-700">
+                                  <span className="font-semibold text-emerald-700">최종 검증 시각</span>
+                                  <span>{message.timestamp ? new Date(message.timestamp).toLocaleString('ko-KR', { dateStyle: 'short', timeStyle: 'short' }) : '—'}</span>
+                                </span>
+                              </div>
+                            </div>
+                          )}
                         </div>
                       )}
 
@@ -455,11 +684,24 @@ export default function NewQASection() {
 
             {/* Input */}
             <div className="p-6 bg-slate-50/50 border-t border-slate-50">
+              <div className="flex flex-wrap gap-2 mb-3">
+                <span className="text-xs font-bold text-slate-500 self-center mr-1">예시:</span>
+                {EXAMPLE_QUESTION_CHIPS.map((q) => (
+                  <button
+                    key={q}
+                    type="button"
+                    onClick={() => setInput(q)}
+                    className="px-3 py-1.5 text-xs font-medium rounded-full bg-white border border-slate-200 text-slate-600 hover:bg-primary/10 hover:border-primary hover:text-primary transition-all"
+                  >
+                    {q}
+                  </button>
+                ))}
+              </div>
               <form onSubmit={handleSubmit} className="flex gap-3 relative">
                 <Input
                   value={input}
                   onChange={(e) => setInput(e.target.value)}
-                  placeholder="금융 정책에 대해 물어보세요..."
+                  placeholder="스테이블코인·STO·금융 규제에 대해 물어보세요..."
                   disabled={loading}
                   className="flex-1 h-14 pl-6 pr-16 bg-white border-slate-200 rounded-2xl shadow-sm focus-visible:ring-primary font-medium"
                 />
@@ -489,9 +731,54 @@ export default function NewQASection() {
               <Info className="w-5 h-5 text-primary" />
               Session Insights
             </h3>
+            {messages.length > 0 && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={exportAuditLog}
+                className="text-xs font-bold border-slate-200 hover:bg-emerald-50 hover:text-emerald-600 hover:border-emerald-200"
+              >
+                <Download className="w-3 h-3 mr-1" />
+                감사 로그 내보내기
+              </Button>
+            )}
           </div>
 
           <div className="flex-1 overflow-y-auto pr-2 space-y-4">
+            {/* Session Statistics */}
+            {messages.length > 0 && (
+              <Card className="border-none shadow-sm bg-gradient-to-br from-indigo-500 to-purple-600 text-white rounded-3xl p-5">
+                <h4 className="text-xs font-black uppercase tracking-widest mb-3 opacity-70">
+                  Session Statistics
+                </h4>
+                <div className="grid grid-cols-3 gap-3">
+                  <div className="text-center">
+                    <p className="text-2xl font-black">{messages.filter(m => m.type === 'user').length}</p>
+                    <p className="text-[10px] font-bold opacity-70">질문</p>
+                  </div>
+                  <div className="text-center">
+                    <p className="text-2xl font-black">
+                      {messages.filter(m => m.type === 'assistant' && m.citations).reduce((acc, m) => acc + (m.citations?.length || 0), 0)}
+                    </p>
+                    <p className="text-[10px] font-bold opacity-70">참조 문서</p>
+                  </div>
+                  <div className="text-center">
+                    <p className="text-2xl font-black">
+                      {messages.filter(m => m.type === 'assistant').length > 0 
+                        ? Math.round(
+                            messages
+                              .filter(m => m.type === 'assistant' && m.groundedness_score)
+                              .reduce((acc, m) => acc + (m.groundedness_score || 0), 0) /
+                            messages.filter(m => m.type === 'assistant' && m.groundedness_score).length * 100
+                          ) || 0
+                        : 0}%
+                    </p>
+                    <p className="text-[10px] font-bold opacity-70">평균 신뢰도</p>
+                  </div>
+                </div>
+              </Card>
+            )}
+
             {lastAssistant ? (
               <div className="space-y-6 animate-in fade-in duration-500">
 <Card className="border-none shadow-sm bg-slate-900 text-white rounded-3xl p-6">
@@ -630,10 +917,11 @@ export default function NewQASection() {
                   <Button
                     variant="outline"
                     className="w-full h-14 rounded-2xl border-slate-200 text-slate-600 font-black text-sm hover:bg-slate-50 flex items-center gap-3"
-                    onClick={() => window.open(selectedCitation.url, '_blank')}
+                    onClick={() => selectedCitation?.url && window.open(selectedCitation.url, '_blank')}
                     type="button"
+                    disabled={!selectedCitation?.url}
                   >
-                    원문 문서 보기 (금융위원회)
+                    원문 문서 보기 ({SOURCE_LABEL_ORIGIN})
                     <Radar className="w-4 h-4" />
                   </Button>
                 </div>
