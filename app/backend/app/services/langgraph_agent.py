@@ -370,9 +370,10 @@ class RegulationAgent:
         }
         
         try:
+            recursion_limit = getattr(settings, "AGENT_RECURSION_LIMIT", 100)
             final_state = await self.graph.ainvoke(
                 initial_state,
-                config={"recursion_limit": 100}
+                config={"recursion_limit": recursion_limit}
             )
             
             return {

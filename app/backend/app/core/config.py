@@ -85,6 +85,7 @@ class Settings(BaseSettings):
     # LangGraph / Agentic RAG
     MAX_AGENT_ITERATIONS: int = 5
     AGENT_TIMEOUT_SECONDS: int = 120
+    AGENT_RECURSION_LIMIT: int = 100  # LangGraph ainvoke recursion_limit (50 초과 시 오류 방지)
     # 정보 부족 시 외부 검색 사용 (선택). .env에 키 설정 시 활성화
     TAVILY_API_KEY: str = ""
     SERPER_API_KEY: str = ""

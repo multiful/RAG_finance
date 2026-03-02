@@ -775,9 +775,10 @@ async def run_policy_agent(query: str, document_id: str | None = None) -> dict:
         "error_message": None
     }
     
+    recursion_limit = getattr(settings, "AGENT_RECURSION_LIMIT", 100)
     result = await get_policy_agent().ainvoke(
         initial_state,
-        config={"recursion_limit": 100}
+        config={"recursion_limit": recursion_limit}
     )
     
     return {
