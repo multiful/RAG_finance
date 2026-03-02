@@ -369,8 +369,40 @@ async def get_observability_status():
     return {
         "enabled": tracer.is_enabled(),
         "project": settings.LANGSMITH_PROJECT if tracer.is_enabled() else None,
-        "endpoint": settings.LANGSMITH_ENDPOINT if tracer.is_enabled() else None
+        "endpoint": settings.LANGSMITH_ENDPOINT if tracer.is_enabled() else None,
+        "hint": "LANGCHAIN_TRACING_V2=true in .env to enable tracing (false = off)",
     }
+
+
+@router.post("/observability/verify")
+async def verify_langsmith():
+    """LangSmith 동작 확인: 테스트 run 1건 생성 후 run_id·대시보드 링크 반환."""
+    if not tracer.is_enabled():
+        return {
+            "ok": False,
+            "error": "LangSmith not enabled",
+            "hint": "Set LANGSMITH_API_KEY and LANGCHAIN_TRACING_V2=true in .env, then restart.",
+        }
+    try:
+        run = tracer.create_run(
+            name="observability_verify",
+            run_type="chain",
+            inputs={"check": "ping", "source": "api"},
+        )
+        if not run:
+            return {"ok": False, "error": "Failed to create run"}
+        tracer.end_run(run, outputs={"status": "ok"})
+        base = (settings.LANGSMITH_ENDPOINT or "").replace("api.smith.langchain.com", "smith.langchain.com").rstrip("/")
+        project = getattr(settings, "LANGSMITH_PROJECT", "default")
+        dashboard_url = f"{base}/o/default/projects/p/{project}/r/{run.id}" if base else None
+        return {
+            "ok": True,
+            "run_id": str(run.id),
+            "dashboard_url": dashboard_url,
+            "message": "Trace sent. Open dashboard_url in browser to verify.",
+        }
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
 
 
 @router.get("/observability/stats")

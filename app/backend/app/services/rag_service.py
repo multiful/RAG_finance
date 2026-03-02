@@ -359,6 +359,9 @@ NO [해당 문서에는 가계대출 금리에 대한 직접적인 언급이 없
             query=request.question,
             query_embedding=query_embedding,
             top_k=settings.TOP_K_RETRIEVAL,
+            vector_weight=getattr(settings, "HYBRID_VECTOR_WEIGHT", 0.7),
+            keyword_weight=getattr(settings, "HYBRID_KEYWORD_WEIGHT", 0.3),
+            similarity_threshold=getattr(settings, "HYBRID_SIMILARITY_THRESHOLD", 0.3),
             filters=filters
         )
         
