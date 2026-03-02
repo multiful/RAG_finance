@@ -1,7 +1,7 @@
 """Main FastAPI application with Phase A/B Architecture."""
 import asyncio
 import logging
-from fastapi import FastAPI, Response
+from fastapi import FastAPI, Response, Request
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 from datetime import datetime
@@ -98,6 +98,18 @@ app = FastAPI(
     version="2.0.0",
     lifespan=lifespan
 )
+
+
+@app.middleware("http")
+async def health_head_compat_middleware(request: Request, call_next):
+    """
+    UptimeRobot Free 플랜은 HTTP method를 HEAD로 고정합니다.
+    HEAD /health 요청을 405 대신 200으로 돌려주기 위해,
+    라우터 진입 전에 특별 처리합니다.
+    """
+    if request.method == "HEAD" and request.url.path.rstrip("/") == "/health":
+        return Response(status_code=200)
+    return await call_next(request)
 
 # Rate limit (QA·시뮬레이션 등)
 app.add_middleware(RateLimitMiddleware)
@@ -239,3 +251,9 @@ async def health_check():
             "last_collection_success": last_collection_success,
         },
     }
+
+
+@app.head("/health")
+async def health_check_head():
+    """UptimeRobot 등 HEAD /health 모니터링 지원 (405 방지)."""
+    return Response(status_code=200)
