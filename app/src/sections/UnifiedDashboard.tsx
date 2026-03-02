@@ -395,10 +395,10 @@ export default function UnifiedDashboard() {
                         </div>
                       </div>
                       <a 
-                        href={doc.url?.includes('/seed/doc') ? 'https://www.fsc.go.kr/po/info/ntc/' : (doc.url || '#')} 
+                        href={doc.url && (doc.url.includes('/seed/doc') || (doc.url.includes('fsc.go.kr') && doc.url.includes('#seed-'))) ? 'https://www.fsc.go.kr' : (doc.url || '#')} 
                         target="_blank" 
                         rel="noopener noreferrer"
-                        title={doc.url?.includes('/seed/doc') ? '시드 데이터 (원문은 금융위 공지 목록으로 연결됩니다)' : '원문 보기'}
+                        title={doc.url && (doc.url.includes('/seed/doc') || doc.url.includes('#seed-')) ? '시드 데이터 (원문은 금융위 홈으로 연결됩니다)' : '원문 보기'}
                         className="p-2 rounded-lg hover:bg-slate-200 text-slate-400 hover:text-slate-700 transition-colors duration-150"
                       >
                         <ExternalLink className="w-4 h-4" />

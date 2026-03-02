@@ -22,6 +22,7 @@ class GapMapResponse(BaseModel):
     """전체 Gap Map 응답."""
     items: List[RiskAxisScore] = Field(default_factory=list, description="축별 점수 목록")
     formula: str = Field(default="Gap = GI × (1 - LC)", description="Gap 산출 공식")
+    data_source: Optional[str] = Field(None, description="데이터 출처: database(DB) | fallback(연구 기준 상수)")
 
 
 class BlindSpotItem(BaseModel):

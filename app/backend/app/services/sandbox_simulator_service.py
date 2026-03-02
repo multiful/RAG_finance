@@ -32,7 +32,7 @@ async def run_sandbox_simulation(
     """
     # 1) 사각지대 확보
     if blind_spot_axes:
-        full = get_gap_map()
+        full, _ = get_gap_map()
         axis_set = set(blind_spot_axes)
         blind_spots = [s for s in full if s.axis_id in axis_set]
         blind_spots = sorted(blind_spots, key=lambda x: x.gap, reverse=True)[:5]

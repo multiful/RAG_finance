@@ -73,13 +73,14 @@ def seed_documents(db):
         ("BIS Research on Tokenised Securities and STO", "BIS Research Papers", 9,
          "BIS research on tokenised securities and STO. Analysis of security token offerings, DLT-based settlement, and regulatory implications for stablecoins and tokenised assets."),
     ]
-    # 시드 문서용 URL: 실제 페이지(공지 목록) + fragment로 고유 유지. 기존 fsc.go.kr/seed/doc/{i}는 404 발생.
-    FSC_NOTICE_LIST = "https://www.fsc.go.kr/po/info/ntc/"
+    # 시드 문서용 URL: 금융위 홈 + path로 고유 유지. /po/info/ntc/ 는 404이므로 사용하지 않음.
+    # 클릭 시 프론트에서 https://www.fsc.go.kr 로만 열리도록 처리됨.
+    FSC_BASE = "https://www.fsc.go.kr"
     rows = []
     for item in docs:
         title, category, i = item[0], item[1], item[2]
         raw = item[3] if len(item) > 3 else title
-        url = f"{FSC_NOTICE_LIST}#seed-{i}"  # 고유 URL, 클릭 시 공지 목록 페이지로 이동
+        url = f"{FSC_BASE}/seed/doc/{i}"  # 고유 URL (실제 페이지 없음 → 대시보드에서 금융위 홈으로 연결)
         h = hashlib.sha256(url.encode()).hexdigest()[:32]
         rows.append({
             "source_id": source_id,

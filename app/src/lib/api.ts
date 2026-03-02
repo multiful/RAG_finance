@@ -620,6 +620,8 @@ export interface RiskAxisScore {
 export interface GapMapResponse {
   items: RiskAxisScore[];
   formula: string;
+  /** 데이터 출처: database(DB) | fallback(연구 기준 상수) */
+  data_source?: string;
 }
 export interface BlindSpotItem {
   rank: number;

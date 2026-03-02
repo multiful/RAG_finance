@@ -107,13 +107,16 @@ def get_gap_map_fallback() -> List[RiskAxisScore]:
     return result
 
 
-def get_gap_map() -> List[RiskAxisScore]:
+def get_gap_map() -> tuple[List[RiskAxisScore], str]:
     """10개 리스크 축에 대해 GI, LC, Gap 계산.
     GI: gap_map_gi_components 있으면 공식으로 계산, 없으면 gap_map_scores.gi → 상수 fallback.
     LC: gap_map_scores 우선, 없으면 상수 fallback.
+    Returns:
+        (items, data_source): data_source는 "database"(DB 값 사용) 또는 "fallback"(연구 기준 상수 사용).
     """
     db_scores = _load_scores_from_db()
     gi_components = _load_gi_components_from_db()
+    used_db = bool(db_scores or gi_components)
     result: List[RiskAxisScore] = []
     for axis_id in RISK_AXIS_IDS:
         if gi_components and axis_id in gi_components:
@@ -136,12 +139,13 @@ def get_gap_map() -> List[RiskAxisScore]:
         result.append(
             RiskAxisScore(axis_id=axis_id, name_ko=name_ko, gi=gi, lc=lc, gap=gap)
         )
-    return result
+    data_source = "database" if used_db else "fallback"
+    return result, data_source
 
 
 def get_top_blind_spots(limit: int = 3) -> List[BlindSpotItem]:
     """Gap 상위 N개 사각지대 반환 (R3, R2, R5 등)."""
-    full = get_gap_map()
+    full, _ = get_gap_map()
     sorted_by_gap = sorted(full, key=lambda x: x.gap, reverse=True)
     top = sorted_by_gap[:limit]
     return [
@@ -166,7 +170,7 @@ def get_heatmap_data() -> List[GapMapHeatmapRow]:
             lc=s.lc,
             gap=s.gap,
         )
-        for s in get_gap_map()
+        for s in get_gap_map()[0]
     ]
 
 
