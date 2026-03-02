@@ -264,52 +264,66 @@ async def get_keyword_cloud(
             '금융위원회', '공고', '마감', '공개모집', '보도설명', '입법예고', '공지사항', '카드뉴스',
             '행사', '채용안내', '정책자료',
         }
-        # 문서별 단어 집합 + 전역 출현 횟수
+        stop_en = {'the', 'and', 'for', 'with', 'from', 'this', 'that', 'are', 'was', 'were', 'have', 'has', 'had', 'will', 'can', 'not', 'but', 'are', 'its', 'new', 'all'}
+        # 한국어: 문서별 단어 집합 + 전역 출현 횟수
         term_total = Counter()
-        doc_freq = Counter()  # 단어가 등장한 문서 수
+        doc_freq = Counter()
+        term_total_en = Counter()
+        doc_freq_en = Counter()
         for doc in docs:
             title = doc.get("title", "")
-            words = re.findall(r'[가-힣]{2,}', title)
-            seen_in_doc = set()
-            for w in words:
+            words_ko = re.findall(r'[가-힣]{2,}', title)
+            seen_ko = set()
+            for w in words_ko:
                 if len(w) < 2 or w in minimal_stop:
                     continue
                 term_total[w] += 1
-                seen_in_doc.add(w)
-            for w in seen_in_doc:
+                seen_ko.add(w)
+            for w in seen_ko:
                 doc_freq[w] += 1
+            words_en = re.findall(r'[a-zA-Z]{2,}', title)
+            seen_en = set()
+            for w in (x.lower() for x in words_en):
+                if w in stop_en:
+                    continue
+                term_total_en[w] += 1
+                seen_en.add(w)
+            for w in seen_en:
+                doc_freq_en[w] += 1
 
-        # 등장 문서 비율이 max_df_ratio 초과인 단어 제외 (거의 모든 문서에 나오면 비정보적)
+        # 등장 문서 비율이 max_df_ratio 초과인 단어 제외
         max_df_ratio = 0.55
-        idf_min = 0.4  # idf = log(N/(df+1)); 이 값 미만이면 제외
-        candidates = []
-        for w, total_count in term_total.most_common(limit * 3):
-            df = doc_freq.get(w, 0)
-            if df == 0:
-                continue
-            ratio = df / N
-            if ratio > max_df_ratio:
-                continue
-            idf = math.log(N / (df + 1) + 1)
-            if idf < idf_min:
-                continue
-            # 점수: 총 출현 횟수 * idf (정보량 반영)
-            score = total_count * idf
-            candidates.append((w, total_count, score))
-        candidates.sort(key=lambda x: -x[2])
-        top = [(w, c) for w, c, _ in candidates[:limit]]
+        idf_min = 0.4
+        def build_top(term_tot: Counter, doc_fr: Counter, lim: int):
+            candidates = []
+            for w, total_count in term_tot.most_common(lim * 3):
+                df = doc_fr.get(w, 0)
+                if df == 0:
+                    continue
+                ratio = df / N
+                if ratio > max_df_ratio:
+                    continue
+                idf = math.log(N / (df + 1) + 1)
+                if idf < idf_min:
+                    continue
+                score = total_count * idf
+                candidates.append((w, total_count, score))
+            candidates.sort(key=lambda x: -x[2])
+            return [(w, c) for w, c, _ in candidates[:lim]]
+
+        top = build_top(term_total, doc_freq, limit)
+        top_en = build_top(term_total_en, doc_freq_en, limit)
         max_count = top[0][1] if top else 1
+        max_count_en = top_en[0][1] if top_en else 1
+
+        def to_items(items: list, m: float):
+            return [{"text": k, "value": c, "normalized": round(c / m * 100, 1)} for k, c in items]
 
         return {
             "period_days": days,
-            "keywords": [
-                {
-                    "text": keyword,
-                    "value": count,
-                    "normalized": round(count / max_count * 100, 1)
-                }
-                for keyword, count in top
-            ]
+            "keywords": to_items(top, max_count),
+            "keywords_ko": to_items(top, max_count),
+            "keywords_en": to_items(top_en, max_count_en),
         }
     except Exception as e:
         logging.error(f"Error in get_keyword_cloud: {str(e)}")

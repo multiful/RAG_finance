@@ -423,6 +423,10 @@ export interface DocumentStatsData {
 export interface KeywordCloudData {
   period_days: number;
   keywords: Array<{ text: string; value: number; normalized: number }>;
+  /** 한국어 키워드만 (한/영 나란히 UI용) */
+  keywords_ko?: Array<{ text: string; value: number; normalized: number }>;
+  /** 영어 키워드만 (한/영 나란히 UI용) */
+  keywords_en?: Array<{ text: string; value: number; normalized: number }>;
 }
 
 export interface RegulationSummary {
@@ -686,8 +690,14 @@ export interface SandboxChecklistQuestion {
   question_ko: string;
   description_ko: string;
 }
+export interface SandboxChecklistLogicFlowItem {
+  step: number | 'output';
+  title_ko: string;
+  description_ko: string;
+}
 export interface SandboxChecklistTemplate {
   design_principles: SandboxDesignPrinciple[];
+  logic_flow?: SandboxChecklistLogicFlowItem[];
   groups: Array<{ id: string; label: string }>;
   questions: SandboxChecklistQuestion[];
   answer_options: Array<{ value: string; label_ko: string }>;

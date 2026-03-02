@@ -499,7 +499,7 @@ export default function AnalyticsDashboard() {
           </CardContent>
         </Card>
 
-        {/* Keyword Cloud */}
+        {/* Keyword Cloud: 한국어 / 영어 나란히 */}
         <Card className="border-none shadow-lg">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
@@ -507,12 +507,29 @@ export default function AnalyticsDashboard() {
               규제 키워드 클라우드
             </CardTitle>
             <CardDescription>
-              키워드 빈도에 따른 시각화
+              키워드 빈도에 따른 시각화 (한국어·영어 구분)
             </CardDescription>
           </CardHeader>
           <CardContent>
-            {keywordCloud && keywordCloud.keywords.length > 0 ? (
-              <KeywordCloud data={keywordCloud} />
+            {keywordCloud && (keywordCloud.keywords.length > 0 || (keywordCloud.keywords_ko?.length ?? 0) > 0 || (keywordCloud.keywords_en?.length ?? 0) > 0) ? (
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <div>
+                  <h4 className="text-sm font-bold text-slate-700 mb-3">한국어 키워드</h4>
+                  {(keywordCloud.keywords_ko ?? keywordCloud.keywords).length > 0 ? (
+                    <KeywordCloud data={{ ...keywordCloud, keywords: keywordCloud.keywords_ko ?? keywordCloud.keywords }} />
+                  ) : (
+                    <div className="h-[200px] flex items-center justify-center text-slate-400 text-sm">한국어 키워드 없음</div>
+                  )}
+                </div>
+                <div>
+                  <h4 className="text-sm font-bold text-slate-700 mb-3">English Keywords</h4>
+                  {(keywordCloud.keywords_en?.length ?? 0) > 0 ? (
+                    <KeywordCloud data={{ ...keywordCloud, keywords: keywordCloud.keywords_en ?? [] }} />
+                  ) : (
+                    <div className="h-[200px] flex items-center justify-center text-slate-400 text-sm">No English keywords</div>
+                  )}
+                </div>
+              </div>
             ) : (
               <div className="h-[300px] flex items-center justify-center text-slate-400">
                 데이터가 없습니다

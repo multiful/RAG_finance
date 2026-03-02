@@ -60,25 +60,37 @@ async def list_documents(
             since = datetime.now() - timedelta(days=days)
             query = query.gte("published_at", since.isoformat())
 
+        topic_filter_fallback = False
         if topic == "stablecoin_sto":
-            # 스테이블코인·STO 관련만: 제목에 키워드 포함 (OR 조건). or_() 미지원 환경 시 단일 ilike 폴백.
+            # 스테이블코인·STO 관련만: 제목에 키워드 포함 (OR). PostgREST or_ 실패 시 Python 필터로 보장.
+            or_filter = ",".join([f"title.ilike.%{kw}%" for kw in STABLECOIN_STO_KEYWORDS])
             try:
-                query = query.or_(*[f"title.ilike.%{kw}%" for kw in STABLECOIN_STO_KEYWORDS])
+                query = query.or_(or_filter)
             except Exception as e:
                 logging.getLogger(__name__).debug(
-                    "documents topic=stablecoin_sto: or_() 실패, 단일 키워드 폴백. %s", e
+                    "documents topic=stablecoin_sto: or_() 실패, Python 필터 폴백. %s", e
                 )
-                try:
-                    query = query.ilike("title", f"%{TOPIC_FALLBACK_KEYWORD}%")
-                except Exception:
-                    pass
+                topic_filter_fallback = True
 
         # Order and paginate
-        query = query.order("published_at", desc=True)
-        offset = (page - 1) * page_size
-        query = query.range(offset, offset + page_size - 1)
-
-        result = query.execute()
+        if topic_filter_fallback:
+            # topic=stablecoin_sto 이고 or_ 실패 시: 최근 문서 넉넉히 가져온 뒤 제목 필터
+            fetch_size = min(2000, page * page_size + page_size)
+            raw = db.table("documents").select("*", count="exact").order(
+                "published_at", desc=True
+            ).limit(fetch_size).execute()
+            title_match = [
+                d for d in (raw.data or [])
+                if any(kw in (d.get("title") or "") for kw in STABLECOIN_STO_KEYWORDS)
+            ]
+            total_matched = len(title_match)
+            offset = (page - 1) * page_size
+            result = type("Result", (), {"data": title_match[offset:offset + page_size], "count": total_matched})()
+        else:
+            query = query.order("published_at", desc=True)
+            offset = (page - 1) * page_size
+            query = query.range(offset, offset + page_size - 1)
+            result = query.execute()
         now_utc = datetime.now(timezone.utc)
         documents = []
         for d in (result.data or []):
