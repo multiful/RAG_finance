@@ -59,7 +59,6 @@ datasets>=2.14.0,<3
 feedparser==6.0.11
 requests==2.31.0
 beautifulsoup4==4.12.3
-lxml==5.1.0
 
 # ML / Embeddings (scikit-learn 1.4.1 미존재 → 1.4.2 선설치로 하위 의존성 충족)
 # =========================
@@ -71,14 +70,6 @@ sentence-transformers>=2.2.2
 # =========================
 # Utils (aiohttp: LlamaParse/다운로드 등 비동기 HTTP)
 # =========================
-python-dotenv==1.0.1
-tenacity==8.2.3
 aiofiles==23.2.1
 aiohttp>=3.9.0,<4
 python-dateutil==2.8.2
-
-# =========================
-# Testing
-# =========================
-pytest==7.4.4
-pytest-asyncio==0.23.5
