@@ -372,7 +372,7 @@ class RegulationAgent:
         try:
             final_state = await self.graph.ainvoke(
                 initial_state,
-                config={"recursion_limit": 50}
+                config={"recursion_limit": 100}
             )
             
             return {

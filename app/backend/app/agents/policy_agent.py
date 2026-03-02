@@ -775,7 +775,10 @@ async def run_policy_agent(query: str, document_id: str | None = None) -> dict:
         "error_message": None
     }
     
-    result = await get_policy_agent().ainvoke(initial_state)
+    result = await get_policy_agent().ainvoke(
+        initial_state,
+        config={"recursion_limit": 100}
+    )
     
     return {
         "query_type": result["query_type"],

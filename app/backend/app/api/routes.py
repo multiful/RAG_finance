@@ -7,7 +7,7 @@ import traceback
 
 from app.core.config import settings
 from app.models.schemas import (
-    DocumentListResponse, DocumentResponse,
+    DocumentListResponse, DocumentResponse, DocumentStatus,
     QARequest, QAResponse,
     IndustryClassificationRequest, IndustryClassificationResponse,
     TopicResponse, TopicListResponse, AlertResponse,
@@ -43,12 +43,12 @@ TOPIC_FALLBACK_KEYWORD = "가상자산"  # PostgREST .or_() 실패 시 사용
 @router.get("/documents", response_model=DocumentListResponse)
 async def list_documents(
     page: int = Query(1, ge=1),
-    page_size: int = Query(20, ge=1, le=100),
+    page_size: int = Query(20, ge=1, le=500),
     category: Optional[str] = None,
     days: Optional[int] = None,
     topic: Optional[str] = Query(None, description="stablecoin_sto = 가상자산·토큰증권·스테이블코인만"),
 ):
-    """List documents with pagination and filtering."""
+    """List documents with pagination and filtering. page_size 최대 500(규제 시뮬레이션 등에서 200 요청 가능)."""
     try:
         db = rss_collector.db
         query = db.table("documents").select("*", count="exact")
@@ -79,21 +79,30 @@ async def list_documents(
         query = query.range(offset, offset + page_size - 1)
 
         result = query.execute()
-        
-        documents = [
-            DocumentResponse(
-                document_id=d["document_id"],
-                title=d["title"],
-                published_at=d["published_at"],
-                url=d["url"],
-                category=d.get("category"),
-                department=d.get("department"),
-                status=d["status"],
-                ingested_at=d["ingested_at"],
-                fail_reason=d.get("fail_reason")
-            )
-            for d in (result.data or [])
-        ]
+        now_utc = datetime.now(timezone.utc)
+        documents = []
+        for d in (result.data or []):
+            doc_id = d.get("document_id")
+            if not doc_id:
+                continue
+            ingested = d.get("ingested_at") or d.get("published_at") or now_utc
+            raw_status = (d.get("status") or "ingested").lower()
+            status = raw_status if raw_status in ("ingested", "parsed", "indexed", "failed") else DocumentStatus.INGESTED
+            try:
+                documents.append(DocumentResponse(
+                    document_id=str(doc_id),
+                    title=d.get("title") or "",
+                    published_at=d.get("published_at") or now_utc,
+                    url=d.get("url") or "",
+                    category=d.get("category"),
+                    department=d.get("department"),
+                    status=status,
+                    ingested_at=ingested,
+                    fail_reason=d.get("fail_reason")
+                ))
+            except Exception as doc_err:
+                logging.getLogger(__name__).warning("Document row skip (validation): %s", doc_err)
+                continue
         
         return DocumentListResponse(
             documents=documents,
@@ -118,9 +127,9 @@ async def get_document(document_id: str):
         
         d = result.data[0]
         return DocumentResponse(
-            document_id=d["document_id"],
+            document_id=str(d["document_id"]),
             title=d["title"],
-            published_at=d["published_at"],
+            published_at=d.get("published_at") or datetime.now(timezone.utc),
             url=d["url"],
             category=d.get("category"),
             department=d.get("department"),
@@ -670,7 +679,7 @@ async def export_checklist(document_id: str, format: str = Query("json")):
 
 @router.get("/dashboard/stats", response_model=DashboardStats)
 async def get_dashboard_stats():
-    """Get dashboard statistics."""
+    """대시보드 통계. DB 조회 실패 시에만 demo_data 폴백. '신규 N건'은 직전 수집 run의 total_new(수집 제한 아님)."""
     from app.models.schemas import CollectionStatus
     try:
         db = rss_collector.db
