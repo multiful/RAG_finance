@@ -111,17 +111,54 @@ export default function SettingsPage() {
 
   const handleRunEvaluation = async () => {
     setIsEvaluating(true);
+    let accepted = false;
     try {
       const result = await runEvaluation(8);
-      setEvaluation(result.evaluation);
-      await loadMetrics();
-      const score = (result.evaluation.overall_score * 100).toFixed(1);
-      toast.success(`RAGAS 평가 완료 · 종합 ${score}%`);
+      if (result.status === 'accepted' && result.message) {
+        accepted = true;
+        toast.info(result.message);
+        const pollMs = 8000;
+        const maxWaitMs = 120000;
+        const pollLatest = async (): Promise<boolean> => {
+          const latest = await getLatestEvaluation();
+          if (latest.has_evaluation && latest.evaluation) {
+            setEvaluation(latest.evaluation as EvaluationMetrics);
+            await loadMetrics();
+            const score = ((latest.evaluation as EvaluationMetrics).overall_score * 100).toFixed(1);
+            toast.success(`RAGAS 평가 완료 · 종합 ${score}%`);
+            return true;
+          }
+          return false;
+        };
+        const interval = setInterval(async () => {
+          try {
+            if (await pollLatest()) clearInterval(interval);
+          } catch {
+            /* ignore */
+          }
+        }, pollMs);
+        if (await pollLatest()) {
+          clearInterval(interval);
+          setIsEvaluating(false);
+          return;
+        }
+        setTimeout(() => {
+          clearInterval(interval);
+          setIsEvaluating(false);
+        }, maxWaitMs);
+        return;
+      }
+      if (result.evaluation) {
+        setEvaluation(result.evaluation);
+        await loadMetrics();
+        const score = (result.evaluation.overall_score * 100).toFixed(1);
+        toast.success(`RAGAS 평가 완료 · 종합 ${score}%`);
+      }
     } catch (error) {
       console.error('Evaluation failed:', error);
       toast.error('평가 실행에 실패했습니다.');
     } finally {
-      setIsEvaluating(false);
+      if (!accepted) setIsEvaluating(false);
     }
   };
 

@@ -25,40 +25,48 @@ class AgentQuestionRequest(BaseModel):
     use_agent: bool = True
 
 
+def _run_ragas_in_thread(sample_size: int) -> None:
+    """별도 스레드에서 새 이벤트 루프를 만들어 RAGAS 평가 실행 (메인 서버 루프 블로킹 방지)."""
+    import asyncio
+    import threading
+    from app.services.ragas_evaluator import ragas_evaluator
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    try:
+        loop.run_until_complete(ragas_evaluator.evaluate_system(sample_size=sample_size))
+    except Exception as e:
+        logging.error(f"RAGAS background evaluation error: {e}")
+    finally:
+        loop.close()
+
+
 @router.post("/run")
 async def run_evaluation(
     request: EvaluationRequest,
-    background_tasks: BackgroundTasks
+    background_tasks: BackgroundTasks,
 ):
     """
-    RAGAS 평가 실행
-    
-    - 테스트 데이터셋으로 RAG 시스템 평가
-    - Faithfulness, Relevancy, Precision, Recall 측정
+    RAGAS 평가 실행.
+    장시간 소요 시 타임아웃을 피하기 위해 백그라운드 스레드에서 실행하고 202를 반환합니다.
+    결과는 GET /evaluation/latest 로 폴링하거나, 설정 화면 새로고침으로 확인하세요.
     """
-    try:
-        from app.services.ragas_evaluator import ragas_evaluator
-        
-        result = await ragas_evaluator.evaluate_system(
-            sample_size=request.sample_size
-        )
-        
-        return {
-            "status": "completed",
-            "evaluation": {
-                "faithfulness": result.faithfulness,
-                "answer_relevancy": result.answer_relevancy,
-                "context_precision": result.context_precision,
-                "context_recall": result.context_recall,
-                "overall_score": result.overall_score,
-                "sample_size": result.sample_size,
-                "evaluated_at": result.evaluated_at
-            },
-            "details": result.details
-        }
-    except Exception as e:
-        logging.error(f"Evaluation error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+    import threading
+    from fastapi.responses import JSONResponse
+
+    def _start_thread():
+        t = threading.Thread(target=_run_ragas_in_thread, args=(request.sample_size,), daemon=True)
+        t.start()
+
+    background_tasks.add_task(_start_thread)
+    return JSONResponse(
+        status_code=202,
+        content={
+            "status": "accepted",
+            "message": "평가가 백그라운드에서 실행 중입니다. 1~2분 후 설정 화면을 새로고침하거나, 평가 이력에서 결과를 확인하세요.",
+            "evaluation": None,
+            "details": None,
+        },
+    )
 
 
 @router.get("/history")

@@ -41,7 +41,7 @@ const navItems: NavItem[] = [
   { id: 'qa', path: '/qa', label: 'AI Assistant', labelKr: 'AI 질의', icon: Sparkles },
   { id: 'gap-map', path: '/gap-map', label: 'Gap Map', labelKr: 'Gap Map', icon: Map },
   { id: 'sandbox', path: '/sandbox/checklist', label: 'Sandbox Checklist', labelKr: 'Sandbox 체크리스트', icon: ClipboardList },
-  { id: 'policy-simulate', path: '/policy-simulate', label: 'Policy Simulate', labelKr: '규제 시뮬레이션', icon: GitCompare },
+  { id: 'policy-simulate', path: '/policy-simulate', label: 'Policy Simulate', labelKr: '규제 문서 차이점', icon: GitCompare },
   { id: 'settings', path: '/settings', label: 'Settings', labelKr: '설정', icon: Settings },
 ];
 
