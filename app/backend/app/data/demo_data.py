@@ -1,4 +1,4 @@
-"""데모/샘플 데이터 — DB 오류 또는 데이터 없음 시 API가 반환할 기본 데이터."""
+"""데모/샘플 데이터 — DB 오류 시에만 API 폴백으로 사용. 정상 시에는 항상 실제 DB/수집 데이터 사용."""
 from datetime import datetime, timedelta, timezone
 from typing import List, Dict, Any
 
