@@ -73,6 +73,15 @@ async def list_documents(
                 topic_filter_fallback = True
 
         # Order and paginate
+        def _doc_sort_key(d):
+            """시드 문서(/seed/doc 포함 URL)를 먼저, 그다음 published_at 내림차순."""
+            url = d.get("url") or ""
+            try:
+                ts = (datetime.fromisoformat((d.get("published_at") or "").replace("Z", "+00:00")) - datetime.now(timezone.utc)).total_seconds()
+            except Exception:
+                ts = 0
+            return (0 if "/seed/doc" in url else 1, -ts)
+
         if topic_filter_fallback:
             # topic=stablecoin_sto 이고 or_ 실패 시: 최근 문서 넉넉히 가져온 뒤 제목 필터
             fetch_size = min(2000, page * page_size + page_size)
@@ -83,6 +92,7 @@ async def list_documents(
                 d for d in (raw.data or [])
                 if any(kw in (d.get("title") or "") for kw in STABLECOIN_STO_KEYWORDS)
             ]
+            title_match.sort(key=_doc_sort_key)
             total_matched = len(title_match)
             offset = (page - 1) * page_size
             result = type("Result", (), {"data": title_match[offset:offset + page_size], "count": total_matched})()
@@ -91,6 +101,8 @@ async def list_documents(
             offset = (page - 1) * page_size
             query = query.range(offset, offset + page_size - 1)
             result = query.execute()
+            if result.data and topic == "stablecoin_sto":
+                result.data.sort(key=_doc_sort_key)
         now_utc = datetime.now(timezone.utc)
         documents = []
         for d in (result.data or []):

@@ -35,12 +35,18 @@ class PolicySimulator:
                 missing.append("문서 A(기준)")
             if not new_text:
                 missing.append("문서 B(비교)")
+            summary = (
+                f"{', '.join(missing)}에 수집·파싱된 본문이 없습니다. "
+                "설정에서 수집을 실행한 뒤, 파이프라인에서 파싱·인덱싱이 완료된 문서를 선택해 주세요. "
+                "시드 문서를 쓰려면 app/backend에서 python -m scripts.seed_data 를 실행한 뒤, "
+                "규제 시뮬레이션에서 '가상자산·토큰증권·스테이블코인 관련만 보기'를 켜고 목록 상단의 문서를 선택해 보세요."
+            )
             return PolicyDiffResponse(
                 old_doc_title=old_title,
                 new_doc_title=new_title,
                 changes=[],
                 overall_risk="medium",
-                summary=f"{', '.join(missing)}에 수집·파싱된 본문이 없습니다. 설정에서 수집을 실행한 뒤, 파이프라인에서 파싱·인덱싱이 완료된 문서를 선택해 주세요.",
+                summary=summary,
                 generated_at=datetime.now(timezone.utc),
             )
 

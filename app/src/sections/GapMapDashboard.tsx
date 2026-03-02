@@ -48,6 +48,7 @@ export default function GapMapDashboard() {
   const [items, setItems] = useState<RiskAxisScore[]>([]);
   const [blindSpots, setBlindSpots] = useState<BlindSpotItem[]>([]);
   const [formula, setFormula] = useState<string>('');
+  const [dataSource, setDataSource] = useState<string | undefined>(undefined);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [simulateLoading, setSimulateLoading] = useState(false);
@@ -69,6 +70,7 @@ export default function GapMapDashboard() {
       setItems(mapRes.items);
       setBlindSpots(spotsRes.items);
       setFormula(mapRes.formula || 'Gap = GI × (1 - LC)');
+      setDataSource(mapRes.data_source);
       setComparison(comparisonRes);
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : 'Gap Map 데이터를 불러오지 못했습니다.';
@@ -153,7 +155,12 @@ export default function GapMapDashboard() {
           스테이블코인·STO 결합 환경에서, 국제(FSB·BIS 등)가 중요하게 보는 리스크를 우리나라가 얼마나 잘 보완하고 있는지 축별로 진단합니다.
         </p>
         <p className="text-slate-500 mt-1 text-sm">
-          GI=국제적 중요도, LC=국내 법제 커버리지. <strong>Gap이 큰 축 = 국제 기준에 비해 국내 규제가 미흡한 축</strong>(우리나라가 보완해야 할 영역). 값은 DB 또는 논문 기준 초기값으로 산출됩니다.
+          GI=국제적 중요도, LC=국내 법제 커버리지. <strong>Gap이 큰 축 = 국제 기준에 비해 국내 규제가 미흡한 축</strong>(우리나라가 보완해야 할 영역).
+          {dataSource && (
+            <span className="ml-2 text-slate-600">
+              데이터 출처: {dataSource === 'database' ? 'DB(연구·관리 입력값)' : '연구 기준값(KAI page_18 상수)'}
+            </span>
+          )}
         </p>
         <div className="mt-3 flex flex-wrap items-center gap-2">
           <Dialog open={lcEvidenceOpen} onOpenChange={async (open) => {

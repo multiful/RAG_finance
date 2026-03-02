@@ -45,17 +45,25 @@ async def api_get_gap_map():
         try:
             from app.models.gap_map_schemas import RiskAxisScore
             items = [RiskAxisScore(**x) for x in cached["items"]]
-            return GapMapResponse(items=items, formula=cached.get("formula", "Gap = GI × (1 - LC)"))
+            return GapMapResponse(
+                items=items,
+                formula=cached.get("formula", "Gap = GI × (1 - LC)"),
+                data_source=cached.get("data_source"),
+            )
         except Exception:
             pass
     try:
-        items = get_gap_map()
-        out = GapMapResponse(items=items, formula="Gap = GI × (1 - LC)")
-        cache_set(cache_key, {"items": [x.model_dump() for x in items], "formula": out.formula}, CACHE_TTL_GAP_MAP)
+        items, data_source = get_gap_map()
+        out = GapMapResponse(items=items, formula="Gap = GI × (1 - LC)", data_source=data_source)
+        cache_set(
+            cache_key,
+            {"items": [x.model_dump() for x in items], "formula": out.formula, "data_source": data_source},
+            CACHE_TTL_GAP_MAP,
+        )
         return out
     except Exception as e:
         logging.error(f"Error in api_get_gap_map: {e}")
-        return GapMapResponse(items=get_gap_map_fallback(), formula="Gap = GI × (1 - LC)")
+        return GapMapResponse(items=get_gap_map_fallback(), formula="Gap = GI × (1 - LC)", data_source="fallback")
 
 
 @router.get("/top-blind-spots", response_model=TopBlindSpotsResponse)
