@@ -116,3 +116,6 @@ __pycache__/
 # GitHub: 루트 README만 추적 (docs/ competition/ 은 위에서 제외)
 # -----------------------------
 !README.md
+
+# Cursor/IDE 생성 에셋 (올리지 않음)
+assets/
