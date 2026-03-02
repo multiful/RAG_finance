@@ -1,6 +1,7 @@
 # Render 배포: PYTHON_VERSION=3.11.9 권장. scikit-learn 1.4.1은 PyPI에 없음 → 1.4.2 사용.
-# backend 폴더에서 설치: pip install -r requirements.txt (아래 -c로 동일 폴더 constraints.txt 사용)
-# 루트에서 설치: pip install -r app/backend/requirements.txt -c constraints.txt
+# 설치 (constraints.txt와 동일 디렉터리에 두고):
+#   app/backend에서: pip install -r requirements.txt
+#   프로젝트 루트에서: pip install -r app/backend/requirements.txt -c app/backend/constraints.txt
 -c constraints.txt
 # =========================
 # FastAPI
@@ -29,11 +30,12 @@ redis==5.0.1
 # =========================
 openai==1.12.0
 langchain==0.1.9
-langchain-core==0.1.26
+# langchain-openai 0.0.8 요구: langchain-core>=0.1.27
+langchain-core>=0.1.27,<0.2
 langchain-openai==0.0.8
 langchain-community==0.0.21
 langgraph==0.0.26
-# langchain 0.1.9 요구: langsmith>=0.1.0,<0.2.0 (0.0.92는 충돌)
+# langchain 0.1.9 요구: langsmith>=0.1.0,<0.2.0
 langsmith>=0.1.0,<0.2.0
 
 # =========================
@@ -47,9 +49,10 @@ pydantic==2.6.1
 pydantic-settings==2.1.0
 
 # =========================
-# RAG Evaluation
+# RAG Evaluation (ragas 사용 시 datasets 필요)
 # =========================
 ragas==0.1.6
+datasets>=2.14.0,<3
 
 # =========================
 # RSS / Scraping
@@ -79,11 +82,12 @@ transformers>=4.38.2
 torch>=2.2.1
 
 # =========================
-# Utils
+# Utils (aiohttp: LlamaParse/다운로드 등 비동기 HTTP)
 # =========================
 python-dotenv==1.0.1
 tenacity==8.2.3
 aiofiles==23.2.1
+aiohttp>=3.9.0,<4
 python-dateutil==2.8.2
 
 # =========================
