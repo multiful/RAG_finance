@@ -1,4 +1,6 @@
 import axios from 'axios';
+import { toast } from 'sonner';
+import { API_BASE_URL } from '@/lib/constants';
 import type {
   DocumentListResponse,
   Document,
@@ -22,8 +24,6 @@ import type {
   ActionItemAudit
 } from '@/types';
 
-const API_BASE_URL = '/api/v1';
-
 const api = axios.create({
   baseURL: API_BASE_URL,
   headers: {
@@ -31,12 +31,34 @@ const api = axios.create({
   },
 });
 
-// Documents
+// 5xx·네트워크 에러 시 토스트 (고도화)
+api.interceptors.response.use(
+  (res) => res,
+  (err) => {
+    const status = err.response?.status;
+    const isServerError = status >= 500;
+    const isNetworkError = !err.response && err.message?.includes('Network');
+    if (isServerError || isNetworkError) {
+      const detail = err.response?.data?.detail;
+      const message =
+        typeof detail === 'string'
+          ? detail
+          : Array.isArray(detail) && detail[0] && typeof detail[0] === 'object' && 'msg' in detail[0]
+            ? String((detail[0] as { msg: string }).msg)
+            : err.response?.data?.message ?? err.message ?? '요청을 처리할 수 없습니다.';
+      toast.error(message, { duration: 5000 });
+    }
+    return Promise.reject(err);
+  }
+);
+
+// Documents (topic=stablecoin_sto: 가상자산·토큰증권·스테이블코인만)
 export const getDocuments = async (params?: {
   page?: number;
   page_size?: number;
   category?: string;
   days?: number;
+  topic?: string;
 }): Promise<DocumentListResponse> => {
   const response = await api.get('/documents', { params });
   return response.data;
@@ -65,6 +87,18 @@ export const getJobStatus = async (jobId: string) => {
 
 export const getCollectionStatus = async () => {
   const response = await api.get('/collection/status');
+  return response.data;
+};
+
+export type SourceStat = { source_id: string; name: string; fid: string; document_count: number };
+export type CollectionSourceStats = {
+  by_source: SourceStat[];
+  by_category: { category: string; count: number }[];
+  sources_active: string[];
+};
+
+export const getCollectionSourceStats = async (): Promise<CollectionSourceStats> => {
+  const response = await api.get('/collection/source-stats');
   return response.data;
 };
 
@@ -237,6 +271,18 @@ export const getDashboardStats = async (): Promise<DashboardStats> => {
   return response.data;
 };
 
+export interface HourlyStats {
+  hourly: Array<{ hour: string; count: number; success: number; failed: number }>;
+  by_source: Array<{ name: string; count: number }>;
+  total: number;
+  period_hours: number;
+}
+
+export const getHourlyStats = async (hours: number = 24): Promise<HourlyStats> => {
+  const response = await api.get('/dashboard/hourly-stats', { params: { hours } });
+  return response.data;
+};
+
 export const getQualityMetrics = async (days: number = 7): Promise<QualityMetrics> => {
   const response = await api.get('/dashboard/quality', { params: { days } });
   return response.data;
@@ -325,6 +371,388 @@ export const exportTimelineIcal = async (params?: {
   const response = await api.get('/timeline/export/ical', {
     params,
     responseType: 'blob'
+  });
+  return response.data;
+};
+
+// Analytics API
+export interface TopicTrendData {
+  period: string;
+  monthly_trends: Array<{
+    month: string;
+    keywords: Array<{ keyword: string; count: number }>;
+    total_documents: number;
+  }>;
+  top_keywords_overall: Array<{ keyword: string; count: number }>;
+  total_documents_analyzed: number;
+}
+
+export interface IndustryImpactItem {
+  industry: string;
+  industry_label: string;
+  document_count: number;
+  alert_count: number;
+  high_severity_count: number;
+  impact_score: number;
+  risk_level: string;
+  top_keywords: Array<{ keyword: string; count: number }>;
+}
+
+export interface IndustryImpactData {
+  period_days: number;
+  analysis_date: string;
+  industry_impact: IndustryImpactItem[];
+  summary: {
+    most_affected: string | null;
+    total_regulations: number;
+    total_alerts: number;
+  };
+}
+
+export interface DocumentStatsData {
+  period_days: number;
+  total_documents: number;
+  daily_trend: Array<{ date: string; count: number }>;
+  weekly_trend: Array<{ week_start: string; count: number }>;
+  monthly_trend: Array<{ month: string; count: number }>;
+  by_category: Array<{ category: string; count: number }>;
+  by_status: Array<{ status: string; count: number }>;
+  avg_documents_per_day: number;
+}
+
+export interface KeywordCloudData {
+  period_days: number;
+  keywords: Array<{ text: string; value: number; normalized: number }>;
+}
+
+export interface RegulationSummary {
+  generated_at: string;
+  overview: {
+    total_regulations: number;
+    regulations_this_week: number;
+    domestic_this_week?: number;
+    international_this_week?: number;
+    week_over_week_change: number;
+    active_alerts: number;
+    high_severity_alerts: number;
+  };
+  insights: Array<{ type: string; message: string }>;
+}
+
+export const getTopicTrends = async (months?: number, industry?: string): Promise<TopicTrendData> => {
+  const response = await api.get('/analytics/topic-trends', { params: { months, industry } });
+  return response.data;
+};
+
+export const getIndustryImpact = async (days?: number): Promise<IndustryImpactData> => {
+  const response = await api.get('/analytics/industry-impact', { params: { days } });
+  return response.data;
+};
+
+export const getDocumentStats = async (days?: number): Promise<DocumentStatsData> => {
+  const response = await api.get('/analytics/document-stats', { params: { days } });
+  return response.data;
+};
+
+export const getKeywordCloud = async (days?: number, limit?: number): Promise<KeywordCloudData> => {
+  const response = await api.get('/analytics/keyword-cloud', { params: { days, limit } });
+  return response.data;
+};
+
+export const getRegulationSummary = async (): Promise<RegulationSummary> => {
+  const response = await api.get('/analytics/regulation-summary');
+  return response.data;
+};
+
+export interface WeeklyReport {
+  generated_at: string;
+  period: { start: string; end: string };
+  summary: string;
+  statistics: {
+    total_documents: number;
+    by_industry: Record<string, number>;
+    urgent_alerts: number;
+    total_alerts: number;
+  };
+  highlights: Array<{ title: string; date: string; category: string }>;
+  recommendations: Array<{ priority: string; text: string } | null>;
+}
+
+export const getWeeklyReport = async (): Promise<WeeklyReport> => {
+  const response = await api.get('/analytics/weekly-report');
+  return response.data;
+};
+
+// System Health API
+export interface SystemHealth {
+  status: 'healthy' | 'degraded' | 'warning';
+  timestamp: string;
+  services: {
+    api: boolean;
+    redis: boolean;
+    supabase: boolean;
+    openai: boolean;
+  };
+  components: {
+    rag_engine: { status: string; label: string };
+    vector_db: { status: string; label: string };
+    llm_api: { status: string; label: string };
+    cache: { status: string; label: string };
+  };
+}
+
+export const getSystemHealth = async (): Promise<SystemHealth> => {
+  const response = await axios.get('/health');
+  return response.data;
+};
+
+// RAGAS Evaluation API
+export interface EvaluationMetrics {
+  faithfulness: number;
+  answer_relevancy: number;
+  context_precision: number;
+  context_recall: number;
+  overall_score: number;
+  sample_size: number;
+  evaluated_at: string;
+}
+
+export interface EvaluationResult {
+  status: string;
+  evaluation: EvaluationMetrics;
+  details: Array<{
+    question: string;
+    answer: string;
+    rag_confidence: number;
+    rag_groundedness: number;
+    context_count: number;
+  }>;
+}
+
+export interface MetricsSummary {
+  system_name: string;
+  version: string;
+  generated_at: string;
+  data_metrics: {
+    total_documents: number;
+    documents_24h: number;
+    collection_success_rate: number;
+    data_sources: number;
+  };
+  rag_metrics: {
+    avg_faithfulness: number;
+    avg_answer_relevancy: number;
+    avg_context_precision: number;
+    avg_context_recall: number;
+    avg_overall_score: number;
+    evaluation_count: number;
+    hallucination_rate_recent_pct?: number | null;
+    hallucination_goal_pct?: number;
+    note?: string;
+  };
+  technology_stack: Record<string, string>;
+  features: string[];
+}
+
+export const runEvaluation = async (sampleSize: number = 16): Promise<EvaluationResult> => {
+  const response = await api.post('/evaluation/run', { sample_size: sampleSize });
+  return response.data;
+};
+
+export const getLatestEvaluation = async (): Promise<{
+  has_evaluation: boolean;
+  evaluation?: EvaluationMetrics;
+  message?: string;
+}> => {
+  const response = await api.get('/evaluation/latest');
+  return response.data;
+};
+
+export const getEvaluationHistory = async (limit: number = 10) => {
+  const response = await api.get('/evaluation/history', { params: { limit } });
+  return response.data;
+};
+
+export const getMetricsSummary = async (): Promise<MetricsSummary> => {
+  const response = await api.get('/evaluation/metrics/summary');
+  return response.data;
+};
+
+// LangGraph Agent API
+export interface AgentResponse {
+  answer: string;
+  citations: Array<{
+    chunk_id: string;
+    document_id: string;
+    document_title: string;
+    snippet: string;
+    published_at: string;
+    url: string;
+  }>;
+  confidence: number;
+  groundedness_score: number;
+  citation_coverage: number;
+  metadata: {
+    question_type: string;
+    agent_iterations: number;
+    processed_at: string;
+    engine: string;
+  };
+}
+
+export const askAgentQuestion = async (question: string): Promise<AgentResponse> => {
+  const response = await api.post('/evaluation/agent/ask', { question, use_agent: true });
+  return response.data;
+};
+
+// --- Gap Map (KAI Risk–Policy Gap Map) ---
+export interface RiskAxisScore {
+  axis_id: string;
+  name_ko: string;
+  gi: number;
+  lc: number;
+  gap: number;
+}
+export interface GapMapResponse {
+  items: RiskAxisScore[];
+  formula: string;
+}
+export interface BlindSpotItem {
+  rank: number;
+  axis_id: string;
+  name_ko: string;
+  gap: number;
+  description: string;
+}
+export interface TopBlindSpotsResponse {
+  items: BlindSpotItem[];
+  formula: string;
+}
+
+export const getGapMap = async (): Promise<GapMapResponse> => {
+  const response = await api.get<GapMapResponse>('/gap-map');
+  return response.data;
+};
+export const getTopBlindSpots = async (limit: number = 3): Promise<TopBlindSpotsResponse> => {
+  const response = await api.get<TopBlindSpotsResponse>('/gap-map/top-blind-spots', { params: { limit } });
+  return response.data;
+};
+
+export interface GapMapDomesticInternationalComparison {
+  period_days: number;
+  domestic: { document_count: number; sources: string[] };
+  international: { document_count: number; sources: string[] };
+  summary: string;
+}
+export const getGapMapDomesticInternationalComparison = async (
+  days: number = 90
+): Promise<GapMapDomesticInternationalComparison> => {
+  const response = await api.get<GapMapDomesticInternationalComparison>(
+    '/gap-map/domestic-international-comparison',
+    { params: { days } }
+  );
+  return response.data;
+};
+
+// LC 근거 (RAG 기반 RCC): 법령·조항·출처 보기/내보내기
+export interface LCEvidenceItem {
+  axis_id: string;
+  name_ko: string;
+  lc: number;
+  lc_evidence: string;
+  source_or_note: string;
+}
+export interface LCEvidenceResponse {
+  items: LCEvidenceItem[];
+}
+export const getLCEvidence = async (): Promise<LCEvidenceResponse> => {
+  const response = await api.get<LCEvidenceResponse>('/gap-map/lc-evidence');
+  return response.data;
+};
+export const getLCEvidenceExportUrl = (format: 'json' | 'csv'): string =>
+  `${api.defaults.baseURL}/gap-map/lc-evidence/export?format=${format}`;
+
+// --- Sandbox Checklist (KAI Sandbox Risk-Based Checklist) ---
+export interface SandboxDesignPrinciple {
+  id: string;
+  title: string;
+  description: string;
+  icon_hint?: string;
+}
+export interface SandboxChecklistQuestion {
+  question_id: string;
+  group_id: string;
+  axis_ids: string[];
+  question_ko: string;
+  description_ko: string;
+}
+export interface SandboxChecklistTemplate {
+  design_principles: SandboxDesignPrinciple[];
+  groups: Array<{ id: string; label: string }>;
+  questions: SandboxChecklistQuestion[];
+  answer_options: Array<{ value: string; label_ko: string }>;
+}
+export interface SandboxRemediationSuggestion {
+  question_id?: string;
+  axis_id: string;
+  question_ko: string;
+  response: string;
+  gap_score: number;
+  suggestion_ko: string;
+}
+
+export const getSandboxChecklist = async (): Promise<SandboxChecklistTemplate> => {
+  const response = await api.get<SandboxChecklistTemplate>('/sandbox/checklist');
+  return response.data;
+};
+export const submitSandboxAssessment = async (answers: Array<{ question_id: string; value: string }>) => {
+  const response = await api.post('/sandbox/checklist/submit', { answers });
+  return response.data;
+};
+export const getSandboxRemediation = async (answers: Array<{ question_id: string; value: string }>) => {
+  const response = await api.post<SandboxRemediationSuggestion[]>('/sandbox/checklist/remediation', { answers });
+  return response.data;
+};
+
+// Sandbox Scenario Simulation (방안 B)
+export interface SandboxSimulateResponse {
+  scenario_summary: string;
+  review_points: string[];
+  mitigation_options: string[];
+  citations: Array<{ title: string; url: string; snippet: string }>;
+  blind_spots_used?: Array<{ axis_id: string; name_ko: string; gap: number; description: string }>;
+}
+export const sandboxSimulate = async (params: {
+  blind_spot_axes?: string[];
+  checklist_weaknesses?: Array<{ question_id: string; question_ko?: string; response: string }>;
+}): Promise<SandboxSimulateResponse> => {
+  const response = await api.post<SandboxSimulateResponse>('/sandbox/simulate', params);
+  return response.data;
+};
+
+// Policy Simulate (규제 변경 시뮬레이션)
+export interface PolicyDiffItem {
+  clause: string;
+  change_type: string;
+  description: string;
+  risk_level: string;
+  impacted_process: string;
+}
+export interface PolicyDiffResponse {
+  old_doc_title: string;
+  new_doc_title: string;
+  changes: PolicyDiffItem[];
+  overall_risk: string;
+  summary: string;
+  generated_at: string;
+}
+export const policySimulate = async (
+  oldDocumentId: string,
+  newDocumentId: string
+): Promise<PolicyDiffResponse> => {
+  const response = await api.post<PolicyDiffResponse>('/advanced/policy/simulate', {
+    old_document_id: oldDocumentId,
+    new_document_id: newDocumentId,
   });
   return response.data;
 };

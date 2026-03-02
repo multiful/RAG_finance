@@ -1,11 +1,14 @@
 """Policy Simulator Service."""
 import json
+import logging
 from typing import List, Dict, Any
 from app.core.config import settings
 from app.core.database import get_db
-from datetime import datetime
+from datetime import datetime, timezone
 from app.models.schemas import PolicyDiffResponse, PolicyDiffItem
 import openai
+
+logger = logging.getLogger(__name__)
 
 class PolicySimulator:
     """Simulate policy changes between two documents."""
@@ -27,13 +30,18 @@ class PolicySimulator:
         new_title = new_doc.data[0]["title"] if new_doc.data else "New Policy"
 
         if not old_text or not new_text:
+            missing = []
+            if not old_text:
+                missing.append("문서 A(기준)")
+            if not new_text:
+                missing.append("문서 B(비교)")
             return PolicyDiffResponse(
                 old_doc_title=old_title,
                 new_doc_title=new_title,
                 changes=[],
-                overall_risk="low",
-                summary="문서 내용을 찾을 수 없습니다.",
-                generated_at=datetime.now()
+                overall_risk="medium",
+                summary=f"{', '.join(missing)}에 수집·파싱된 본문이 없습니다. 설정에서 수집을 실행한 뒤, 파이프라인에서 파싱·인덱싱이 완료된 문서를 선택해 주세요.",
+                generated_at=datetime.now(timezone.utc),
             )
 
         # 2. LLM Analysis
@@ -72,28 +80,62 @@ Output EXACT JSON:
                 response_format={"type": "json_object"}
             )
             data = json.loads(response.choices[0].message.content)
-            
+            def _norm_risk(v: str) -> str:
+                r = (v or "medium").strip().lower()
+                return r if r in ("high", "medium", "low") else "medium"
+
+            raw_changes = data.get("changes") or []
+            changes: List[PolicyDiffItem] = []
+            for i, item in enumerate(raw_changes):
+                if not isinstance(item, dict):
+                    continue
+                try:
+                    changes.append(PolicyDiffItem(
+                        clause=str(item.get("clause", "") or ""),
+                        change_type=str(item.get("change_type", "modified") or "modified"),
+                        description=str(item.get("description", "") or ""),
+                        risk_level=_norm_risk(str(item.get("risk_level", "medium") or "medium")),
+                        impacted_process=str(item.get("impacted_process", "") or ""),
+                    ))
+                except Exception as parse_err:
+                    logger.debug("PolicyDiffItem skip item %s: %s", i, parse_err)
+            risk = (data.get("overall_risk") or "low").strip().lower()
+            if risk not in ("high", "medium", "low"):
+                risk = "medium"
             return PolicyDiffResponse(
                 old_doc_title=old_title,
                 new_doc_title=new_title,
-                changes=[PolicyDiffItem(**item) for item in data.get("changes", [])],
-                overall_risk=data.get("overall_risk", "low"),
-                summary=data.get("summary", ""),
-                generated_at=datetime.now()
+                changes=changes,
+                overall_risk=risk,
+                summary=str(data.get("summary") or ""),
+                generated_at=datetime.now(timezone.utc),
             )
-        except Exception as e:
-            print(f"Policy Diff Error: {e}")
+        except json.JSONDecodeError as e:
+            logger.warning("Policy simulate JSON decode error: %s", e)
             return PolicyDiffResponse(
                 old_doc_title=old_title,
                 new_doc_title=new_title,
                 changes=[],
-                overall_risk="low",
+                overall_risk="medium",
+                summary=f"분석 결과 파싱 오류: {str(e)}",
+                generated_at=datetime.now(timezone.utc),
+            )
+        except Exception as e:
+            logger.exception("Policy Diff Error: %s", e)
+            return PolicyDiffResponse(
+                old_doc_title=old_title,
+                new_doc_title=new_title,
+                changes=[],
+                overall_risk="medium",
                 summary=f"분석 중 오류 발생: {str(e)}",
-                generated_at=datetime.now()
+                generated_at=datetime.now(timezone.utc),
             )
 
     async def _get_doc_text(self, doc_id: str) -> str:
-        res = self.db.table("chunks").select("chunk_text").eq("document_id", doc_id).limit(5).execute()
-        return "\n".join([c["chunk_text"] for c in res.data]) if res.data else ""
+        """실제 chunks 테이블에서 문서 본문 수집 (최대 30청크, 실제값 반영)."""
+        res = self.db.table("chunks").select("chunk_text").eq("document_id", doc_id).order("chunk_index").limit(30).execute()
+        if not res.data:
+            return ""
+        return "\n\n".join([c["chunk_text"] for c in res.data])
 
 simulator = PolicySimulator()

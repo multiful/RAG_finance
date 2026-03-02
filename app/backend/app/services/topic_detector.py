@@ -159,15 +159,26 @@ class TopicDetector:
         """Calculate surge score for a topic cluster."""
         
         # Factors:
-        # 1. Recency (more recent = higher)
-        # 2. Growth rate (vs previous period)
-        # 3. Novelty (not in previous period)
+        # 1. Cluster size (bigger = more important)
+        # 2. Recency (handled by document selection)
+        # 3. Growth rate (vs previous period)
+        # 4. Novelty (not in previous period)
         
         score = 0.0
         current_size = cluster["size"]
         
-        # Base score from size
-        score += min(current_size * 5, 30)
+        # Base score from size (larger clusters are more significant)
+        # 2 docs = 15점, 3 docs = 25점, 5+ docs = 40점
+        score += min(current_size * 8, 40)
+        
+        # If no previous period data, treat as new and emerging
+        if not prev_period_clusters:
+            # All topics are "new" when there's no historical data
+            # Give bonus based on cluster quality
+            score += 30  # Novelty bonus for new system
+            score += min(current_size * 5, 20)  # Extra size bonus
+            print(f"DEBUG: No previous period data, assigning novelty score: {score}")
+            return min(score, 100)
         
         # Check if similar cluster existed in previous period
         is_new = True

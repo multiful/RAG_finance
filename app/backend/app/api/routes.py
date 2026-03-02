@@ -7,18 +7,19 @@ import traceback
 
 from app.core.config import settings
 from app.models.schemas import (
-    DocumentListResponse, DocumentResponse,
+    DocumentListResponse, DocumentResponse, DocumentStatus,
     QARequest, QAResponse,
     IndustryClassificationRequest, IndustryClassificationResponse,
     TopicResponse, TopicListResponse, AlertResponse,
     ChecklistRequest, ChecklistResponse,
-    DashboardStats, QualityMetrics
+    DashboardStats, QualityMetrics, CollectionStatus
 )
 from app.services.rss_collector import RSSCollector
 from app.services.rag_service import RAGService
 from app.services.industry_classifier import IndustryClassifier
 from app.services.topic_detector import TopicDetector
 from app.services.checklist_service import ChecklistService
+from app.services.fss_scraper import fss_scraper
 from app.observability.langsmith_tracer import get_tracer
 
 router = APIRouter()
@@ -34,46 +35,74 @@ tracer = get_tracer()
 
 # ==================== Document Routes ====================
 
+# 가상자산·토큰증권·스테이블코인 필터용 키워드 (주제 연계). or_() 미지원 시 단일 키워드 폴백.
+STABLECOIN_STO_KEYWORDS = ("가상자산", "토큰증권", "스테이블코인", "STO")
+TOPIC_FALLBACK_KEYWORD = "가상자산"  # PostgREST .or_() 실패 시 사용
+
+
 @router.get("/documents", response_model=DocumentListResponse)
 async def list_documents(
     page: int = Query(1, ge=1),
-    page_size: int = Query(20, ge=1, le=100),
+    page_size: int = Query(20, ge=1, le=500),
     category: Optional[str] = None,
-    days: Optional[int] = None
+    days: Optional[int] = None,
+    topic: Optional[str] = Query(None, description="stablecoin_sto = 가상자산·토큰증권·스테이블코인만"),
 ):
-    """List documents with pagination and filtering."""
+    """List documents with pagination and filtering. page_size 최대 500(규제 시뮬레이션 등에서 200 요청 가능)."""
     try:
         db = rss_collector.db
         query = db.table("documents").select("*", count="exact")
-        
+
         if category:
             query = query.eq("category", category)
-        
+
         if days:
             since = datetime.now() - timedelta(days=days)
             query = query.gte("published_at", since.isoformat())
-        
+
+        if topic == "stablecoin_sto":
+            # 스테이블코인·STO 관련만: 제목에 키워드 포함 (OR 조건). or_() 미지원 환경 시 단일 ilike 폴백.
+            try:
+                query = query.or_(*[f"title.ilike.%{kw}%" for kw in STABLECOIN_STO_KEYWORDS])
+            except Exception as e:
+                logging.getLogger(__name__).debug(
+                    "documents topic=stablecoin_sto: or_() 실패, 단일 키워드 폴백. %s", e
+                )
+                try:
+                    query = query.ilike("title", f"%{TOPIC_FALLBACK_KEYWORD}%")
+                except Exception:
+                    pass
+
         # Order and paginate
         query = query.order("published_at", desc=True)
         offset = (page - 1) * page_size
         query = query.range(offset, offset + page_size - 1)
-        
+
         result = query.execute()
-        
-        documents = [
-            DocumentResponse(
-                document_id=d["document_id"],
-                title=d["title"],
-                published_at=d["published_at"],
-                url=d["url"],
-                category=d.get("category"),
-                department=d.get("department"),
-                status=d["status"],
-                ingested_at=d["ingested_at"],
-                fail_reason=d.get("fail_reason")
-            )
-            for d in (result.data or [])
-        ]
+        now_utc = datetime.now(timezone.utc)
+        documents = []
+        for d in (result.data or []):
+            doc_id = d.get("document_id")
+            if not doc_id:
+                continue
+            ingested = d.get("ingested_at") or d.get("published_at") or now_utc
+            raw_status = (d.get("status") or "ingested").lower()
+            status = raw_status if raw_status in ("ingested", "parsed", "indexed", "failed") else DocumentStatus.INGESTED
+            try:
+                documents.append(DocumentResponse(
+                    document_id=str(doc_id),
+                    title=d.get("title") or "",
+                    published_at=d.get("published_at") or now_utc,
+                    url=d.get("url") or "",
+                    category=d.get("category"),
+                    department=d.get("department"),
+                    status=status,
+                    ingested_at=ingested,
+                    fail_reason=d.get("fail_reason")
+                ))
+            except Exception as doc_err:
+                logging.getLogger(__name__).warning("Document row skip (validation): %s", doc_err)
+                continue
         
         return DocumentListResponse(
             documents=documents,
@@ -98,9 +127,9 @@ async def get_document(document_id: str):
         
         d = result.data[0]
         return DocumentResponse(
-            document_id=d["document_id"],
+            document_id=str(d["document_id"]),
             title=d["title"],
-            published_at=d["published_at"],
+            published_at=d.get("published_at") or datetime.now(timezone.utc),
             url=d["url"],
             category=d.get("category"),
             department=d.get("department"),
@@ -117,22 +146,69 @@ async def get_document(document_id: str):
 
 # ==================== Collection Routes ====================
 
+async def _run_all_collection(job_id: str):
+    """Run FSC RSS, FSS scraping, and (옵션) 국제기구 RSS."""
+    await rss_collector.collect_all(job_id=job_id)
+    try:
+        await fss_scraper.collect_all()
+    except Exception as e:
+        logging.error(f"FSS scraping failed: {e}")
+    if getattr(settings, "ENABLE_INTERNATIONAL_RSS", False):
+        try:
+            from app.services.international_rss_collector import international_rss_collector
+            await international_rss_collector.collect_all(job_id=job_id)
+        except Exception as e:
+            logging.error(f"International RSS collection failed: {e}")
+
+
 @router.post("/collection/trigger")
 async def trigger_collection(background_tasks: BackgroundTasks):
-    """Trigger RSS collection in background with job tracking."""
+    """Trigger RSS collection (FSC + FSS) in background with job tracking."""
     try:
         from app.services.job_tracker import job_tracker
         job_id = job_tracker.create_job()
         if not job_id:
             raise HTTPException(status_code=503, detail="Redis connection failed. Job tracking unavailable.")
         
-        background_tasks.add_task(rss_collector.collect_all, job_id=job_id)
+        background_tasks.add_task(_run_all_collection, job_id)
         
         return {
-            "message": "Collection started in background",
+            "message": "Collection started (FSC + FSS + International RSS)",
             "job_id": job_id,
             "status": "running"
         }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/collection/trigger-fss")
+async def trigger_fss_collection(background_tasks: BackgroundTasks):
+    """Trigger FSS (금융감독원) scraping only."""
+    try:
+        background_tasks.add_task(fss_scraper.collect_all)
+        return {
+            "message": "FSS scraping started",
+            "status": "running"
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/collection/trigger-international")
+async def trigger_international_collection(background_tasks: BackgroundTasks):
+    """Trigger 국제기구 RSS 수집만 (FSB, BIS 등). 금융위원회처럼 URL에서 크롤링해 documents에 저장."""
+    from app.core.config import settings
+    if not getattr(settings, "ENABLE_INTERNATIONAL_RSS", True):
+        raise HTTPException(status_code=400, detail="ENABLE_INTERNATIONAL_RSS is disabled")
+    try:
+        from app.services.international_rss_collector import international_rss_collector
+        from app.services.job_tracker import job_tracker
+        job_id = job_tracker.create_job()
+        if job_id:
+            background_tasks.add_task(international_rss_collector.collect_all, job_id)
+            return {"message": "International RSS collection started (FSB, BIS)", "job_id": job_id, "status": "running"}
+        background_tasks.add_task(international_rss_collector.collect_all, None)
+        return {"message": "International RSS collection started (FSB, BIS)", "status": "running"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -163,11 +239,130 @@ async def get_job_status(job_id: str):
 
 @router.get("/collection/status")
 async def get_collection_status():
-    """Get RSS collection status."""
+    """Get RSS collection status. total_documents는 DB 전체 행 수(제한 없음)입니다."""
     try:
         stats = await rss_collector.get_collection_stats()
         return stats
     except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/collection/debug")
+async def get_collection_debug():
+    """수집 검증용: 마지막 수집 시각, 총/카테고리별 문서 수, config·RSS_URLS·sources 정합성, 피드 샘플."""
+    try:
+        from app.services.job_tracker import job_tracker
+        from app.core.config import settings
+
+        stats = await rss_collector.get_collection_stats()
+        db = rss_collector.db
+
+        # config / RSS_URLS / sources 정합성 디버깅
+        config_fids = list(getattr(settings, "FSC_RSS_FIDS", []))
+        rss_urls_keys = list(rss_collector.RSS_URLS.keys())
+        sources_res = db.table("sources").select("source_id, fid, name, base_url").execute()
+        db_sources = sources_res.data or []
+        db_fids = [s["fid"] for s in db_sources if s.get("fid")]
+
+        fid_in_config_not_in_db = [f for f in config_fids if f not in db_fids]
+        fid_in_config_not_in_rss = [f for f in config_fids if f not in rss_urls_keys]
+        fid_in_db_not_in_config = [f for f in db_fids if f not in config_fids]
+
+        config_rss_sources_ok = (
+            len(fid_in_config_not_in_db) == 0
+            and len(fid_in_config_not_in_rss) == 0
+        )
+
+        # 카테고리별 건수
+        docs_res = db.table("documents").select("category").execute()
+        by_category = {}
+        for d in (docs_res.data or []):
+            cat = d.get("category") or "unknown"
+            by_category[cat] = by_category.get(cat, 0) + 1
+        category_list = [{"category": k, "count": v} for k, v in sorted(by_category.items(), key=lambda x: -x[1])]
+
+        last_run = None
+        if job_tracker.is_available():
+            last_run = job_tracker.get_last_collection_run()
+
+        # 피드 샘플: 한 채널만 실제 호출
+        feed_sample = None
+        try:
+            fid_map = {s["fid"]: s for s in db_sources}
+            fid = "0111"
+            rec = fid_map.get(fid)
+            base = rec.get("base_url") if rec else None
+            docs = await rss_collector.fetch_feed(fid, base)
+            feed_urls = [d.get("url") for d in docs if d.get("url")]
+            in_db = 0
+            if feed_urls:
+                for i in range(0, len(feed_urls), 50):
+                    batch = feed_urls[i : i + 50]
+                    r = db.table("documents").select("url").in_("url", batch).execute()
+                    in_db += len(r.data or [])
+            feed_sample = {
+                "feed_id": fid,
+                "feed_entries_now": len(docs),
+                "already_in_db": in_db,
+                "potential_new": len(docs) - in_db,
+            }
+        except Exception as fe:
+            feed_sample = {"error": str(fe)}
+
+        return {
+            "total_documents": stats.get("total_documents", 0),
+            "documents_24h": stats.get("documents_24h", 0),
+            "documents_7d": stats.get("documents_7d", 0),
+            "last_collection_run": last_run,
+            "by_category": category_list,
+            "category_count": len(category_list),
+            "feed_sample": feed_sample,
+            "config_rss_sources": {
+                "config_FSC_RSS_FIDS": config_fids,
+                "RSS_URLS_keys": rss_urls_keys,
+                "sources_fids_in_db": db_fids,
+                "ok": config_rss_sources_ok,
+                "missing_in_db": fid_in_config_not_in_db,
+                "missing_in_RSS_URLS": fid_in_config_not_in_rss,
+                "in_db_not_in_config": fid_in_db_not_in_config,
+            },
+            "note": "RSS는 매 수집 시 같은 피드 URL을 호출하지만, 서버가 최신 목록을 반환합니다. "
+                   "동일 문서는 hash로 걸러져 신규만 저장됩니다. "
+                   "config·RSS_URLS·sources가 맞으면 수집 시 누락 fid는 자동으로 sources에 추가됩니다.",
+        }
+    except Exception as e:
+        logging.error(f"Error in get_collection_debug: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/collection/source-stats")
+async def get_collection_source_stats():
+    """소스별·카테고리별 수집 현황 (데이터 소스 4개 FSC/FSS 등 실제 수집 여부 확인용)."""
+    try:
+        db = rss_collector.db
+        # 소스 목록 (이름, fid)
+        sources_res = db.table("sources").select("source_id, name, fid").execute()
+        sources = {s["source_id"]: {"name": s["name"], "fid": s.get("fid", "")} for s in (sources_res.data or [])}
+        # 문서별 source_id 조회 후 카운트
+        docs_res = db.table("documents").select("source_id, category").execute()
+        by_source: dict = {}
+        by_category: dict = {}
+        for d in (docs_res.data or []):
+            sid = d.get("source_id")
+            cat = d.get("category") or "unknown"
+            by_source[sid] = by_source.get(sid, 0) + 1
+            by_category[cat] = by_category.get(cat, 0) + 1
+        source_stats = [
+            {"source_id": sid, "name": sources.get(sid, {}).get("name", "Unknown"), "fid": sources.get(sid, {}).get("fid", ""), "document_count": c}
+            for sid, c in by_source.items()
+        ]
+        return {
+            "by_source": source_stats,
+            "by_category": [{"category": k, "count": v} for k, v in sorted(by_category.items(), key=lambda x: -x[1])],
+            "sources_active": list(set(sources.get(sid, {}).get("name", "Unknown") for sid in by_source)),
+        }
+    except Exception as e:
+        logging.error(f"Error in get_collection_source_stats: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -178,7 +373,13 @@ async def get_recent_documents(hours: int = Query(24, ge=1, le=168)):
         documents = await rss_collector.get_recent_documents(hours)
         return {"documents": documents, "count": len(documents)}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logging.error(f"Error in get_recent_documents: {e}")
+        try:
+            from app.data.demo_data import get_demo_recent_documents
+            docs = get_demo_recent_documents()
+            return {"documents": docs, "count": len(docs)}
+        except Exception:
+            return {"documents": [], "count": 0}
 
 
 # ==================== Retrieval Routes ====================
@@ -189,27 +390,33 @@ async def search_documents(
     top_k: int = Query(5, ge=1, le=20),
     category: Optional[str] = None,
     date_from: Optional[datetime] = None,
-    date_to: Optional[datetime] = None
+    date_to: Optional[datetime] = None,
+    topic: Optional[str] = Query(None, description="stablecoin_sto = 가상자산·토큰증권·스테이블코인만"),
 ):
-    """Basic retrieval search (Hybrid)."""
+    """Basic retrieval search (Hybrid). topic=stablecoin_sto 시 제목 필터 적용."""
     try:
-        # Get query embedding
         query_embedding = await rag_service._get_embedding(query)
-        
-        # Build filters
         filters = {}
-        if category: filters["category"] = category
-        if date_from: filters["date_from"] = date_from.isoformat()
-        if date_to: filters["date_to"] = date_to.isoformat()
-        
-        # Perform hybrid search
+        if category:
+            filters["category"] = category
+        if date_from:
+            filters["date_from"] = date_from.isoformat()
+        if date_to:
+            filters["date_to"] = date_to.isoformat()
+
         results = await rag_service.vector_store.hybrid_search(
             query=query,
             query_embedding=query_embedding,
-            top_k=top_k,
-            filters=filters
+            top_k=top_k * 2 if topic == "stablecoin_sto" else top_k,
+            filters=filters,
         )
-        
+
+        if topic == "stablecoin_sto":
+            results = [
+                r for r in results
+                if any(kw in (r.document_title or "") for kw in STABLECOIN_STO_KEYWORDS)
+            ][:top_k]
+
         return {
             "query": query,
             "results": [
@@ -221,10 +428,10 @@ async def search_documents(
                     "published_at": r.published_at,
                     "snippet": r.chunk_text[:300],
                     "score": r.similarity,
-                    "metadata": r.metadata
+                    "metadata": r.metadata,
                 }
                 for r in results
-            ]
+            ],
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -472,7 +679,8 @@ async def export_checklist(document_id: str, format: str = Query("json")):
 
 @router.get("/dashboard/stats", response_model=DashboardStats)
 async def get_dashboard_stats():
-    """Get dashboard statistics."""
+    """대시보드 통계. DB 조회 실패 시에만 demo_data 폴백. '신규 N건'은 직전 수집 run의 total_new(수집 제한 아님)."""
+    from app.models.schemas import CollectionStatus
     try:
         db = rss_collector.db
         
@@ -519,13 +727,36 @@ async def get_dashboard_stats():
         
         # Collection status per source (defined in FSC_RSS_FIDS)
         sources = []
-        # Get actual source records to get their UUIDs
+        # Get actual source records to get their UUIDs (국내 = FSC 등)
         sources_records = db.table("sources").select("*").in_("fid", settings.FSC_RSS_FIDS).execute()
-        
+        domestic_source_ids = [s["source_id"] for s in (sources_records.data or [])]
+
+        # 국제 소스(FSB, BIS 등) — fid가 FSC_RSS_FIDS에 없으면 국제로 간주
+        all_sources = db.table("sources").select("source_id, fid").execute()
+        international_source_ids = [
+            s["source_id"] for s in (all_sources.data or [])
+            if s.get("fid") and s["fid"] not in settings.FSC_RSS_FIDS
+        ]
+
         # Pre-calculate timestamps
         now_utc = datetime.now(timezone.utc)
         since_24h = (now_utc - timedelta(hours=24)).isoformat()
         since_7d = (now_utc - timedelta(days=7)).isoformat()
+
+        # 이번 주 신규: 국내/국제 구분 (7일 이내 ingested_at)
+        documents_this_week = collection_stats.get("documents_7d") or 0
+        domestic_this_week = 0
+        if domestic_source_ids:
+            r = db.table("documents").select("*", count="exact").in_(
+                "source_id", domestic_source_ids
+            ).gte("ingested_at", since_7d).execute()
+            domestic_this_week = (r.count if hasattr(r, "count") else 0) or 0
+        international_this_week = 0
+        if international_source_ids:
+            r = db.table("documents").select("*", count="exact").in_(
+                "source_id", international_source_ids
+            ).gte("ingested_at", since_7d).execute()
+            international_this_week = (r.count if hasattr(r, "count") else 0) or 0
 
         for source_rec in (sources_records.data or []):
             source_id = source_rec["source_id"]
@@ -566,34 +797,150 @@ async def get_dashboard_stats():
             high_severity_alerts=high_severity_count,
             collection_status=sources,
             recent_topics=topics,
-            quality_metrics=None
+            quality_metrics=None,
+            documents_this_week=documents_this_week,
+            domestic_this_week=domestic_this_week,
+            international_this_week=international_this_week,
         )
     
     except Exception as e:
         logging.error(f"Error in get_dashboard_stats: {str(e)}")
         logging.error(traceback.format_exc())
-        raise HTTPException(status_code=500, detail=f"Dashboard stats error: {str(e)}")
+        try:
+            from app.data.demo_data import get_demo_dashboard_stats
+            return get_demo_dashboard_stats()
+        except Exception as fallback_err:
+            logging.error(f"Demo fallback failed: {fallback_err}")
+            return DashboardStats(
+                total_documents=0,
+                documents_24h=0,
+                active_alerts=0,
+                high_severity_alerts=0,
+                collection_status=[],
+                recent_topics=[],
+                quality_metrics=None,
+                documents_this_week=0,
+                domestic_this_week=0,
+                international_this_week=0,
+            )
 
-    
+
+@router.get("/dashboard/hourly-stats")
+async def get_hourly_collection_stats(hours: int = Query(24, ge=1, le=168)):
+    """Get hourly document collection statistics for charts."""
+    try:
+        db = rss_collector.db
+        since = datetime.now(timezone.utc) - timedelta(hours=hours)
+        
+        # Get documents with timestamps
+        docs_result = db.table("documents").select(
+            "document_id, ingested_at, source_id, status"
+        ).gte("ingested_at", since.isoformat()).execute()
+        
+        # Group by hour
+        hourly_data = {}
+        for i in range(hours):
+            hour_key = (datetime.now(timezone.utc) - timedelta(hours=i)).strftime("%Y-%m-%d %H:00")
+            hourly_data[hour_key] = {"hour": hour_key, "count": 0, "success": 0, "failed": 0}
+        
+        for doc in (docs_result.data or []):
+            ingested = doc.get("ingested_at")
+            if ingested:
+                hour_key = datetime.fromisoformat(ingested.replace("Z", "+00:00")).strftime("%Y-%m-%d %H:00")
+                if hour_key in hourly_data:
+                    hourly_data[hour_key]["count"] += 1
+                    if doc.get("status") == "completed":
+                        hourly_data[hour_key]["success"] += 1
+                    else:
+                        hourly_data[hour_key]["failed"] += 1
+        
+        # Get source distribution
+        sources_result = db.table("sources").select("source_id, name").execute()
+        source_names = {s["source_id"]: s["name"] for s in (sources_result.data or [])}
+        
+        source_counts = {}
+        for doc in (docs_result.data or []):
+            sid = doc.get("source_id")
+            name = source_names.get(sid, "Unknown")
+            source_counts[name] = source_counts.get(name, 0) + 1
+        
+        return {
+            "hourly": sorted(hourly_data.values(), key=lambda x: x["hour"]),
+            "by_source": [{"name": k, "count": v} for k, v in source_counts.items()],
+            "total": len(docs_result.data or []),
+            "period_hours": hours
+        }
     except Exception as e:
-        logging.error(f"Error in get_dashboard_stats: {str(e)}")
-        logging.error(traceback.format_exc())
-        raise HTTPException(status_code=500, detail=f"Dashboard stats error: {str(e)}")
+        logging.error(f"Error in hourly stats: {str(e)}")
+        try:
+            from app.data.demo_data import get_demo_hourly_stats
+            return get_demo_hourly_stats(hours)
+        except Exception:
+            return {"hourly": [], "by_source": [], "total": 0, "period_hours": hours}
 
 
 @router.get("/dashboard/quality")
 async def get_quality_metrics(days: int = Query(7, ge=1, le=30)):
-    """Get quality metrics for RAG system."""
+    """Get quality metrics for RAG system from actual QA logs."""
     try:
-        # This would be calculated from qa_logs in production
-        # For now, return mock data
+        db = rss_collector.db
+        since = datetime.now(timezone.utc) - timedelta(days=days)
+        
+        # Get QA logs from database
+        qa_result = db.table("qa_logs").select("*").gte(
+            "created_at", since.isoformat()
+        ).execute()
+        
+        qa_logs = qa_result.data or []
+        
+        if not qa_logs:
+            # Return baseline metrics if no logs yet
+            return QualityMetrics(
+                date=datetime.now(timezone.utc),
+                groundedness=0.0,
+                hallucination_rate=0.0,
+                avg_response_time_ms=0,
+                citation_accuracy=0.0,
+                unanswered_rate=0.0
+            )
+        
+        # Calculate actual metrics
+        total_queries = len(qa_logs)
+        
+        groundedness_scores = [log.get("groundedness_score", 0) or 0 for log in qa_logs]
+        avg_groundedness = sum(groundedness_scores) / total_queries if total_queries > 0 else 0
+        
+        response_times = [log.get("response_time_ms", 0) or 0 for log in qa_logs]
+        avg_response_time = int(sum(response_times) / total_queries) if total_queries > 0 else 0
+        
+        citation_scores = [log.get("citation_coverage", 0) or 0 for log in qa_logs]
+        avg_citation = sum(citation_scores) / total_queries if total_queries > 0 else 0
+        
+        # Calculate hallucination rate (confidence < 0.4)
+        low_confidence = sum(1 for log in qa_logs if (log.get("confidence", 1) or 1) < 0.4)
+        hallucination_rate = low_confidence / total_queries if total_queries > 0 else 0
+        
+        # Calculate unanswered rate
+        unanswered = sum(1 for log in qa_logs if log.get("status") == "failed" or not log.get("answer"))
+        unanswered_rate = unanswered / total_queries if total_queries > 0 else 0
+        
         return QualityMetrics(
             date=datetime.now(timezone.utc),
-            groundedness=0.87,
-            hallucination_rate=0.08,
-            avg_response_time_ms=2500,
-            citation_accuracy=0.92,
-            unanswered_rate=0.05
+            groundedness=round(avg_groundedness, 2),
+            hallucination_rate=round(hallucination_rate, 2),
+            avg_response_time_ms=avg_response_time,
+            citation_accuracy=round(avg_citation, 2),
+            unanswered_rate=round(unanswered_rate, 2)
         )
+        
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logging.error(f"Error calculating quality metrics: {str(e)}")
+        # Return zeros instead of mock data on error
+        return QualityMetrics(
+            date=datetime.now(timezone.utc),
+            groundedness=0.0,
+            hallucination_rate=0.0,
+            avg_response_time_ms=0,
+            citation_accuracy=0.0,
+            unanswered_rate=0.0
+        )

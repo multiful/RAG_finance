@@ -81,6 +81,17 @@ ehthumbs.db
 Icon?
 
 # -----------------------------
+# Documents (공모전·논문 초안 등)
+# -----------------------------
+*.pdf
+*.ppt
+*.pptx
+*.md
+*.hwp
+docs/
+competition/
+
+# -----------------------------
 # Misc
 # -----------------------------
 .pytest_cache/
@@ -100,3 +111,11 @@ __pycache__/
 
 # Ignore npm / pnpm lockstore cache dirs used by some workflows
 .store/
+
+# -----------------------------
+# GitHub: 루트 README만 추적 (docs/ competition/ 은 위에서 제외)
+# -----------------------------
+!README.md
+
+# Cursor/IDE 생성 에셋 (올리지 않음)
+assets/
