@@ -1,9 +1,10 @@
 /**
- * 규제 변경 시뮬레이션 (Policy Simulate)
- * 문서 A(기준) vs 문서 B(비교) 선택 → LLM 규제 영향 분석. 국내·국제 문서 비교 가능.
+ * 규제 문서 차이점 추출 (Policy Simulate)
+ * 문서 A(기준) vs 문서 B(비교) 선택 → LLM이 두 문서의 차이점을 포괄적으로 추출. 국내·국제 문서 비교 가능.
  */
 import { useCallback, useEffect, useState } from 'react';
-import { GitCompare, Loader2, FileText, AlertTriangle, RefreshCw } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { GitCompare, Loader2, FileText, AlertTriangle, RefreshCw, ClipboardList } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -38,6 +39,8 @@ export default function PolicySimulatePage() {
   const [newId, setNewId] = useState<string>('');
   const [simulating, setSimulating] = useState(false);
   const [result, setResult] = useState<PolicyDiffResponse | null>(null);
+  const [theme, setTheme] = useState<string>('default');
+  const navigate = useNavigate();
 
   const loadDocuments = useCallback(() => {
     setLoadingDocs(true);
@@ -73,14 +76,14 @@ export default function PolicySimulatePage() {
     setSimulating(true);
     setResult(null);
     try {
-      const data = await policySimulate(oldId, newId);
+      const data = await policySimulate(oldId, newId, theme === 'default' ? undefined : theme);
       setResult(data);
-      toast.success('시뮬레이션이 완료되었습니다.');
+      toast.success('차이점 추출이 완료되었습니다.');
     } catch (e: unknown) {
       const msg = e && typeof e === 'object' && 'response' in e
         ? (e as { response?: { data?: { detail?: string } } }).response?.data?.detail
-        : '시뮬레이션 요청에 실패했습니다.';
-      toast.error(typeof msg === 'string' ? msg : '시뮬레이션에 실패했습니다.');
+        : '차이점 추출 요청에 실패했습니다.';
+      toast.error(typeof msg === 'string' ? msg : '차이점 추출에 실패했습니다.');
     } finally {
       setSimulating(false);
     }
@@ -95,9 +98,9 @@ export default function PolicySimulatePage() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <GitCompare className="w-5 h-5 text-indigo-600" />
-            규제 변경 시뮬레이션
+            규제 문서 차이점 추출
           </CardTitle>
-          <CardDescription>두 문서(국내·국제) 선택 시 조항별 변경 영향 분석</CardDescription>
+          <CardDescription>두 문서 선택 시 조항·주제·용어·범위 차이를 포괄적으로 추출합니다. 국내·국제 비교 가능.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           {loadingDocs ? (
@@ -116,7 +119,7 @@ export default function PolicySimulatePage() {
             </div>
           ) : (
             <>
-              <div className="flex items-center gap-2 flex-wrap">
+              <div className="flex items-center gap-3 flex-wrap">
                 <label className="flex items-center gap-2 cursor-pointer text-sm text-slate-600">
                   <input
                     type="checkbox"
@@ -126,6 +129,20 @@ export default function PolicySimulatePage() {
                   />
                   가상자산·토큰증권·스테이블코인 관련 문서만 보기
                 </label>
+                <div className="flex items-center gap-2 text-sm text-slate-600">
+                  <span className="text-xs text-slate-500">분석 테마 (선택)</span>
+                  <Select value={theme} onValueChange={setTheme}>
+                    <SelectTrigger className="w-[180px] h-8 text-xs">
+                      <SelectValue placeholder="기본 분석" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="default">기본 분석</SelectItem>
+                      <SelectItem value="virtual_asset">가상자산·토큰증권 투자자 보호</SelectItem>
+                      <SelectItem value="insurance_capital">보험사 자본·지급여력(K-ICS)</SelectItem>
+                      <SelectItem value="esg_disclosure">ESG 공시·지배구조</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
                 <Button type="button" variant="ghost" size="sm" onClick={loadDocuments} disabled={loadingDocs}>
                   <RefreshCw className={`w-4 h-4 mr-1 ${loadingDocs ? 'animate-spin' : ''}`} />
                   새로고침
@@ -205,7 +222,7 @@ export default function PolicySimulatePage() {
                   ) : (
                     <>
                       <GitCompare className="w-4 h-4 mr-2" />
-                      시뮬레이션 실행
+                      차이점 추출 실행
                     </>
                   )}
                 </Button>
@@ -227,7 +244,7 @@ export default function PolicySimulatePage() {
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-base">
               <FileText className="w-4 h-4" />
-              시뮬레이션 결과
+              차이점 추출 결과
             </CardTitle>
             <CardDescription>{result.old_doc_title} → {result.new_doc_title}</CardDescription>
           </CardHeader>
@@ -238,14 +255,72 @@ export default function PolicySimulatePage() {
                 {result.overall_risk.toUpperCase()}
               </Badge>
             </div>
+            {result.industry_impact_delta && Object.keys(result.industry_impact_delta).length > 0 && (
+              <div className="flex flex-wrap gap-2 text-xs text-slate-600">
+                <span className="font-medium text-slate-700">업권별 영향 추정:</span>
+                {Object.entries(result.industry_impact_delta).map(([k, v]) => {
+                  const label =
+                    k === 'BANKING' ? '은행' :
+                    k === 'INSURANCE' ? '보험' :
+                    k === 'SECURITIES' ? '증권' :
+                    k;
+                  return (
+                    <Badge key={k} variant="outline" className="bg-slate-50 border-slate-200 text-xs">
+                      {label} {v > 0 ? `+${v}` : v}
+                    </Badge>
+                  );
+                })}
+              </div>
+            )}
             {result.summary && (
               <div className="p-3 rounded-lg bg-slate-50 border border-slate-100">
                 <p className="text-sm text-slate-700 whitespace-pre-wrap">{result.summary}</p>
               </div>
             )}
+            {result.action_items && result.action_items.length > 0 && (
+              <div className="space-y-2">
+                <h4 className="text-sm font-semibold text-slate-900 flex items-center gap-2">
+                  <ClipboardList className="w-4 h-4 text-indigo-600" />
+                  추천 조치사항 (초안)
+                </h4>
+                <ul className="space-y-1">
+                  {result.action_items.map((item, idx) => (
+                    <li key={idx} className="flex items-start gap-2 text-sm text-slate-700">
+                      <span className="mt-1 w-1.5 h-1.5 rounded-full bg-indigo-500" />
+                      <span>{item}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {result.suggested_checklist_links && result.suggested_checklist_links.length > 0 && (
+              <div className="space-y-2">
+                <h4 className="text-sm font-semibold text-slate-900">후속 액션</h4>
+                <div className="flex flex-wrap gap-2">
+                  {result.suggested_checklist_links.map((link, idx) => (
+                    <Button
+                      key={idx}
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="text-xs"
+                      onClick={() => {
+                        const type = link.type;
+                        if (type === 'sandbox_checklist') navigate('/sandbox/checklist');
+                        else if (type === 'gap_map') navigate('/gap-map');
+                        else if (type === 'analytics_industry') navigate('/analytics');
+                        else if (type === 'theme_review') toast.info('테마별 리뷰는 위 추천 조치사항을 참고하세요.');
+                      }}
+                    >
+                      {link.label}
+                    </Button>
+                  ))}
+                </div>
+              </div>
+            )}
             {result.changes && result.changes.length > 0 ? (
               <div className="space-y-2">
-                <h4 className="text-sm font-semibold text-slate-900">조항별 변경 사항</h4>
+                <h4 className="text-sm font-semibold text-slate-900">추출된 차이점 (조항·주제·용어 등)</h4>
                 <div className="border border-slate-200 rounded-lg overflow-hidden">
                   <table className="w-full text-sm">
                     <thead>
@@ -278,7 +353,7 @@ export default function PolicySimulatePage() {
             ) : (
               <div className="flex items-center gap-2 p-4 rounded-lg bg-amber-50 border border-amber-100 text-amber-800 text-sm">
                 <AlertTriangle className="w-4 h-4 flex-shrink-0" />
-                <span>조항별 변경 사항이 없거나 분석할 수 없습니다.</span>
+                <span>추출된 차이점이 없거나 분석할 수 없습니다.</span>
               </div>
             )}
           </CardContent>

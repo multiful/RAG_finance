@@ -114,12 +114,13 @@ async def health_head_compat_middleware(request: Request, call_next):
 # Rate limit (QA·시뮬레이션 등)
 app.add_middleware(RateLimitMiddleware)
 
-# CORS (CORS_ORIGINS 환경 변수: 쉼표 구분. 비우면 config CORS_DEFAULT_ORIGINS 사용)
-_cors_origins = (
-    [o.strip() for o in settings.CORS_ORIGINS.split(",") if o.strip()]
-    if settings.CORS_ORIGINS
-    else getattr(settings, "CORS_DEFAULT_ORIGINS", [])
-)
+# CORS (CORS_ORIGINS 환경 변수: 쉼표 구분. 비우면 config CORS_DEFAULT_ORIGINS 사용. 설정 시에도 기본 origin 목록은 유지)
+_cors_origins = list(getattr(settings, "CORS_DEFAULT_ORIGINS", []))
+if settings.CORS_ORIGINS:
+    for o in settings.CORS_ORIGINS.split(","):
+        o = o.strip()
+        if o and o not in _cors_origins:
+            _cors_origins.append(o)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_cors_origins,

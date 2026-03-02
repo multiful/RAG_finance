@@ -234,6 +234,8 @@ class PolicySimulationRequest(BaseModel):
     """Request for policy comparison simulation."""
     old_document_id: str
     new_document_id: str
+    # 시나리오 테마 (예: default, virtual_asset_investor_protection, insurance_capital, esg_disclosure 등)
+    theme: Optional[str] = None
 
 
 class PolicyDiffItem(BaseModel):
@@ -253,6 +255,13 @@ class PolicyDiffResponse(BaseModel):
     overall_risk: str
     summary: str
     generated_at: datetime
+    # 시뮬레이션 확장 필드
+    # - action_items: 규제 변경/차이점 기반 추천 조치사항 (체크리스트·내부통제 개편 초안 등)
+    # - suggested_checklist_links: 샌드박스 체크리스트·내부통제 점검·Gap Map 등 후속 액션 추천 메타데이터
+    # - industry_impact_delta: 업권별(INSURANCE/BANKING/SECURITIES 등) 리스크 변경 추정치 (예: +2.5)
+    action_items: List[str] = Field(default_factory=list)
+    suggested_checklist_links: List[Dict[str, Any]] = Field(default_factory=list)
+    industry_impact_delta: Dict[str, float] = Field(default_factory=dict)
 
 
 class GovernanceMetricsResponse(BaseModel):

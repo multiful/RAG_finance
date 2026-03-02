@@ -523,14 +523,15 @@ export interface EvaluationMetrics {
 
 export interface EvaluationResult {
   status: string;
-  evaluation: EvaluationMetrics;
+  message?: string;
+  evaluation: EvaluationMetrics | null;
   details: Array<{
     question: string;
     answer: string;
     rag_confidence: number;
     rag_groundedness: number;
     context_count: number;
-  }>;
+  }> | null;
 }
 
 export interface MetricsSummary {
@@ -757,14 +758,25 @@ export interface PolicyDiffResponse {
   overall_risk: string;
   summary: string;
   generated_at: string;
+  // 확장 필드: 조치안·체크리스트·업권 영향
+  action_items?: string[];
+  suggested_checklist_links?: Array<{
+    label: string;
+    description?: string;
+    type?: string; // sandbox_checklist | gap_map | analytics_industry | 기타
+    priority?: string; // high | medium | low | 기타
+  }>;
+  industry_impact_delta?: Record<string, number>;
 }
 export const policySimulate = async (
   oldDocumentId: string,
-  newDocumentId: string
+  newDocumentId: string,
+  theme?: string
 ): Promise<PolicyDiffResponse> => {
   const response = await api.post<PolicyDiffResponse>('/advanced/policy/simulate', {
     old_document_id: oldDocumentId,
     new_document_id: newDocumentId,
+    ...(theme ? { theme } : {}),
   });
   return response.data;
 };
