@@ -132,10 +132,13 @@ Output EXACT JSON:
             )
 
     async def _get_doc_text(self, doc_id: str) -> str:
-        """실제 chunks 테이블에서 문서 본문 수집 (최대 30청크, 실제값 반영)."""
+        """chunks 테이블에서 본문 수집. 없으면 documents.raw_text 폴백 (시드/미파싱 문서 대응)."""
         res = self.db.table("chunks").select("chunk_text").eq("document_id", doc_id).order("chunk_index").limit(30).execute()
-        if not res.data:
-            return ""
-        return "\n\n".join([c["chunk_text"] for c in res.data])
+        if res.data:
+            return "\n\n".join([c["chunk_text"] for c in res.data])
+        doc = self.db.table("documents").select("raw_text").eq("document_id", doc_id).execute()
+        if doc.data and doc.data[0].get("raw_text"):
+            return (doc.data[0]["raw_text"] or "")[:12000]
+        return ""
 
 simulator = PolicySimulator()
