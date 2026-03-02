@@ -530,9 +530,7 @@ export default function AnalyticsDashboard() {
               <Calendar className="h-5 w-5 text-primary" />
               문서 통계 상세
             </CardTitle>
-            <CardDescription>
-              기간별 문서 수집 현황 및 카테고리 분포. 카테고리는 수집 유형(보도자료, 보도설명, 공지사항 등) 기준입니다.
-            </CardDescription>
+            <CardDescription>기간별 문서 수집·카테고리 분포</CardDescription>
           </CardHeader>
           <CardContent>
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">

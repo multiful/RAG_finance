@@ -1,5 +1,6 @@
-# Render 배포: PYTHON_VERSION=3.11.9 설정 권장 (llama-index 등 <3.12 필요). 캐시 초기화 후 재배포.
-# 하위 의존성 중 scikit-learn==1.4.1 요구 시 PyPI에 없어 실패하므로, 제약으로 1.4.2 고정.
+# Render 배포: PYTHON_VERSION=3.11.9 권장. scikit-learn 1.4.1은 PyPI에 없음 → 1.4.2 사용.
+# backend 폴더에서 설치: pip install -r requirements.txt (아래 -c로 동일 폴더 constraints.txt 사용)
+# 루트에서 설치: pip install -r app/backend/requirements.txt -c constraints.txt
 -c constraints.txt
 # =========================
 # FastAPI
@@ -67,7 +68,7 @@ pdf2image==1.17.0
 pytesseract==0.3.10
 
 # =========================
-# ML / Embeddings (Render/pip 호환: scikit-learn 1.4.1은 PyPI에 없음 → 1.4.2)
+# ML / Embeddings (scikit-learn 1.4.1 미존재 → 1.4.2 선설치로 하위 의존성 충족)
 # =========================
 scikit-learn==1.4.2
 numpy>=1.26.4,<3

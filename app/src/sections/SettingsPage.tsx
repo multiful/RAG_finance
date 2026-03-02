@@ -144,38 +144,15 @@ export default function SettingsPage() {
         </p>
       </div>
 
-      {/* 실현 가능성·로드맵 (평가위원·제출 참고) */}
       <Card className="border-indigo-100 bg-indigo-50/30 rounded-2xl">
         <CardHeader className="pb-2">
           <CardTitle className="text-base text-indigo-900">실현 가능성 · 로드맵</CardTitle>
-          <CardDescription>
-            타깃 사용자, 단계별 로드맵, 성공 지표 (공모전 제출·평가 참고)
-          </CardDescription>
+          <CardDescription>타깃: 금융당국·샌드박스 신청 기업. 성공 지표: 환각률 5% 미만</CardDescription>
         </CardHeader>
-        <CardContent className="space-y-4">
-          <div>
-            <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">타깃 사용자</p>
-            <p className="text-sm text-slate-700">금융당국(FSC/FSS) · 샌드박스 신청 기업 · 전문 서비스 제공자</p>
-          </div>
-          <div>
-            <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">로드맵 (3단계)</p>
-            <ol className="text-sm text-slate-700 list-decimal list-inside space-y-0.5">
-              <li>솔루션 고도화</li>
-              <li>샌드박스 시범 적용</li>
-              <li>제도화 지원</li>
-            </ol>
-          </div>
-          <div>
-            <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">성공 지표</p>
-            <p className="text-sm text-slate-700">
-              Hallucination Rate <strong className="text-emerald-600">5% 미만</strong>
-              {metrics?.rag_metrics?.hallucination_rate_recent_pct != null && (
-                <span className="ml-2 text-slate-500">
-                  (최근 평가: {metrics.rag_metrics.hallucination_rate_recent_pct}%)
-                </span>
-              )}
-            </p>
-          </div>
+        <CardContent>
+          {metrics?.rag_metrics?.hallucination_rate_recent_pct != null && (
+            <p className="text-sm text-slate-600">최근 평가 환각률: {metrics.rag_metrics.hallucination_rate_recent_pct}%</p>
+          )}
         </CardContent>
       </Card>
 
@@ -186,9 +163,7 @@ export default function SettingsPage() {
             <Database className="w-5 h-5 text-indigo-500" />
             데이터 수집
           </CardTitle>
-          <CardDescription>
-            스테이블코인·STO 관련 국내·국제 규제 수집 소스 관리 및 현황
-          </CardDescription>
+          <CardDescription>국내·국제 규제 수집 소스 및 현황</CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
           {/* Collection Status */}
@@ -308,9 +283,7 @@ export default function SettingsPage() {
             <Beaker className="w-5 h-5 text-purple-500" />
             RAG 품질 평가 (RAGAS)
           </CardTitle>
-          <CardDescription>
-            RAG 답변의 충실도·관련성·검색 정밀도·재현율을 자동 측정해, 개선 포인트를 파악합니다.
-          </CardDescription>
+          <CardDescription>충실도·관련성·검색 정밀도 자동 측정</CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
           {/* Run Evaluation */}
