@@ -26,11 +26,11 @@ class JobTracker:
         except Exception:
             return False
 
-    def create_job(self, stage: str = "collecting") -> str:
+    def create_job(self, stage: str = "collecting") -> Optional[str]:
         if not self.is_available():
             print("❌ Cannot create job: Redis is unavailable")
-            return "fallback-job-id"
-            
+            return None
+
         job_id = str(uuid.uuid4())
         job_data = {
             "job_id": job_id,
@@ -60,7 +60,7 @@ class JobTracker:
             return job_id
         except Exception as e:
             print(f"Redis error in create_job: {e}")
-            return job_id
+            return None
 
     def update_job(self, job_id: str, status: Optional[str] = None, count: Optional[int] = None, 
                    message: str = "", stage: Optional[str] = None, progress: Optional[float] = None,

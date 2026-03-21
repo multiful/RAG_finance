@@ -188,8 +188,16 @@ class InternationalRSSCollector:
             results["feeds"][fid]["fetched"] = fetched_per_fid.get(fid, 0)
 
         if job_id:
+            final_status = "success_collect" if results["total_new"] > 0 else "no_change"
             msg = f"국제기구 수집 완료: 신규 {results['total_new']}건"
-            job_tracker.update_job(job_id, stage="완료", progress=100, message=msg)
+            job_tracker.update_job(
+                job_id,
+                status=final_status,
+                stage="완료",
+                progress=100,
+                count=results["total_new"],
+                message=msg,
+            )
         return results
 
 

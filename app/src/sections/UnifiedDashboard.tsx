@@ -231,17 +231,23 @@ export default function UnifiedDashboard() {
 
       {/* Key Metrics - 수집 직후에는 방금 수집한 건수(lastResult)를 우선 표시 */}
       {(() => {
-        // 이번 주 신규: 백엔드 documents_this_week(국내+국제) 우선, 없으면 수집 직후 total_new, 없으면 주간보고서 합계
-        const newThisWeek = (stats?.documents_this_week != null && stats.documents_this_week > 0)
-          ? stats.documents_this_week
-          : (lastResult?.status === 'completed' && lastResult?.result?.total_new != null)
-            ? lastResult.result.total_new
-            : (weeklyReport?.statistics?.total_documents ?? 0);
+        // 이번 주 신규: API의 documents_this_week(0 포함) 우선. 과거엔 0일 때 주간보고 숫자로 덮어써 혼동이 있었음.
+        const newThisWeek =
+          stats != null && typeof stats.documents_this_week === 'number'
+            ? stats.documents_this_week
+            : lastResult?.status === 'completed' && lastResult?.result?.total_new != null
+              ? lastResult.result.total_new
+              : (weeklyReport?.statistics?.total_documents ?? 0);
         const domesticWeek = stats?.domestic_this_week ?? 0;
         const internationalWeek = stats?.international_this_week ?? 0;
-        const subLabel = (domesticWeek > 0 || internationalWeek > 0)
-          ? `국내 ${domesticWeek} · 국제 ${internationalWeek}`
-          : null;
+        const subLabel =
+          domesticWeek > 0 || internationalWeek > 0
+            ? `국내 ${domesticWeek} · 국제 ${internationalWeek}`
+            : newThisWeek === 0 && (stats?.total_documents ?? 0) > 0
+              ? '최근 7일 신규 없음(기존 문서만 존재)'
+              : newThisWeek === 0
+                ? '수집 실행 후 반영 · DB 비어 있으면 0이 정상'
+                : null;
         return (
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {[

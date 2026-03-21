@@ -48,17 +48,19 @@ async def _run_collection():
                 await international_rss_collector.collect_all(job_id=job_id)
             except Exception as e:
                 logger.warning("국제기구 RSS 수집 실패: %s", e)
-        job = job_tracker.get_job(job_id)
-        if job and job.get("status") in ("running", None):
-            job_tracker.update_job(
-                job_id,
-                status="success_collect" if (job.get("new_documents_count") or 0) > 0 else "no_change",
-                stage="완료",
-                progress=100,
-            )
+        if job_id:
+            job = job_tracker.get_job(job_id)
+            if job and job.get("status") in ("running", None):
+                job_tracker.update_job(
+                    job_id,
+                    status="success_collect" if (job.get("new_documents_count") or 0) > 0 else "no_change",
+                    stage="완료",
+                    progress=100,
+                )
     except Exception as e:
         logger.exception("일일 수집 오류: %s", e)
-        job_tracker.update_job(job_id, status="error", message=str(e))
+        if job_id:
+            job_tracker.update_job(job_id, status="error", message=str(e))
 
 
 async def run_daily_collection_loop():

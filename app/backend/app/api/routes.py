@@ -709,7 +709,8 @@ async def export_checklist(document_id: str, format: str = Query("json")):
 
 @router.get("/dashboard/stats", response_model=DashboardStats)
 async def get_dashboard_stats():
-    """대시보드 통계. DB 조회 실패 시에만 demo_data 폴백. '신규 N건'은 직전 수집 run의 total_new(수집 제한 아님)."""
+    """대시보드 통계. DB 조회 실패 시에만 demo_data 폴백.
+    documents_this_week = max(최근7일 ingested_at 건수, 최근7일 published_at 건수) 로 구버전 NULL ingested_at 보정."""
     from app.models.schemas import CollectionStatus
     try:
         db = rss_collector.db
@@ -802,8 +803,6 @@ async def get_dashboard_stats():
             if s.get("fid") and s["fid"] not in settings.FSC_RSS_FIDS
         ]
 
-        documents_this_week = collection_stats.get("documents_7d") or 0
-
         def _domestic_week_count():
             if not domestic_source_ids:
                 return 0
@@ -832,6 +831,20 @@ async def get_dashboard_stats():
             asyncio.to_thread(_domestic_week_count),
             asyncio.to_thread(_international_week_count),
         )
+
+        def _published_7d_total():
+            """ingested_at 누락 구(구버전 upsert)와 주간 요약(published_at) 기준을 맞추기 위한 보조 집계."""
+            r = (
+                db.table("documents")
+                .select("*", count="exact")
+                .gte("published_at", since_7d)
+                .execute()
+            )
+            return (r.count if hasattr(r, "count") else 0) or 0
+
+        published_7d_total = await asyncio.to_thread(_published_7d_total)
+        ingested_7d = collection_stats.get("documents_7d") or 0
+        documents_this_week = max(ingested_7d, published_7d_total)
 
         async def _source_status(source_rec: dict) -> CollectionStatus:
             source_id = source_rec["source_id"]

@@ -3,6 +3,7 @@
  * 페이지 이동해도 수집 상태가 유지됩니다.
  */
 import { createContext, useContext, useState, useCallback, useRef, useEffect, type ReactNode } from 'react';
+import axios from 'axios';
 import { toast } from 'sonner';
 import api from '@/lib/api';
 
@@ -110,6 +111,13 @@ export function CollectionProvider({ children }: { children: ReactNode }) {
       }
     } catch (error) {
       console.error('Failed to poll job status:', error);
+      if (axios.isAxiosError(error) && error.response?.status === 404) {
+        stopPolling();
+        setIsCollecting(false);
+        setJobProgress(null);
+        jobIdRef.current = null;
+        toast.error('작업 상태를 찾을 수 없습니다. Redis·재배포 후 다시 시도해 주세요.');
+      }
     }
   }, [stopPolling]);
 

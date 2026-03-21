@@ -1,8 +1,12 @@
 """Pydantic models for API requests and responses."""
 from pydantic import BaseModel, Field
 from typing import List, Optional, Dict, Any
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
+
+
+def _utc_now() -> datetime:
+    return datetime.now(timezone.utc)
 
 
 class IndustryType(str, Enum):
@@ -39,10 +43,12 @@ class DocumentBase(BaseModel):
 
 
 class DocumentCreate(DocumentBase):
-    """Document creation model."""
+    """Document creation model. ingested_at·status는 RSS/FSS upsert 시 항상 포함되어 대시보드 7일 집계에 반영됨."""
     source_id: str
     raw_html: Optional[str] = None
     hash: str
+    ingested_at: datetime = Field(default_factory=_utc_now)
+    status: DocumentStatus = DocumentStatus.INGESTED
 
 
 class DocumentResponse(DocumentBase):
