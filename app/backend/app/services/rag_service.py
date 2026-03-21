@@ -56,7 +56,11 @@ class RAGService:
                 model=settings.OPENAI_EMBEDDING_MODEL,
                 input=[t[:8000] for t in batch],
             )
-            for k, emb_obj in enumerate(resp.data):
+            ordered = sorted(
+                resp.data,
+                key=lambda d: getattr(d, "index", 0),
+            )
+            for k, emb_obj in enumerate(ordered):
                 vec = emb_obj.embedding
                 out.append(vec)
                 raw = batch[k]

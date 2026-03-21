@@ -4,7 +4,7 @@ Pipeline: Collector → Parser → Chunker → Embedder → Supabase(pgvector)
 """
 import asyncio
 import hashlib
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import List, Dict, Any, Optional
 from dataclasses import dataclass
 import json
@@ -103,7 +103,6 @@ class RSSCollector:
     
     def _parse_date(self, date_str: str) -> datetime:
         import feedparser
-        from datetime import timezone
         try:
             struct_time = feedparser._parse_date(date_str)
             if struct_time:

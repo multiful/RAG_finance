@@ -19,10 +19,11 @@ COPY constraints.txt requirements.txt ./
 RUN pip install --upgrade pip && \
     PIP_CONSTRAINT=/app/constraints.txt pip install -r requirements.txt
 
+COPY run_prod.py ./
 COPY app ./app
 COPY scripts ./scripts
 
 EXPOSE 8000
 
-# Railway는 PORT 환경 변수 제공
-CMD ["sh", "-c", "exec uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}"]
+# PORT는 run_prod.py에서 int로 읽음 (Windows·Railway Nixpacks에서 $PORT 문자열 오류 방지)
+CMD ["python", "run_prod.py"]
