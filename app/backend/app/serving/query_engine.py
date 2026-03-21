@@ -15,6 +15,7 @@ from langchain_core.prompts import ChatPromptTemplate
 from app.core.config import settings
 from app.core.redis import get_redis
 from app.services.vector_store import get_vector_store, SearchResult, _get_cached_cross_encoder
+from app.services.rag_service import hybrid_weights_for_query
 
 
 @dataclass
@@ -168,16 +169,15 @@ class HybridRetriever:
         # 쿼리 임베딩
         query_embedding = await self.embeddings.aembed_query(query)
         
-        # Hybrid search
-        from app.core.config import settings
+        vw, kw = hybrid_weights_for_query(query)
         results = await self.vector_store.hybrid_search(
             query=query,
             query_embedding=query_embedding,
             top_k=top_k,
-            vector_weight=getattr(settings, "HYBRID_VECTOR_WEIGHT", 0.7),
-            keyword_weight=getattr(settings, "HYBRID_KEYWORD_WEIGHT", 0.3),
+            vector_weight=vw,
+            keyword_weight=kw,
             similarity_threshold=getattr(settings, "HYBRID_SIMILARITY_THRESHOLD", 0.3),
-            filters=filters
+            filters=filters,
         )
         
         return results

@@ -94,7 +94,7 @@ class Settings(BaseSettings):
     # Tavily 검색 옵션 (Playground의 Additional fields와 대응)
     TAVILY_SEARCH_DEPTH: str = "advanced"   # basic | advanced (정보 부족 시 더 깊이 검색)
     TAVILY_MAX_RESULTS: int = 5
-    TAVILY_SEARCH_TOPIC: str = "general"    # general | finance 등 (금융 RAG면 finance 권장)
+    TAVILY_SEARCH_TOPIC: str = "finance"    # 금융 RAG 기본값 (에이전트 웹 보강 시 도메인 정렬)
     TAVILY_INCLUDE_ANSWER: str = "none"     # none | true (검색 요약 포함 여부)
     
     # Ragas Evaluation

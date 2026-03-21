@@ -10,7 +10,7 @@ from typing import List, Dict, Any, Optional
 from app.constants.risk_axes import RISK_AXIS_NAMES, RISK_AXIS_DESCRIPTIONS
 from app.services.gap_map_service import get_top_blind_spots, get_gap_map
 from app.services.vector_store import get_vector_store
-from app.services.rag_service import RAGService
+from app.services.rag_service import RAGService, hybrid_weights_for_query
 from app.core.config import settings
 
 
@@ -57,10 +57,14 @@ async def run_sandbox_simulation(
         rag = RAGService()
         embedding = await rag._get_embedding(search_query[:4000])
         store = get_vector_store()
+        vw, kw = hybrid_weights_for_query(search_query)
         results = await store.hybrid_search(
             query=search_query,
             query_embedding=embedding,
             top_k=top_k_context,
+            vector_weight=vw,
+            keyword_weight=kw,
+            similarity_threshold=getattr(settings, "HYBRID_SIMILARITY_THRESHOLD", 0.3),
         )
         context_parts = []
         citations = []

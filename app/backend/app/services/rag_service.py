@@ -1,6 +1,6 @@
 """RAG (Retrieval Augmented Generation) service."""
 import openai
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Tuple
 from datetime import datetime, timezone
 import json
 import re
@@ -15,6 +15,28 @@ from app.models.schemas import (
 )
 
 
+# 규제·금융 키워드가 있으면 BM25/키워드 채널 비중을 소폭 올려 조문·고시명 등 정확 매칭 강화
+_REGULATORY_QUERY_HINTS = (
+    "금융위", "금융위원회", "금감원", "금융감독", "한국은행", "예금보험",
+    "시행령", "시행규칙", "고시", "지침", "규정", "조문",
+    "FSC", "FSS", "BIS", "FSB", "ESG", "스테이블코인", "가상자산", "STO",
+    "DSR", "LCR", "K-ICS", "IFRS", "내부통제", "자본시장법", "금융소비자",
+)
+
+
+def hybrid_weights_for_query(question: str) -> Tuple[float, float]:
+    """규제·금융 키워드가 있으면 BM25 비중을 높여 조문·고시명 등 키워드 매칭을 강화."""
+    vw = float(getattr(settings, "HYBRID_VECTOR_WEIGHT", 0.7))
+    kw = float(getattr(settings, "HYBRID_KEYWORD_WEIGHT", 0.3))
+    q = question or ""
+    looks_regulatory = any(h in q for h in _REGULATORY_QUERY_HINTS) or bool(
+        re.search(r"제\s*\d+\s*조", q)
+    )
+    if looks_regulatory:
+        return (min(vw, 0.62), max(kw, 0.38))
+    return (vw, kw)
+
+
 class RAGService:
     """RAG service with hybrid search, reranking, and guardrails."""
     
@@ -23,6 +45,10 @@ class RAGService:
         self.redis = get_redis()
         self.vector_store = get_vector_store()
         self.openai_client = openai.AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
+
+    @staticmethod
+    def _hybrid_weights_for_query(question: str) -> Tuple[float, float]:
+        return hybrid_weights_for_query(question)
     
     async def _get_embedding(self, text: str) -> List[float]:
         """Get embedding for text with Redis caching."""
@@ -70,8 +96,8 @@ class RAGService:
 
     async def _expand_query_hyde(self, query: str) -> str:
         """HyDE (Hypothetical Document Embeddings): Generate a hypothetical answer to improve retrieval."""
-        hyde_prompt = f"""당신은 금융 정책 전문가입니다. 다음 질문에 대해 정책 문서의 '핵심 요약' 또는 '관련 조항'과 유사한 스타일로 1-2문장의 가상의 답변을 작성하세요.
-실제 사실 여부는 중요하지 않으며, 검색에 도움이 될만한 전문 용어와 문체를 사용하는 것이 목적입니다.
+        hyde_prompt = f"""당신은 금융 정책·규제 문서 작성에 익숙한 전문가입니다. 다음 질문에 대해 금융위·금감원 보도자료, 고시, 시행령 설명문과 비슷한 톤으로 1~2문장의 '가상 답변'을 작성하세요.
+실제 정답 여부는 중요하지 않습니다. 검색 인덱스에서 잡히도록 조문·제도명·업권 용어를 자연스럽게 넣는 것이 목적입니다.
 
 질문: {query}
 가상 답변:"""
@@ -164,14 +190,16 @@ NO [해당 문서에는 가계대출 금리에 대한 직접적인 언급이 없
         else:
             mode_instruction = "답변의 모든 문장에는 근거가 되는 문서의 번호를 [1], [2]와 같이 표시하십시오."
 
-        system_prompt = f"""당신은 금융위원회의 정책을 분석하고 답변하는 'FSC AI 어시스턴트'입니다.
+        system_prompt = f"""당신은 금융위원회(FSC) 정책·규제 문서를 근거로 답변하는 'FSC AI 어시스턴트'입니다.
 다음 규칙을 엄격히 준수하여 답변하십시오:
 
 1. 오직 제공된 [참고 문서]의 내용만을 기반으로 답변하십시오.
 2. {mode_instruction}
 3. 문서에 없는 내용은 절대 추측하여 답변하지 마십시오. 모르는 경우 '제공된 문서에서 관련 내용을 찾을 수 없습니다'라고 하십시오.
-4. 금융 용어를 정확하게 사용하고 전문적인 어조를 유지하십시오.
-5. 반드시 아래 JSON 형식으로만 출력하십시오.
+4. 금융·규제 용어를 정확히 쓰고, 보도자료·고시·지침·시행령 등 문서 유형에 맞는 어조를 유지하십시오.
+5. 참고 문서 제목·본문에 나온 제도명·고시명·조문 표기가 있으면 답변에서도 동일하게 사용하십시오. 시행일·게시일·적용 시점이 문서에 있으면 함께 언급하십시오.
+6. 비율·한도·기한·의무·적용 대상 등 수치·조건은 해당 문서에 근거가 있을 때만 서술하고, 반드시 [번호] 인용과 연결하십시오.
+7. 반드시 아래 JSON 형식으로만 출력하십시오.
 
 출력 JSON 형식:
 {{
@@ -379,14 +407,15 @@ NO [해당 문서에는 가계대출 금리에 대한 직접적인 언급이 없
         if request.date_from:
             filters["date_from"] = request.date_from.isoformat()
         
+        vw, kw = self._hybrid_weights_for_query(request.question)
         search_results = await self.vector_store.hybrid_search(
             query=request.question,
             query_embedding=query_embedding,
             top_k=settings.TOP_K_RETRIEVAL,
-            vector_weight=getattr(settings, "HYBRID_VECTOR_WEIGHT", 0.7),
-            keyword_weight=getattr(settings, "HYBRID_KEYWORD_WEIGHT", 0.3),
+            vector_weight=vw,
+            keyword_weight=kw,
             similarity_threshold=getattr(settings, "HYBRID_SIMILARITY_THRESHOLD", 0.3),
-            filters=filters
+            filters=filters,
         )
         
         # 4. Optional Reranking

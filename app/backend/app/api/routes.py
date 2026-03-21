@@ -1,9 +1,11 @@
 """Main API routes (legacy + new combined)."""
-from fastapi import APIRouter, HTTPException, Query, BackgroundTasks
-from typing import List, Optional
-from datetime import datetime, timedelta, timezone
+import asyncio
 import logging
 import traceback
+from datetime import datetime, timedelta, timezone
+from typing import List, Optional
+
+from fastapi import APIRouter, HTTPException, Query, BackgroundTasks
 
 from app.core.config import settings
 from app.models.schemas import (
@@ -15,7 +17,7 @@ from app.models.schemas import (
     DashboardStats, QualityMetrics, CollectionStatus
 )
 from app.services.rss_collector import RSSCollector
-from app.services.rag_service import RAGService
+from app.services.rag_service import RAGService, hybrid_weights_for_query
 from app.services.industry_classifier import IndustryClassifier
 from app.services.topic_detector import TopicDetector
 from app.services.checklist_service import ChecklistService
@@ -428,10 +430,14 @@ async def search_documents(
         if date_to:
             filters["date_to"] = date_to.isoformat()
 
+        vw, kw = hybrid_weights_for_query(query)
         results = await rag_service.vector_store.hybrid_search(
             query=query,
             query_embedding=query_embedding,
             top_k=top_k * 2 if topic == "stablecoin_sto" else top_k,
+            vector_weight=vw,
+            keyword_weight=kw,
+            similarity_threshold=getattr(settings, "HYBRID_SIMILARITY_THRESHOLD", 0.3),
             filters=filters,
         )
 
@@ -707,113 +713,170 @@ async def get_dashboard_stats():
     from app.models.schemas import CollectionStatus
     try:
         db = rss_collector.db
-        
-        # Collection stats (total docs, documents_24h, success_rate_7d)
-        collection_stats = await rss_collector.get_collection_stats()
-        
-        # Active alerts
-        alerts_result = db.table("alerts").select("*", count="exact").eq(
-            "status", "open"
-        ).execute()
-        active_alerts_count = (alerts_result.count if hasattr(alerts_result, 'count') else 0) or 0
-        
-        high_severity_res = db.table("alerts").select("*", count="exact").eq(
-            "status", "open"
-        ).eq("severity", "high").execute()
-        high_severity_count = (high_severity_res.count if hasattr(high_severity_res, 'count') else 0) or 0
-        
-        # Recent topics (last 7 days)
-        since_topic = datetime.now(timezone.utc) - timedelta(days=7)
-        topics_result = db.table("topics").select("*").gte(
-            "time_window_start", since_topic.isoformat()
-        ).order("created_at", desc=True).limit(5).execute()
-        
-        topics = []
-        if topics_result.data:
-            for t in topics_result.data:
-                # Get document count for each topic
-                count_res = db.table("topic_memberships").select("count", count="exact").eq("topic_id", t["topic_id"]).execute()
-                
-                # Check for alert to get surge score if available
-                alert_res = db.table("alerts").select("surge_score").eq("topic_id", t["topic_id"]).execute()
-                surge_score = alert_res.data[0]["surge_score"] if alert_res.data else 0.0
-
-                topics.append(TopicResponse(
-                    topic_id=t["topic_id"],
-                    topic_name=t.get("topic_name") or "New Topic",
-                    topic_summary=t.get("topic_summary"),
-                    time_window_start=t["time_window_start"],
-                    time_window_end=t["time_window_end"],
-                    document_count=(count_res.count if hasattr(count_res, 'count') else 0) or 0,
-                    surge_score=surge_score,
-                    representative_documents=[]
-                ))
-        
-        # Collection status per source (defined in FSC_RSS_FIDS)
-        sources = []
-        # Get actual source records to get their UUIDs (국내 = FSC 등)
-        sources_records = db.table("sources").select("*").in_("fid", settings.FSC_RSS_FIDS).execute()
-        domestic_source_ids = [s["source_id"] for s in (sources_records.data or [])]
-
-        # 국제 소스(FSB, BIS 등) — fid가 FSC_RSS_FIDS에 없으면 국제로 간주
-        all_sources = db.table("sources").select("source_id, fid").execute()
-        international_source_ids = [
-            s["source_id"] for s in (all_sources.data or [])
-            if s.get("fid") and s["fid"] not in settings.FSC_RSS_FIDS
-        ]
-
-        # Pre-calculate timestamps
         now_utc = datetime.now(timezone.utc)
+        since_topic_iso = (now_utc - timedelta(days=7)).isoformat()
         since_24h = (now_utc - timedelta(hours=24)).isoformat()
         since_7d = (now_utc - timedelta(days=7)).isoformat()
 
-        # 이번 주 신규: 국내/국제 구분 (7일 이내 ingested_at)
-        documents_this_week = collection_stats.get("documents_7d") or 0
-        domestic_this_week = 0
-        if domestic_source_ids:
-            r = db.table("documents").select("*", count="exact").in_(
-                "source_id", domestic_source_ids
-            ).gte("ingested_at", since_7d).execute()
-            domestic_this_week = (r.count if hasattr(r, "count") else 0) or 0
-        international_this_week = 0
-        if international_source_ids:
-            r = db.table("documents").select("*", count="exact").in_(
-                "source_id", international_source_ids
-            ).gte("ingested_at", since_7d).execute()
-            international_this_week = (r.count if hasattr(r, "count") else 0) or 0
+        def _alerts_open():
+            return db.table("alerts").select("*", count="exact").eq("status", "open").execute()
 
-        for source_rec in (sources_records.data or []):
+        def _alerts_high():
+            return (
+                db.table("alerts")
+                .select("*", count="exact")
+                .eq("status", "open")
+                .eq("severity", "high")
+                .execute()
+            )
+
+        def _topics_recent():
+            return (
+                db.table("topics")
+                .select("*")
+                .gte("time_window_start", since_topic_iso)
+                .order("created_at", desc=True)
+                .limit(5)
+                .execute()
+            )
+
+        def _sources_fsc():
+            return db.table("sources").select("*").in_("fid", settings.FSC_RSS_FIDS).execute()
+
+        def _sources_all_ids():
+            return db.table("sources").select("source_id, fid").execute()
+
+        (
+            collection_stats,
+            alerts_result,
+            high_severity_res,
+            topics_result,
+            sources_records,
+            all_sources,
+        ) = await asyncio.gather(
+            rss_collector.get_collection_stats(),
+            asyncio.to_thread(_alerts_open),
+            asyncio.to_thread(_alerts_high),
+            asyncio.to_thread(_topics_recent),
+            asyncio.to_thread(_sources_fsc),
+            asyncio.to_thread(_sources_all_ids),
+        )
+
+        active_alerts_count = (alerts_result.count if hasattr(alerts_result, "count") else 0) or 0
+        high_severity_count = (high_severity_res.count if hasattr(high_severity_res, "count") else 0) or 0
+
+        async def _enrich_topic(t: dict) -> TopicResponse:
+            tid = t["topic_id"]
+
+            def _run():
+                count_res = (
+                    db.table("topic_memberships")
+                    .select("count", count="exact")
+                    .eq("topic_id", tid)
+                    .execute()
+                )
+                alert_res = db.table("alerts").select("surge_score").eq("topic_id", tid).execute()
+                return count_res, alert_res
+
+            count_res, alert_res = await asyncio.to_thread(_run)
+            surge_score = alert_res.data[0]["surge_score"] if alert_res.data else 0.0
+            return TopicResponse(
+                topic_id=tid,
+                topic_name=t.get("topic_name") or "New Topic",
+                topic_summary=t.get("topic_summary"),
+                time_window_start=t["time_window_start"],
+                time_window_end=t["time_window_end"],
+                document_count=(count_res.count if hasattr(count_res, "count") else 0) or 0,
+                surge_score=surge_score,
+                representative_documents=[],
+            )
+
+        topics: List[TopicResponse] = []
+        if topics_result.data:
+            topics = await asyncio.gather(*[_enrich_topic(t) for t in topics_result.data])
+
+        domestic_source_ids = [s["source_id"] for s in (sources_records.data or [])]
+        international_source_ids = [
+            s["source_id"]
+            for s in (all_sources.data or [])
+            if s.get("fid") and s["fid"] not in settings.FSC_RSS_FIDS
+        ]
+
+        documents_this_week = collection_stats.get("documents_7d") or 0
+
+        def _domestic_week_count():
+            if not domestic_source_ids:
+                return 0
+            r = (
+                db.table("documents")
+                .select("*", count="exact")
+                .in_("source_id", domestic_source_ids)
+                .gte("ingested_at", since_7d)
+                .execute()
+            )
+            return (r.count if hasattr(r, "count") else 0) or 0
+
+        def _international_week_count():
+            if not international_source_ids:
+                return 0
+            r = (
+                db.table("documents")
+                .select("*", count="exact")
+                .in_("source_id", international_source_ids)
+                .gte("ingested_at", since_7d)
+                .execute()
+            )
+            return (r.count if hasattr(r, "count") else 0) or 0
+
+        domestic_this_week, international_this_week = await asyncio.gather(
+            asyncio.to_thread(_domestic_week_count),
+            asyncio.to_thread(_international_week_count),
+        )
+
+        async def _source_status(source_rec: dict) -> CollectionStatus:
             source_id = source_rec["source_id"]
             fid = source_rec.get("fid")
-            
-            # Count from DB
-            source_docs = db.table("documents").select("*", count="exact").eq(
-                "source_id", source_id
-            ).execute()
-            
-            recent = db.table("documents").select("*", count="exact").eq(
-                "source_id", source_id
-            ).gte("ingested_at", since_24h).execute()
-            
-            # Calculate success rate
-            source_week = db.table("documents").select("status").eq(
-                "source_id", source_id
-            ).gte("ingested_at", since_7d).execute()
-            
-            total_week = len(source_week.data) if source_week.data else 0
-            failed_week = sum(1 for d in source_week.data if d.get("status") == "failed") if source_week.data else 0
-            success_rate = (total_week - failed_week) / total_week * 100 if total_week > 0 else 100.0
 
-            sources.append(CollectionStatus(
+            def _run():
+                source_docs = (
+                    db.table("documents").select("*", count="exact").eq("source_id", source_id).execute()
+                )
+                recent = (
+                    db.table("documents")
+                    .select("*", count="exact")
+                    .eq("source_id", source_id)
+                    .gte("ingested_at", since_24h)
+                    .execute()
+                )
+                source_week = (
+                    db.table("documents")
+                    .select("status")
+                    .eq("source_id", source_id)
+                    .gte("ingested_at", since_7d)
+                    .execute()
+                )
+                return source_docs, recent, source_week
+
+            source_docs, recent, source_week = await asyncio.to_thread(_run)
+            total_week = len(source_week.data) if source_week.data else 0
+            failed_week = (
+                sum(1 for d in source_week.data if d.get("status") == "failed") if source_week.data else 0
+            )
+            success_rate = (total_week - failed_week) / total_week * 100 if total_week > 0 else 100.0
+            return CollectionStatus(
                 source_id=fid,
                 source_name=source_rec.get("name") or f"Source {fid}",
                 last_fetch=now_utc,
-                new_documents_24h=(recent.count if hasattr(recent, 'count') else 0) or 0,
-                total_documents=(source_docs.count if hasattr(source_docs, 'count') else 0) or 0,
+                new_documents_24h=(recent.count if hasattr(recent, "count") else 0) or 0,
+                total_documents=(source_docs.count if hasattr(source_docs, "count") else 0) or 0,
                 success_rate_7d=success_rate,
-                parsing_failures_24h=0
-            ))
-        
+                parsing_failures_24h=0,
+            )
+
+        sources: List[CollectionStatus] = []
+        if sources_records.data:
+            sources = await asyncio.gather(*[_source_status(s) for s in sources_records.data])
+
         return DashboardStats(
             total_documents=collection_stats["total_documents"] or 0,
             documents_24h=collection_stats["documents_24h"] or 0,

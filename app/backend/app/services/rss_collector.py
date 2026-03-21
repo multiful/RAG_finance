@@ -1,4 +1,5 @@
 """RSS feed collector service."""
+import asyncio
 import feedparser
 import hashlib
 from datetime import datetime, timedelta, timezone
@@ -274,37 +275,43 @@ class RSSCollector:
     
     async def get_collection_stats(self) -> Dict[str, Any]:
         """Get collection statistics. 총 문서 수는 limit 없이 전체 테이블 기준입니다."""
-        # Total documents (전체 행 수, 제한 없음)
-        total = self.db.table("documents").select("*", count="exact").execute()
-        
-        # Last 24 hours
         since_24h = datetime.now(timezone.utc) - timedelta(hours=24)
-        recent_24h = self.db.table("documents").select("*", count="exact").gte(
-            "ingested_at", since_24h.isoformat()
-        ).execute()
-
-        # Last 7 days (수집/저장된 건수 — 추가 여부 확인용)
         since_7d = datetime.now(timezone.utc) - timedelta(days=7)
-        recent_7d = self.db.table("documents").select("*", count="exact").gte(
-            "ingested_at", since_7d.isoformat()
-        ).execute()
-        week_data = self.db.table("documents").select("status").gte(
-            "ingested_at", since_7d.isoformat()
-        ).execute()
+        t24 = since_24h.isoformat()
+        t7 = since_7d.isoformat()
+        db = self.db
+
+        def q_total():
+            return db.table("documents").select("*", count="exact").execute()
+
+        def q_recent_24h():
+            return db.table("documents").select("*", count="exact").gte("ingested_at", t24).execute()
+
+        def q_recent_7d_count():
+            return db.table("documents").select("*", count="exact").gte("ingested_at", t7).execute()
+
+        def q_week_status():
+            return db.table("documents").select("status").gte("ingested_at", t7).execute()
+
+        def q_failures_24h():
+            return db.table("documents").select("*", count="exact").eq("status", "failed").gte("ingested_at", t24).execute()
+
+        total, recent_24h, recent_7d, week_data, failures_24h = await asyncio.gather(
+            asyncio.to_thread(q_total),
+            asyncio.to_thread(q_recent_24h),
+            asyncio.to_thread(q_recent_7d_count),
+            asyncio.to_thread(q_week_status),
+            asyncio.to_thread(q_failures_24h),
+        )
 
         total_week = len(week_data.data) if week_data.data else 0
         failed_week = sum(1 for d in week_data.data if d.get("status") == "failed") if week_data.data else 0
         success_rate = (total_week - failed_week) / total_week * 100 if total_week > 0 else 100
 
-        # Parsing failures in last 24h
-        failures_24h = self.db.table("documents").select("*", count="exact").eq(
-            "status", "failed"
-        ).gte("ingested_at", since_24h.isoformat()).execute()
-
         return {
-            "total_documents": (total.count if hasattr(total, 'count') else 0) or 0,
-            "documents_24h": (recent_24h.count if hasattr(recent_24h, 'count') else 0) or 0,
-            "documents_7d": (recent_7d.count if hasattr(recent_7d, 'count') else 0) or 0,
+            "total_documents": (total.count if hasattr(total, "count") else 0) or 0,
+            "documents_24h": (recent_24h.count if hasattr(recent_24h, "count") else 0) or 0,
+            "documents_7d": (recent_7d.count if hasattr(recent_7d, "count") else 0) or 0,
             "success_rate_7d": float(success_rate),
-            "parsing_failures_24h": (failures_24h.count if hasattr(failures_24h, 'count') else 0) or 0,
+            "parsing_failures_24h": (failures_24h.count if hasattr(failures_24h, "count") else 0) or 0,
         }

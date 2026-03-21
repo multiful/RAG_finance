@@ -18,7 +18,7 @@ import json
 import re
 
 from app.core.config import settings
-from app.services.rag_service import RAGService
+from app.services.rag_service import RAGService, hybrid_weights_for_query
 from app.services.industry_classifier import IndustryClassifier
 from app.services.checklist_service import ChecklistService
 
@@ -193,12 +193,13 @@ async def adaptive_retrieval_node(state: AgentState) -> AgentState:
     try:
         async def _retrieve_one(sq: str):
             emb = await rag_service._get_embedding(sq)
+            vw, kw = hybrid_weights_for_query(sq)
             return await rag_service.vector_store.hybrid_search(
                 query=sq,
                 query_embedding=emb,
                 top_k=settings.TOP_K_RETRIEVAL,
-                vector_weight=getattr(settings, "HYBRID_VECTOR_WEIGHT", 0.7),
-                keyword_weight=getattr(settings, "HYBRID_KEYWORD_WEIGHT", 0.3),
+                vector_weight=vw,
+                keyword_weight=kw,
                 similarity_threshold=getattr(settings, "HYBRID_SIMILARITY_THRESHOLD", 0.3),
                 filters={},
             )
