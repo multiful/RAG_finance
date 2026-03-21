@@ -1,8 +1,11 @@
 """Main FastAPI application with Phase A/B Architecture."""
 import asyncio
 import logging
-from fastapi import FastAPI, Response, Request
+import re
+from fastapi import FastAPI, Response, Request, HTTPException
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from contextlib import asynccontextmanager
 from datetime import datetime
 
@@ -100,6 +103,30 @@ app = FastAPI(
 )
 
 
+# --- CORS 허용 목록 (미들웨어 등록 전에 계산: health·예외 핸들러와 동일 규칙) ---
+_cors_origins = list(getattr(settings, "CORS_DEFAULT_ORIGINS", []))
+if settings.CORS_ORIGINS:
+    for o in settings.CORS_ORIGINS.split(","):
+        o = o.strip()
+        if o and o not in _cors_origins:
+            _cors_origins.append(o)
+_cors_vercel_regex = r"https://([a-z0-9][a-z0-9-]*\.)+vercel\.app"
+_cors_vercel_rx = re.compile(_cors_vercel_regex)
+
+
+def cors_headers_for_request(request: Request) -> dict:
+    """Starlette ExceptionMiddleware는 CORSMiddleware 바깥이라, 예외 응답에 ACAO가 없으면 브라우저가 CORS 오류로 표시함."""
+    origin = request.headers.get("origin")
+    if not origin:
+        return {}
+    if origin in _cors_origins:
+        return {"Access-Control-Allow-Origin": origin, "Vary": "Origin"}
+    if _cors_vercel_rx.fullmatch(origin):
+        return {"Access-Control-Allow-Origin": origin, "Vary": "Origin"}
+    return {}
+
+
+# insert(0) 순서: 아래에서 먼저 등록한 미들웨어가 스택에서 안쪽 → CORS는 반드시 마지막에 add_middleware
 @app.middleware("http")
 async def health_head_compat_middleware(request: Request, call_next):
     """
@@ -108,29 +135,23 @@ async def health_head_compat_middleware(request: Request, call_next):
     라우터 진입 전에 특별 처리합니다.
     """
     if request.method == "HEAD" and request.url.path.rstrip("/") == "/health":
-        return Response(status_code=200)
+        return Response(status_code=200, headers=cors_headers_for_request(request))
     return await call_next(request)
 
-# Rate limit (QA·시뮬레이션 등)
-app.add_middleware(RateLimitMiddleware)
 
-# CORS (CORS_ORIGINS 환경 변수: 쉼표 구분. 비우면 config CORS_DEFAULT_ORIGINS 사용. 설정 시에도 기본 origin 목록은 유지)
-_cors_origins = list(getattr(settings, "CORS_DEFAULT_ORIGINS", []))
-if settings.CORS_ORIGINS:
-    for o in settings.CORS_ORIGINS.split(","):
-        o = o.strip()
-        if o and o not in _cors_origins:
-            _cors_origins.append(o)
-# Vercel 프로덕션·프리뷰(*.vercel.app) 전부 허용 — 목록만으로는 배포 URL마다 누락되기 쉬움
-_cors_vercel_regex = r"https://([a-zA-Z0-9-]+\.)*vercel\.app"
+app.add_middleware(RateLimitMiddleware)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_cors_origins,
     allow_origin_regex=_cors_vercel_regex,
-    # SPA가 쿠키 기반 인증을 쓰지 않으면 False가 브라우저 CORS 처리에 유리함
     allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
+)
+
+print(
+    f"[INFO] CORS: explicit_origins={len(_cors_origins)}, "
+    f"vercel_regex=on, sample_match=https://rag-finance-rho.vercel.app"
 )
 
 # Include routers
@@ -262,3 +283,34 @@ async def health_check():
 async def health_check_head():
     """UptimeRobot 등 HEAD /health 모니터링 지원 (405 방지)."""
     return Response(status_code=200)
+
+
+# ---------------------------------------------------------------------------
+# 예외 응답에도 ACAO 부여 (ExceptionMiddleware가 CORS 바깥에 있어서 기본 500은 CORS 오류로 보임)
+# ---------------------------------------------------------------------------
+@app.exception_handler(HTTPException)
+async def http_exception_with_cors(request: Request, exc: HTTPException):
+    return JSONResponse(
+        {"detail": exc.detail},
+        status_code=exc.status_code,
+        headers=cors_headers_for_request(request),
+    )
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_with_cors(request: Request, exc: RequestValidationError):
+    return JSONResponse(
+        {"detail": exc.errors()},
+        status_code=422,
+        headers=cors_headers_for_request(request),
+    )
+
+
+@app.exception_handler(Exception)
+async def unhandled_exception_with_cors(request: Request, exc: Exception):
+    logging.exception("Unhandled error: %s", exc)
+    return JSONResponse(
+        {"detail": "Internal server error"},
+        status_code=500,
+        headers=cors_headers_for_request(request),
+    )
