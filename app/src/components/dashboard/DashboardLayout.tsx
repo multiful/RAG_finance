@@ -13,7 +13,6 @@ import {
   RefreshCw,
   LayoutDashboard,
   Sparkles,
-  LineChart,
   LogOut,
   Loader2,
   CheckCircle2,
@@ -73,8 +72,8 @@ export default function DashboardLayout({
       >
         <div className="h-[72px] flex items-center px-5 border-b border-[#e9e9e9]">
           <div className="flex items-center gap-3 overflow-hidden">
-            <div className="w-10 h-10 rounded-2xl bg-slate-900 flex items-center justify-center flex-shrink-0">
-              <LineChart className="w-5 h-5 text-white" />
+            <div className="w-10 h-10 rounded-2xl bg-slate-900 flex items-center justify-center flex-shrink-0 p-2">
+              <img src="/logo.svg" alt="" className="w-full h-full [filter:invert(1)_brightness(2)]" />
             </div>
             {sidebarOpen && (
               <div className="whitespace-nowrap min-w-0">

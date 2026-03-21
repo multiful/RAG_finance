@@ -8,6 +8,7 @@ Provides quantitative metrics for:
 - Faithfulness
 """
 import json
+import math
 from typing import List, Dict, Any, Optional
 from dataclasses import dataclass
 import asyncio
@@ -212,23 +213,121 @@ class RagasEvaluator:
                 dataset,
                 metrics=metrics_batch,
                 llm=self.llm,
-                embeddings=self.embeddings
+                embeddings=self.embeddings,
             )
-            # ragas 0.1.x: dict-like 또는 to_pandas()
-            if hasattr(ragas_result, "to_pandas"):
+            n = len(test_cases)
+
+            def _to_float(x) -> float:
+                """Ragas Score 객체(.value/.score), dict, 또는 스칼라를 float으로 변환."""
+                if x is None:
+                    return 0.0
+                if hasattr(x, "value"):
+                    return _to_float(x.value)
+                if hasattr(x, "score"):
+                    return _to_float(x.score)
+                if isinstance(x, dict):
+                    v = x.get("score") or x.get("value")
+                    return _to_float(v) if v is not None else 0.0
+                try:
+                    f = float(x)
+                    return 0.0 if math.isnan(f) else f
+                except (TypeError, ValueError):
+                    return 0.0
+
+            def _safe_float_list(val, length: int):
+                if val is None:
+                    return [0.0] * length
+                if isinstance(val, list):
+                    out = [_to_float(x) for x in val[:length]]
+                    return out + [0.0] * (length - len(out))
+                return [0.0] * length
+
+            def _col_from_df(df, possible_names):
+                for name in possible_names:
+                    if name in df.columns:
+                        raw = df[name].tolist()
+                        return _safe_float_list(raw, n)
+                return [0.0] * n
+
+            def _col_from_scores(scores_list, possible_names):
+                out = []
+                for row in scores_list:
+                    val = None
+                    for key in possible_names:
+                        if key in row:
+                            val = row[key]
+                            break
+                    if val is None:
+                        for k in row:
+                            if any(p in str(k).lower() for p in possible_names):
+                                val = row[k]
+                                break
+                    try:
+                        f = float(val) if val is not None else 0.0
+                        out.append(0.0 if math.isnan(f) else f)
+                    except (TypeError, ValueError):
+                        out.append(0.0)
+                return out[:n] if len(out) >= n else out + [0.0] * (n - len(out))
+
+            # 신규 Ragas: EvaluationResult with .scores (list of dicts) or ._scores_dict (dict of lists)
+            if hasattr(ragas_result, "_scores_dict") and getattr(ragas_result, "_scores_dict", None):
+                sd = ragas_result._scores_dict
+                def _from_sd(keys):
+                    for k in keys:
+                        if k in sd:
+                            return _safe_float_list(sd[k], n)
+                    for col in sd:
+                        if any(p in col.lower() for p in keys):
+                            return _safe_float_list(sd[col], n)
+                    return [0.0] * n
+                faith_col = _from_sd(["faithfulness"])
+                rel_col = _from_sd(["answer_relevancy", "answer_relevance"])
+                prec_col = _from_sd(["context_precision", "context_precision_with_reference", "llm_context_precision_with_reference"])
+                rec_col = _from_sd(["context_recall"])
+            elif hasattr(ragas_result, "scores") and ragas_result.scores:
+                scores_list = ragas_result.scores
+                faith_col = _col_from_scores(scores_list, ["faithfulness"])
+                rel_col = _col_from_scores(scores_list, ["answer_relevancy", "answer_relevance"])
+                prec_col = _col_from_scores(scores_list, ["context_precision", "context_precision_with_reference", "llm_context_precision_with_reference"])
+                rec_col = _col_from_scores(scores_list, ["context_recall"])
+            elif hasattr(ragas_result, "to_pandas"):
                 df = ragas_result.to_pandas()
-                n = len(test_cases)
-                def col(name):
-                    return df[name].tolist() if name in df.columns else [0.0] * n
-                faith_col = col("faithfulness")
-                rel_col = col("answer_relevancy")
-                prec_col = col("context_precision")
-                rec_col = col("context_recall")
+                # DataFrame에서 데이터 컬럼이 아닌 점수 컬럼만 사용 (컬럼명 다양성 대응)
+                data_cols = {"question", "answer", "contexts", "ground_truth", "user_input", "response", "retrieved_contexts", "reference"}
+                score_cols = [c for c in df.columns if c not in data_cols]
+                def _col_by_substring(possible_substrings):
+                    for sub in possible_substrings:
+                        for c in score_cols:
+                            if sub.lower() in c.lower():
+                                return _safe_float_list(df[c].tolist(), n)
+                    return _col_from_df(df, possible_substrings)
+                faith_col = _col_by_substring(["faithfulness"])
+                rel_col = _col_by_substring(["answer_relevancy", "answer_relevance"])
+                prec_col = _col_by_substring(["context_precision"])
+                rec_col = _col_by_substring(["context_recall"])
             else:
-                faith_col = ragas_result.get("faithfulness") or [0] * len(test_cases)
-                rel_col = ragas_result.get("answer_relevancy") or [0] * len(test_cases)
-                prec_col = ragas_result.get("context_precision") or [0] * len(test_cases)
-                rec_col = ragas_result.get("context_recall") or [0] * len(test_cases)
+                faith_col = _safe_float_list(ragas_result.get("faithfulness"), n)
+                rel_col = _safe_float_list(ragas_result.get("answer_relevancy") or ragas_result.get("answer_relevance"), n)
+                prec_col = _safe_float_list(ragas_result.get("context_precision"), n)
+                rec_col = _safe_float_list(ragas_result.get("context_recall"), n)
+
+            # 지표가 전부 0이면 to_pandas()에서 재추출 (일부 Ragas 버전은 DF에만 실제 값 존재)
+            if (sum(faith_col) + sum(rel_col) + sum(prec_col) + sum(rec_col)) == 0 and hasattr(ragas_result, "to_pandas"):
+                try:
+                    _df = ragas_result.to_pandas()
+                    if "faithfulness" in _df.columns:
+                        faith_col = _safe_float_list(_df["faithfulness"].tolist(), n)
+                    if "answer_relevancy" in _df.columns:
+                        rel_col = _safe_float_list(_df["answer_relevancy"].tolist(), n)
+                    elif "answer_relevance" in _df.columns:
+                        rel_col = _safe_float_list(_df["answer_relevance"].tolist(), n)
+                    if "context_precision" in _df.columns:
+                        prec_col = _safe_float_list(_df["context_precision"].tolist(), n)
+                    if "context_recall" in _df.columns:
+                        rec_col = _safe_float_list(_df["context_recall"].tolist(), n)
+                except Exception as _e:
+                    print("[DEBUG] to_pandas() fallback failed:", _e)
+
             # Convert to EvaluationResult objects
             for i, case in enumerate(test_cases):
                 g = faith_col[i] if i < len(faith_col) else 0
@@ -352,21 +451,18 @@ class RagasEvaluator:
                 run_id = run_result.data[0]["run_id"]
                 
                 # Insert results
+                # eval_results 스키마(dashboard/governance 기준): run_id, metric_groundedness, metric_citation_precision, metric_hallucination_rate
                 for result in summary.results:
                     result_data = {
                         "run_id": run_id,
-                        "question_id": result.question_id,
                         "metric_groundedness": result.groundedness,
-                        "metric_hallucination": 1 - result.faithfulness,  # Hallucination is inverse of faithfulness
-                        "metric_industry_f1": result.overall_score,
-                        "metric_checklist_missing": 0.0,  # Not applicable for QA
-                        "notes": json.dumps({
-                            "answer_relevancy": result.answer_relevancy,
-                            "context_precision": result.context_precision,
-                            "context_recall": result.context_recall
-                        })
+                        "metric_citation_precision": result.context_precision,
+                        "metric_hallucination_rate": 1.0 - result.faithfulness,
                     }
-                    self.db.table("eval_results").insert(result_data).execute()
+                    try:
+                        self.db.table("eval_results").insert(result_data).execute()
+                    except Exception as ins_err:
+                        print(f"Insert warning (schema may differ): {ins_err}")
         
         except Exception as e:
             print(f"Error saving evaluation: {e}")
