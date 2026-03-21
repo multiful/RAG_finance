@@ -121,10 +121,14 @@ if settings.CORS_ORIGINS:
         o = o.strip()
         if o and o not in _cors_origins:
             _cors_origins.append(o)
+# Vercel 프로덕션·프리뷰(*.vercel.app) 전부 허용 — 목록만으로는 배포 URL마다 누락되기 쉬움
+_cors_vercel_regex = r"https://([a-zA-Z0-9-]+\.)*vercel\.app"
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_cors_origins,
-    allow_credentials=True,
+    allow_origin_regex=_cors_vercel_regex,
+    # SPA가 쿠키 기반 인증을 쓰지 않으면 False가 브라우저 CORS 처리에 유리함
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )

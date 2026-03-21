@@ -103,7 +103,8 @@ class Settings(BaseSettings):
     # Notifications
     SLACK_WEBHOOK_URL: str = ""
 
-    # CORS (프로덕션 도메인. 쉼표 구분 문자열, 비우면 CORS_DEFAULT_ORIGINS 사용)
+    # CORS (프론트 오리진만. 백엔드 URL이 아님. 쉼표 구분, 비우면 CORS_DEFAULT_ORIGINS + 아래 목록)
+    # Railway 백엔드는 *.railway.internal 이 아니라 브라우저가 열 수 있는 Vercel 도메인을 허용해야 함.
     CORS_ORIGINS: str = ""
     CORS_DEFAULT_ORIGINS: List[str] = [
         "http://localhost:5173", "http://localhost:5174", "http://localhost:5175",

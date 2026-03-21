@@ -113,15 +113,25 @@ npm run dev
 
 ```ini
 # app/.env 또는 Vercel 환경 변수
+# Render (기존)
 VITE_API_BASE_URL=https://rag-finance-d2ho.onrender.com/api/v1
+
+# Railway 백엔드를 쓸 때: 대시보드의 공개 도메인(HTTPS) + /api/v1
+# 예: VITE_API_BASE_URL=https://ragfinance-production-xxxx.up.railway.app/api/v1
+# ※ ragfinance.railway.internal 같은 주소는 내부망 전용이라 Vercel·브라우저에서 쓰면 안 됩니다.
 ```
 
 ## 배포 정보
 
-- **백엔드**: Render Web Service  
-  - 기본 URL: `https://rag-finance-d2ho.onrender.com`
-  - 헬스 체크: `GET /health`
-- **프론트엔드**: Vercel 등에서 배포 시 `VITE_API_BASE_URL` 을 위 Render 주소로 설정
+- **백엔드 (Render, 기존 유지)**  
+  - URL: `https://rag-finance-d2ho.onrender.com`  
+  - 헬스: `GET /health`
+- **백엔드 (Railway, 선택)**  
+  - Vercel·프론트에 넣을 값은 **Networking → Public Networking** 에 나오는 `https://…up.railway.app` 형태의 주소입니다.  
+  - `*.railway.internal` 은 같은 Railway 프로젝트 안의 다른 서비스끼리 통신할 때만 씁니다.
+- **프론트엔드 (Vercel)**  
+  - `VITE_API_BASE_URL` 을 쓸 백엔드(Render 또는 Railway 공개 URL)의 `/api/v1` 로 설정합니다.  
+  - Railway를 쓰면 해당 백엔드의 Railway **Variables**에 `CORS_ORIGINS` 로 Vercel 도메인(쉼표 구분)을 추가해 CORS를 맞춥니다.
 
 ## 기본 확인 방법
 
