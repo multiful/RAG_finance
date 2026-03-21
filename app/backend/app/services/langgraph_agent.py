@@ -4,6 +4,7 @@ LangGraph Multi-Agent System - 복잡한 규제 질문 처리
 """
 from typing import TypedDict, Annotated, Sequence, List, Dict, Any, Optional
 from datetime import datetime, timezone
+import asyncio
 import operator
 import json
 import logging
@@ -141,21 +142,28 @@ class RegulationAgent:
         
         all_contexts = []
         seen_ids = set()
-        
-        for query in search_queries[:3]:
+
+        async def _rpc_one(query: str):
+            query_embedding = await self.embeddings.aembed_query(query)
+            return self.db.rpc(
+                "match_chunks",
+                {
+                    "query_embedding": query_embedding,
+                    "match_threshold": 0.5,
+                    "match_count": 5,
+                },
+            ).execute()
+
+        rpc_results = await asyncio.gather(
+            *[_rpc_one(q) for q in search_queries[:3]],
+            return_exceptions=True,
+        )
+        for res in rpc_results:
+            if isinstance(res, Exception):
+                logging.error("Retriever RPC error: %s", res)
+                continue
             try:
-                query_embedding = await self.embeddings.aembed_query(query)
-                
-                result = self.db.rpc(
-                    "match_chunks",
-                    {
-                        "query_embedding": query_embedding,
-                        "match_threshold": 0.5,
-                        "match_count": 5
-                    }
-                ).execute()
-                
-                for chunk in (result.data or []):
+                for chunk in (res.data or []):
                     chunk_id = chunk.get("chunk_id")
                     if chunk_id and chunk_id not in seen_ids:
                         seen_ids.add(chunk_id)
@@ -166,10 +174,10 @@ class RegulationAgent:
                             "chunk_text": chunk.get("chunk_text", ""),
                             "similarity": chunk.get("similarity", 0),
                             "published_at": chunk.get("published_at", ""),
-                            "url": chunk.get("url", "")
+                            "url": chunk.get("url", ""),
                         })
             except Exception as e:
-                logging.error(f"Retriever error for query '{query}': {e}")
+                logging.error(f"Retriever merge error: {e}")
         
         all_contexts.sort(key=lambda x: x.get("similarity", 0), reverse=True)
         top_contexts = all_contexts[:8]

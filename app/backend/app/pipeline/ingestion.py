@@ -11,7 +11,6 @@ import json
 
 from app.core.config import settings
 from app.core.database import get_db
-from app.parsers.llama_parser import parse_and_chunk_document
 from langchain_openai import OpenAIEmbeddings
 
 
@@ -233,7 +232,7 @@ class LlamaDocumentParser:
                         file_type = file.get("file_type", "pdf")
                         
                         if file_path:
-                            # LlamaParse로 파싱
+                            from app.parsers.llama_parser import parse_and_chunk_document
                             chunks = await parse_and_chunk_document(file_path, file_type)
                             all_chunks.extend(chunks)
                 else:

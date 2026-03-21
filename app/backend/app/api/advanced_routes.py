@@ -7,8 +7,6 @@ import tempfile
 import os
 
 from app.agents.policy_agent import run_policy_agent
-from app.parsers.llama_parser import parse_and_chunk_document
-from app.evaluation.ragas_evaluator import get_evaluator, calculate_groundedness, calculate_hallucination_rate
 from app.observability.langsmith_tracer import get_tracer, trace_function
 from app.services.vector_store import get_vector_store
 from app.services.rag_service import RAGService
@@ -19,8 +17,18 @@ router = APIRouter()
 # Initialize services
 vector_store = get_vector_store()
 rag_service = RAGService()
-evaluator = get_evaluator()
 tracer = get_tracer()
+
+_ragas_eval_singleton = None
+
+
+def _get_rag_evaluator():
+    """Ragas 평가기 — ragas 패키지는 호출 시에만 로드 (슬림 프로덕션)."""
+    global _ragas_eval_singleton
+    if _ragas_eval_singleton is None:
+        from app.evaluation.ragas_evaluator import get_evaluator
+        _ragas_eval_singleton = get_evaluator()
+    return _ragas_eval_singleton
 
 
 # ============ LangGraph Agent Routes ============
@@ -118,7 +126,7 @@ async def parse_document(
             tmp_path = tmp.name
         
         try:
-            # Parse document
+            from app.parsers.llama_parser import parse_and_chunk_document
             chunks = await parse_and_chunk_document(tmp_path, file_type)
             
             # Combine all text
@@ -177,23 +185,20 @@ async def _index_chunks(document_id: str, chunks: List[dict]):
     from app.services.rag_service import RAGService
     
     rag = RAGService()
-    
-    # Generate embeddings for each chunk
-    chunk_ids = []
-    embeddings = []
-    
+    chunk_ids: List[str] = []
+    texts: List[str] = []
     for chunk in chunks:
         chunk_id = chunk.get("chunk_id")
         text = chunk.get("chunk_text", "")
-        
         if chunk_id and text:
-            embedding = await rag._get_embedding(text)
             chunk_ids.append(chunk_id)
-            embeddings.append(embedding)
-    
-    # Store embeddings
-    if chunk_ids and embeddings:
-        await vector_store.add_embeddings(chunk_ids, embeddings)
+            texts.append(text)
+    if not chunk_ids:
+        return
+    embeddings = await rag._get_embeddings_batch(texts)
+    if len(embeddings) != len(chunk_ids):
+        return
+    await vector_store.add_embeddings(chunk_ids, embeddings)
 
 
 # ============ Ragas Evaluation Routes ============
@@ -230,7 +235,7 @@ async def evaluate_single(data: dict):
             raise HTTPException(status_code=400, detail="Question and answer are required")
         
         # Run evaluation
-        scores = await evaluator.evaluate_single(
+        scores = await _get_rag_evaluator().evaluate_single(
             question=question,
             answer=answer,
             contexts=contexts,
@@ -279,7 +284,7 @@ async def evaluate_batch(data: dict):
             raise HTTPException(status_code=400, detail="No test cases provided")
         
         # Run batch evaluation
-        summary = await evaluator.evaluate_batch(test_cases)
+        summary = await _get_rag_evaluator().evaluate_batch(test_cases)
         
         return {
             "run_id": summary.run_id,
@@ -326,7 +331,7 @@ async def compare_systems(data: dict):
         if not test_cases or not variants:
             raise HTTPException(status_code=400, detail="Test cases and variants required")
         
-        results = await evaluator.compare_systems(test_cases, variants)
+        results = await _get_rag_evaluator().compare_systems(test_cases, variants)
         
         return {
             variant: {
@@ -344,7 +349,7 @@ async def compare_systems(data: dict):
 async def get_evaluation_metrics(run_id: str):
     """Get detailed metrics for an evaluation run."""
     try:
-        db = evaluator.db
+        db = _get_rag_evaluator().db
         
         # Get run info
         run = db.table("eval_runs").select("*").eq("run_id", run_id).execute()
@@ -577,8 +582,11 @@ async def rerank_results(data: dict):
             for r in results_data
         ]
         
-        # Rerank
-        reranked = await vector_store.rerank(query, results, top_k)
+        if not settings.ENABLE_RERANKING:
+            results.sort(key=lambda x: x.similarity, reverse=True)
+            reranked = results[:top_k]
+        else:
+            reranked = await vector_store.rerank(query, results, top_k)
         
         return {
             "query": query,

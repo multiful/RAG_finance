@@ -10,14 +10,6 @@ import json
 import logging
 
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
-from ragas import evaluate
-from ragas.metrics import (
-    faithfulness,
-    answer_relevancy,
-    context_precision,
-    context_recall,
-)
-from datasets import Dataset
 
 from app.core.config import settings
 from app.core.database import get_db
@@ -188,6 +180,15 @@ class RAGASEvaluator:
                 "rag_groundedness": response["groundedness_score"],
                 "context_count": len(response["contexts"])
             })
+        
+        from datasets import Dataset
+        from ragas import evaluate
+        from ragas.metrics import (
+            faithfulness,
+            answer_relevancy,
+            context_precision,
+            context_recall,
+        )
         
         dataset = Dataset.from_dict(evaluation_data)
         

@@ -6,6 +6,7 @@ Features:
 - Reranking
 - Batch operations
 """
+import asyncio
 import json
 import re
 from typing import List, Dict, Any, Optional, Tuple
@@ -14,6 +15,20 @@ import numpy as np
 
 from app.core.config import settings
 from app.core.database import get_db
+
+# Cross-Encoder는 로딩 비용이 크므로 프로세스당 1회 캐시
+_cross_encoder = None
+_cross_encoder_model_id: Optional[str] = None
+
+
+def _get_cached_cross_encoder(model_name: str):
+    global _cross_encoder, _cross_encoder_model_id
+    if _cross_encoder is not None and _cross_encoder_model_id == model_name:
+        return _cross_encoder
+    from sentence_transformers import CrossEncoder
+    _cross_encoder = CrossEncoder(model_name)
+    _cross_encoder_model_id = model_name
+    return _cross_encoder
 
 
 @dataclass
@@ -268,12 +283,10 @@ class VectorStore:
         Returns:
             List of search results sorted by combined score
         """
-        # 1. Run searches in parallel
-        vector_results = await self.similarity_search(
-            query_embedding, top_k * 3, filters
-        )
-        keyword_results = await self.bm25_search(
-            query, top_k * 3, filters
+        # 1. 벡터·키워드 검색 병렬 (순차 대비 레이턴시 절반에 가깝게)
+        vector_results, keyword_results = await asyncio.gather(
+            self.similarity_search(query_embedding, top_k * 3, filters),
+            self.bm25_search(query, top_k * 3, filters),
         )
         
         # 2. Normalize scores for each set
@@ -374,22 +387,19 @@ class VectorStore:
         if not results:
             return []
         
+        if not getattr(settings, "ENABLE_RERANKING", True):
+            return results[:top_k]
+        
         print(f"DEBUG: Reranking {len(results)} results using cross-encoder...")
         try:
-            from sentence_transformers import CrossEncoder
-            
-            # Load cross-encoder (cached). RERANK_MODEL으로 교체 가능
             model_name = getattr(settings, "RERANK_MODEL", "cross-encoder/ms-marco-MiniLM-L-6-v2")
-            model = CrossEncoder(model_name)
-            
-            # Create query-document pairs
+            model = _get_cached_cross_encoder(model_name)
             pairs = [
                 (query, result.chunk_text[:512])
                 for result in results
             ]
-            
-            # Get scores
-            scores = model.predict(pairs)
+            # 동기 predict는 이벤트 루프를 막음 → 스레드에서 실행
+            scores = await asyncio.to_thread(model.predict, pairs)
             
             # Update results with new scores
             for result, score in zip(results, scores):

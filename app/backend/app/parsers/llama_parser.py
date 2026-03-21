@@ -10,9 +10,6 @@ from pathlib import Path
 import aiohttp
 import aiofiles
 
-from llama_parse import LlamaParse
-from llama_index.core import Document as LlamaDocument
-
 from app.core.config import settings
 
 
@@ -22,12 +19,17 @@ class LlamaDocumentParser:
     def __init__(self):
         self.parser = None
         if settings.LLAMAPARSE_API_KEY:
-            self.parser = LlamaParse(
-                api_key=settings.LLAMAPARSE_API_KEY,
-                result_type="markdown",
-                verbose=True,
-                language="ko"
-            )
+            # 슬림 이미지: llama-parse 미설치 시 API 없이 폴백만 사용
+            try:
+                from llama_parse import LlamaParse
+                self.parser = LlamaParse(
+                    api_key=settings.LLAMAPARSE_API_KEY,
+                    result_type="markdown",
+                    verbose=True,
+                    language="ko"
+                )
+            except ImportError:
+                self.parser = None
     
     async def parse_pdf(self, file_path: str) -> Dict[str, Any]:
         """Parse PDF file with table extraction.

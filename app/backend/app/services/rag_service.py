@@ -44,6 +44,26 @@ class RAGService:
         self.redis.setex(cache_key, 86400, json.dumps(embedding))
         return embedding
 
+    async def _get_embeddings_batch(self, texts: List[str], batch_size: int = 48) -> List[List[float]]:
+        """OpenAI 임베딩 배치 호출 — 청크 대량 인덱싱 시 N회 순차 대비 지연 대폭 감소."""
+        if not texts:
+            return []
+        import hashlib
+        out: List[List[float]] = []
+        for j in range(0, len(texts), batch_size):
+            batch = texts[j : j + batch_size]
+            resp = await self.openai_client.embeddings.create(
+                model=settings.OPENAI_EMBEDDING_MODEL,
+                input=[t[:8000] for t in batch],
+            )
+            for k, emb_obj in enumerate(resp.data):
+                vec = emb_obj.embedding
+                out.append(vec)
+                raw = batch[k]
+                h = hashlib.md5(raw.encode()).hexdigest()
+                self.redis.setex(f"emb:{h}", 86400, json.dumps(vec))
+        return out
+
     async def _expand_query_hyde(self, query: str) -> str:
         """HyDE (Hypothetical Document Embeddings): Generate a hypothetical answer to improve retrieval."""
         hyde_prompt = f"""당신은 금융 정책 전문가입니다. 다음 질문에 대해 정책 문서의 '핵심 요약' 또는 '관련 조항'과 유사한 스타일로 1-2문장의 가상의 답변을 작성하세요.

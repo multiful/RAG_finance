@@ -13,6 +13,7 @@ from langchain_core.messages import BaseMessage, HumanMessage, AIMessage, System
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_openai import ChatOpenAI
 from langgraph.graph import StateGraph, END
+import asyncio
 import json
 import re
 
@@ -190,29 +191,32 @@ async def adaptive_retrieval_node(state: AgentState) -> AgentState:
     all_chunks = []
     
     try:
-        from app.models.schemas import QARequest
-        
-        # Multi-query retrieval for complex questions
-        for sq in sub_queries[:3]:
-            request = QARequest(
-                question=sq,
-                top_k=5 if strategy == "precise" else 8
-            )
-            
-            query_embedding = await rag_service._get_embedding(sq)
-            
-            search_results = await rag_service.vector_store.hybrid_search(
+        async def _retrieve_one(sq: str):
+            emb = await rag_service._get_embedding(sq)
+            return await rag_service.vector_store.hybrid_search(
                 query=sq,
-                query_embedding=query_embedding,
+                query_embedding=emb,
                 top_k=settings.TOP_K_RETRIEVAL,
                 vector_weight=getattr(settings, "HYBRID_VECTOR_WEIGHT", 0.7),
                 keyword_weight=getattr(settings, "HYBRID_KEYWORD_WEIGHT", 0.3),
                 similarity_threshold=getattr(settings, "HYBRID_SIMILARITY_THRESHOLD", 0.3),
-                filters={}
+                filters={},
             )
-            
+
+        # 서브쿼리별 임베딩+검색 병렬
+        sub_list = sub_queries[:3]
+        lists = await asyncio.gather(*[_retrieve_one(sq) for sq in sub_list], return_exceptions=True)
+        seen_chunk_ids = set()
+
+        for item in lists:
+            if isinstance(item, Exception):
+                continue
+            search_results = item
             for r in search_results:
-                chunk_dict = {
+                if r.chunk_id in seen_chunk_ids:
+                    continue
+                seen_chunk_ids.add(r.chunk_id)
+                all_chunks.append({
                     "chunk_id": r.chunk_id,
                     "document_id": r.document_id,
                     "document_title": r.document_title,
@@ -220,12 +224,8 @@ async def adaptive_retrieval_node(state: AgentState) -> AgentState:
                     "url": r.url,
                     "chunk_text": r.chunk_text,
                     "snippet": r.chunk_text[:200],
-                    "similarity": r.similarity
-                }
-                
-                # Deduplicate
-                if not any(c["chunk_id"] == chunk_dict["chunk_id"] for c in all_chunks):
-                    all_chunks.append(chunk_dict)
+                    "similarity": r.similarity,
+                })
         
         # Sort by similarity and take top results
         all_chunks.sort(key=lambda x: x.get("similarity", 0), reverse=True)

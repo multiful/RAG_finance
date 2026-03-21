@@ -74,7 +74,8 @@ class Settings(BaseSettings):
     CHUNK_OVERLAP: int = 100
     TOP_K_RETRIEVAL: int = 10
     TOP_K_RERANK: int = 5
-    ENABLE_RERANKING: bool = True   # Cross-Encoder 리랭킹 (검색 정확도 개선, 가성비 높음)
+    # false: sentence-transformers 없이 동작(Dockerfile 기본). 풀 설치 후 true 권장.
+    ENABLE_RERANKING: bool = True
     RERANK_MODEL: str = "cross-encoder/ms-marco-MiniLM-L-6-v2"
     # Hybrid Search 가중치 (금융 용어 정확도: 키워드 비중 올리면 용어 매칭 강화)
     HYBRID_VECTOR_WEIGHT: float = 0.7

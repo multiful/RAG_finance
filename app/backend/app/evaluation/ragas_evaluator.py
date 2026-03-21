@@ -13,24 +13,45 @@ from typing import List, Dict, Any, Optional
 from dataclasses import dataclass
 import asyncio
 
-from ragas import evaluate
-from ragas.metrics import (
-    faithfulness,
-    answer_relevancy,
-    context_precision,
-    context_recall,
-)
-try:
-    from ragas.metrics import answer_correctness
-    _HAS_ANSWER_CORRECTNESS = True
-except ImportError:
-    _HAS_ANSWER_CORRECTNESS = False
-    answer_correctness = None
-from datasets import Dataset
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 
 from app.core.config import settings
 from app.core.database import get_db
+
+
+def _load_ragas_eval_deps():
+    """ragas/datasets는 평가 API 호출 시에만 로드 (슬림 프로덕션)."""
+    from datasets import Dataset
+    from ragas import evaluate
+    from ragas.metrics import (
+        faithfulness,
+        answer_relevancy,
+        context_precision,
+        context_recall,
+    )
+    try:
+        from ragas.metrics import answer_correctness as _ac
+        return (
+            evaluate,
+            Dataset,
+            faithfulness,
+            answer_relevancy,
+            context_precision,
+            context_recall,
+            _ac,
+            True,
+        )
+    except ImportError:
+        return (
+            evaluate,
+            Dataset,
+            faithfulness,
+            answer_relevancy,
+            context_precision,
+            context_recall,
+            None,
+            False,
+        )
 
 
 @dataclass
@@ -105,6 +126,16 @@ class RagasEvaluator:
         Returns:
             Dictionary of metric scores
         """
+        (
+            evaluate,
+            Dataset,
+            faithfulness,
+            answer_relevancy,
+            context_precision,
+            context_recall,
+            answer_correctness,
+            has_answer_correctness,
+        ) = _load_ragas_eval_deps()
         # Create dataset
         data = {
             "question": [question],
@@ -116,7 +147,7 @@ class RagasEvaluator:
         
         # Run evaluation
         metrics_list = [faithfulness, answer_relevancy, context_precision, context_recall]
-        if _HAS_ANSWER_CORRECTNESS and answer_correctness is not None:
+        if has_answer_correctness and answer_correctness is not None:
             metrics_list.append(answer_correctness)
         try:
             result = evaluate(
@@ -187,6 +218,16 @@ class RagasEvaluator:
         Returns:
             EvaluationSummary with aggregated metrics
         """
+        (
+            evaluate,
+            Dataset,
+            faithfulness,
+            answer_relevancy,
+            context_precision,
+            context_recall,
+            answer_correctness,
+            has_answer_correctness,
+        ) = _load_ragas_eval_deps()
         results = []
         
         # Create dataset
@@ -206,7 +247,7 @@ class RagasEvaluator:
         dataset = Dataset.from_dict(data)
         
         metrics_batch = [faithfulness, answer_relevancy, context_precision, context_recall]
-        if _HAS_ANSWER_CORRECTNESS and answer_correctness is not None:
+        if has_answer_correctness and answer_correctness is not None:
             metrics_batch.append(answer_correctness)
         try:
             ragas_result = evaluate(

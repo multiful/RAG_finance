@@ -2,6 +2,7 @@
 
 Pipeline: Request → Cache → Reasoning → Retrieval → Reranker → Generation & Guardrail
 """
+import asyncio
 import json
 import hashlib
 from datetime import datetime
@@ -13,7 +14,7 @@ from langchain_core.prompts import ChatPromptTemplate
 
 from app.core.config import settings
 from app.core.redis import get_redis
-from app.services.vector_store import get_vector_store, SearchResult
+from app.services.vector_store import get_vector_store, SearchResult, _get_cached_cross_encoder
 
 
 @dataclass
@@ -189,10 +190,10 @@ class Reranker:
         self.model = None
     
     def _load_model(self):
-        """Lazy loading of cross-encoder model."""
+        """vector_store와 동일 캐시된 Cross-Encoder 사용."""
         if self.model is None:
-            from sentence_transformers import CrossEncoder
-            self.model = CrossEncoder('cross-encoder/ms-marco-MiniLM-L-6-v2')
+            name = getattr(settings, "RERANK_MODEL", "cross-encoder/ms-marco-MiniLM-L-6-v2")
+            self.model = _get_cached_cross_encoder(name)
     
     async def rerank(
         self,
@@ -213,8 +214,7 @@ class Reranker:
                 for result in results
             ]
             
-            # 점수 계산
-            scores = self.model.predict(pairs)
+            scores = await asyncio.to_thread(self.model.predict, pairs)
             
             # 점수 업데이트 및 정렬
             for result, score in zip(results, scores):
@@ -440,12 +440,15 @@ class QueryEngine:
             filters=filters
         )
         
-        # 4. Reranking
-        reranked_results = await self.reranker.rerank(
-            query=search_query,
-            results=retrieved_results,
-            top_k=top_k
-        )
+        # 4. Reranking (슬림 이미지: ENABLE_RERANKING=false 시 검색 점수 순으로만 자름)
+        if settings.ENABLE_RERANKING:
+            reranked_results = await self.reranker.rerank(
+                query=search_query,
+                results=retrieved_results,
+                top_k=top_k
+            )
+        else:
+            reranked_results = retrieved_results[:top_k]
         
         # 5. Generation with Citations
         generation_result = await self.guardrail.generate_with_citations(
