@@ -2,7 +2,6 @@
 # 설치 (constraints.txt와 동일 디렉터리에 두고):
 #   app/backend에서: pip install -r requirements.txt
 #   프로젝트 루트에서: pip install -r app/backend/requirements.txt -c app/backend/constraints.txt
--c constraints.txt
 # =========================
 # FastAPI
 # =========================
