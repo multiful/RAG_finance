@@ -226,14 +226,24 @@ class LlamaDocumentParser:
                 
                 if files_result.data:
                     print(f"[{document_id}] Found {len(files_result.data)} attachments. Using LlamaParse...")
-                    for file in files_result.data:
-                        file_path = file.get("file_path")
-                        file_type = file.get("file_type", "pdf")
-                        
-                        if file_path:
-                            from app.parsers.llama_parser import parse_and_chunk_document
-                            chunks = await parse_and_chunk_document(file_path, file_type)
-                            all_chunks.extend(chunks)
+                    from app.parsers.llama_parser import parse_and_chunk_document
+
+                    async def _parse_att(f):
+                        fp = f.get("file_path")
+                        if not fp:
+                            return []
+                        ft = f.get("file_type", "pdf")
+                        return await parse_and_chunk_document(fp, ft)
+
+                    att_results = await asyncio.gather(
+                        *[_parse_att(f) for f in files_result.data],
+                        return_exceptions=True,
+                    )
+                    for item in att_results:
+                        if isinstance(item, Exception):
+                            print(f"[{document_id}] attachment parse error: {item}")
+                            continue
+                        all_chunks.extend(item)
                 else:
                     print(f"[{document_id}] No attachments found.")
             except Exception as e:
@@ -250,21 +260,25 @@ class LlamaDocumentParser:
                 print(f"[{document_id}] No content available for parsing.")
                 return {"status": "failed", "error": "No content found"}
 
-            # 청크 저장
-            chunk_ids = []
-            for i, chunk in enumerate(all_chunks):
-                chunk_data = {
-                    "document_id": document_id,
-                    "chunk_index": i,
-                    "chunk_text": chunk["chunk_text"],
-                    "chunk_tokens": chunk.get("chunk_tokens", 0),
-                    "chunking_version": "llamaparse_v1",
-                    "section_title": chunk.get("section_title")
-                }
-                
-                result = self.db.table("chunks").insert(chunk_data).execute()
+            # 청크 저장 — 행 단위 insert N회 대신 배치 insert (RTT·부하 감소)
+            chunk_ids: List[str] = []
+            insert_batch_size = 200
+            for start in range(0, len(all_chunks), insert_batch_size):
+                slice_chunks = all_chunks[start : start + insert_batch_size]
+                rows = [
+                    {
+                        "document_id": document_id,
+                        "chunk_index": start + i,
+                        "chunk_text": c["chunk_text"],
+                        "chunk_tokens": c.get("chunk_tokens", 0),
+                        "chunking_version": "llamaparse_v1",
+                        "section_title": c.get("section_title"),
+                    }
+                    for i, c in enumerate(slice_chunks)
+                ]
+                result = self.db.table("chunks").insert(rows).execute()
                 if result.data:
-                    chunk_ids.append(result.data[0]["chunk_id"])
+                    chunk_ids.extend(str(r["chunk_id"]) for r in result.data)
             
             # 문서 상태 업데이트
             self.db.table("documents").update({
@@ -342,30 +356,33 @@ class ContextualChunker:
                 "SECURITIES": ["증권", "주식", "채권", "펀드", "투자"]
             }
             
-            enriched_count = 0
-            
-            for chunk in chunks_result.data:
+            sem = asyncio.Semaphore(16)
+
+            def _build_metadata(chunk: Dict[str, Any]) -> Dict[str, Any]:
                 chunk_text = chunk.get("chunk_text", "").lower()
-                
-                # 업권 태그 추출
                 industry_tags = []
                 for industry, keywords in industry_keywords.items():
                     if any(kw in chunk_text for kw in keywords):
                         industry_tags.append(industry)
-                
-                # 메타데이터 업데이트
-                metadata = {
+                return {
                     "industry_tags": industry_tags,
                     "has_table": "|" in chunk.get("chunk_text", ""),
-                    "enriched_at": datetime.now().isoformat()
+                    "enriched_at": datetime.now().isoformat(),
                 }
-                
-                self.db.table("chunks").update({
-                    "metadata": metadata
-                }).eq("chunk_id", chunk["chunk_id"]).execute()
-                
-                enriched_count += 1
-            
+
+            async def _update_chunk(chunk: Dict[str, Any]) -> None:
+                metadata = _build_metadata(chunk)
+                cid = chunk["chunk_id"]
+
+                def _run():
+                    self.db.table("chunks").update({"metadata": metadata}).eq("chunk_id", cid).execute()
+
+                async with sem:
+                    await asyncio.to_thread(_run)
+
+            await asyncio.gather(*[_update_chunk(c) for c in chunks_result.data])
+            enriched_count = len(chunks_result.data)
+
             return {
                 "status": "success",
                 "document_id": document_id,
@@ -428,10 +445,15 @@ class OpenAIEmbedder:
                     "message": "All chunks already embedded"
                 }
             
-            # 배치 임베딩
+            # 배치 임베딩 (한 번에 수백 문단이면 API 한도·지연 증가 → 청크 단위로 분할)
             print(f"[{document_id}] Generating embeddings for {len(chunks_to_embed)} chunks using {settings.OPENAI_EMBEDDING_MODEL}...")
             texts = [c["chunk_text"] for c in chunks_to_embed]
-            vectors = await self.embeddings.aembed_documents(texts)
+            embed_batch = 48
+            vectors: List[List[float]] = []
+            for i in range(0, len(texts), embed_batch):
+                batch = texts[i : i + embed_batch]
+                part = await self.embeddings.aembed_documents(batch)
+                vectors.extend(part)
             
             # Supabase에 저장
             embedding_data = [

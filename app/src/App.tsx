@@ -1,23 +1,30 @@
 /**
  * 정책 RAG 시스템 - 대시보드·규제분석·AI Q&A·설정
- * 1. 대시보드 (Dashboard) - 경영진 요약 + 핵심 통계
- * 2. 규제 분석 (Analytics) - 트렌드 + 시각화
- * 3. AI 질의 (AI Q&A) - RAG 기반 질의응답
- * 4. 설정 (Settings) - 시스템 설정 및 수집 관리
+ * 라우트 단위 lazy 로딩으로 초기 JS 번들·첫 페인트 부담 감소
  */
+import { lazy, Suspense } from 'react';
 import { Routes, Route, Navigate, Link } from 'react-router-dom';
 import DashboardLayout from '@/components/dashboard/DashboardLayout';
-import UnifiedDashboard from './sections/UnifiedDashboard';
-import AnalyticsDashboard from './sections/AnalyticsDashboard';
-import NewQASection from './sections/NewQASection';
-import GapMapDashboard from './sections/GapMapDashboard';
-import SandboxChecklistPage from './sections/SandboxChecklistPage';
-import PolicySimulatePage from './sections/PolicySimulatePage';
-import SettingsPage from './sections/SettingsPage';
-import TermsPage from './sections/TermsPage';
-import PrivacyPolicyPage from './sections/PrivacyPolicyPage';
 import { Toaster } from '@/components/ui/sonner';
 import { CollectionProvider } from '@/contexts/CollectionContext';
+
+const UnifiedDashboard = lazy(() => import('./sections/UnifiedDashboard'));
+const AnalyticsDashboard = lazy(() => import('./sections/AnalyticsDashboard'));
+const NewQASection = lazy(() => import('./sections/NewQASection'));
+const GapMapDashboard = lazy(() => import('./sections/GapMapDashboard'));
+const SandboxChecklistPage = lazy(() => import('./sections/SandboxChecklistPage'));
+const PolicySimulatePage = lazy(() => import('./sections/PolicySimulatePage'));
+const SettingsPage = lazy(() => import('./sections/SettingsPage'));
+const TermsPage = lazy(() => import('./sections/TermsPage'));
+const PrivacyPolicyPage = lazy(() => import('./sections/PrivacyPolicyPage'));
+
+function RouteFallback() {
+  return (
+    <div className="flex min-h-[40vh] items-center justify-center text-slate-500 text-sm">
+      <span className="animate-pulse">페이지 로딩 중…</span>
+    </div>
+  );
+}
 
 function NotFound() {
   return (
@@ -42,28 +49,28 @@ function App() {
   return (
     <CollectionProvider>
       <DashboardLayout>
-        <Routes>
-          {/* Main 4 Pages */}
-          <Route path="/" element={<UnifiedDashboard />} />
-          <Route path="/analytics" element={<AnalyticsDashboard />} />
-          <Route path="/qa" element={<NewQASection />} />
-          <Route path="/gap-map" element={<GapMapDashboard />} />
-          <Route path="/sandbox/checklist" element={<SandboxChecklistPage />} />
-          <Route path="/policy-simulate" element={<PolicySimulatePage />} />
-          <Route path="/settings" element={<SettingsPage />} />
-          <Route path="/terms" element={<TermsPage />} />
-          <Route path="/privacy" element={<PrivacyPolicyPage />} />
-          
-          {/* Legacy redirects for backward compatibility */}
-          <Route path="/monitoring" element={<Navigate to="/" replace />} />
-          <Route path="/executive" element={<Navigate to="/" replace />} />
-          <Route path="/workspace/qa" element={<Navigate to="/qa" replace />} />
-          <Route path="/radar" element={<Navigate to="/analytics" replace />} />
-          <Route path="/timeline" element={<Navigate to="/analytics" replace />} />
-          <Route path="/observability" element={<Navigate to="/settings" replace />} />
-          
-          <Route path="*" element={<NotFound />} />
-        </Routes>
+        <Suspense fallback={<RouteFallback />}>
+          <Routes>
+            <Route path="/" element={<UnifiedDashboard />} />
+            <Route path="/analytics" element={<AnalyticsDashboard />} />
+            <Route path="/qa" element={<NewQASection />} />
+            <Route path="/gap-map" element={<GapMapDashboard />} />
+            <Route path="/sandbox/checklist" element={<SandboxChecklistPage />} />
+            <Route path="/policy-simulate" element={<PolicySimulatePage />} />
+            <Route path="/settings" element={<SettingsPage />} />
+            <Route path="/terms" element={<TermsPage />} />
+            <Route path="/privacy" element={<PrivacyPolicyPage />} />
+
+            <Route path="/monitoring" element={<Navigate to="/" replace />} />
+            <Route path="/executive" element={<Navigate to="/" replace />} />
+            <Route path="/workspace/qa" element={<Navigate to="/qa" replace />} />
+            <Route path="/radar" element={<Navigate to="/analytics" replace />} />
+            <Route path="/timeline" element={<Navigate to="/analytics" replace />} />
+            <Route path="/observability" element={<Navigate to="/settings" replace />} />
+
+            <Route path="*" element={<NotFound />} />
+          </Routes>
+        </Suspense>
         <Toaster />
       </DashboardLayout>
     </CollectionProvider>
