@@ -1,0 +1,10 @@
+# Railway: 서비스 Root Directory를 app/backend 로 두었을 때 사용합니다.
+# 대시보드의 Custom Start Command가 Dockerfile CMD보다 우선하면 $PORT가 그대로 넘어가 오류가 납니다.
+# 아래 startCommand로 통일하거나, Deploy 설정에서 Custom Start Command를 비우세요.
+
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "Dockerfile"
+
+[deploy]
+startCommand = "python run_prod.py"
