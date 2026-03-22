@@ -142,25 +142,18 @@ app/backend/pytest.ini
 *.msi
 
 # -----------------------------
-# 비밀·자격증명 (예시만 커밋: railway.env.example 등)
+# RAG_finance: 로컬 배포 변수 복사본 (커밋은 railway.env.example 만)
 # -----------------------------
-*.pem
-*.pkey
-id_rsa
-id_rsa.pub
-*.keystore
-*credentials*.json
-service-account*.json
-google-credentials.json
 railway.env
 app/backend/railway.env
-.env.production
-.env.development.local
 
 # -----------------------------
-# 평가·실험 산출물 (로컬 로그만, 소스 .py 는 커밋)
+# 평가·실험 산출물 (로컬만)
 # -----------------------------
 **/ragas_output/
 **/evaluation_artifacts/
 *.eval.jsonl
 golden_run_*.json
+
+# Cursor/로컬 에셋(워크스페이스)
+.cursor/projects/
