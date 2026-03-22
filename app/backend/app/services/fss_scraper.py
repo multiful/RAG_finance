@@ -193,7 +193,13 @@ class FSSScraper:
             except Exception as e:
                 print(f"Error collecting FSS board {board_path}: {e}")
                 results["errors"].append({"board": board_path, "error": str(e)})
-        
+
+        try:
+            from app.core.cache_helper import invalidate_dashboard_caches
+            invalidate_dashboard_caches()
+        except Exception:
+            pass
+
         return results
 
 

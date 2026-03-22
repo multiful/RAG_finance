@@ -97,8 +97,8 @@ class Settings(BaseSettings):
     TAVILY_SEARCH_TOPIC: str = "finance"    # 금융 RAG 기본값 (에이전트 웹 보강 시 도메인 정렬)
     TAVILY_INCLUDE_ANSWER: str = "none"     # none | true (검색 요약 포함 여부)
     
-    # Ragas Evaluation
-    RAGAS_TEST_SIZE: int = 100
+    # Ragas Evaluation (API /evaluation/run 기본 10건과 정합)
+    RAGAS_TEST_SIZE: int = 10
     
     # Notifications
     SLACK_WEBHOOK_URL: str = ""

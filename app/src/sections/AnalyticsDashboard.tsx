@@ -61,6 +61,7 @@ import {
   type KeywordCloudData,
   type RegulationSummary,
 } from '@/lib/api';
+import { clampScore100, buildMultiMetricRadarData } from '@/lib/radarUtils';
 
 const COLORS = ['#6366f1', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4'];
 
@@ -345,7 +346,12 @@ export default function AnalyticsDashboard() {
             {industryImpact && industryImpact.industry_impact.length > 0 ? (
               <div className="space-y-6">
                 <ResponsiveContainer width="100%" height={200}>
-                  <RadarChart data={industryImpact.industry_impact}>
+                  <RadarChart
+                    data={industryImpact.industry_impact.map((i) => ({
+                      ...i,
+                      impact_score: clampScore100(i.impact_score),
+                    }))}
+                  >
                     <PolarGrid stroke="#e2e8f0" />
                     <PolarAngleAxis 
                       dataKey="industry_label" 
@@ -359,7 +365,7 @@ export default function AnalyticsDashboard() {
                       fill="#6366f1"
                       fillOpacity={0.5}
                     />
-                    <Tooltip />
+                    <Tooltip formatter={(v: number) => [`${Number(v).toFixed(1)}점`, '영향 점수 (0~100)']} />
                   </RadarChart>
                 </ResponsiveContainer>
                 
@@ -382,10 +388,10 @@ export default function AnalyticsDashboard() {
                             {item.risk_level}
                           </Badge>
                         </div>
-                        <span className="font-black text-slate-900">{item.impact_score}점</span>
+                        <span className="font-black text-slate-900">{clampScore100(item.impact_score)}점</span>
                       </div>
                       <Progress 
-                        value={item.impact_score} 
+                        value={clampScore100(item.impact_score)} 
                         className="h-2"
                       />
                       <div className="flex gap-4 text-xs text-slate-500">
@@ -413,18 +419,18 @@ export default function AnalyticsDashboard() {
               업권별 영향도 레이더
             </CardTitle>
             <CardDescription>
-              업권별 규제 영향 다차원 분석
+              문서·알림·고위험은 업권 간 상대 비율(0~100), 영향 점수는 절대 점수(0~100)
             </CardDescription>
           </CardHeader>
           <CardContent>
             {industryImpact && industryImpact.industry_impact && industryImpact.industry_impact.length > 0 ? (
               <ResponsiveContainer width="100%" height={300}>
-                <RadarChart cx="50%" cy="50%" outerRadius="70%" data={[
-                  { metric: '문서 수', ...industryImpact.industry_impact.reduce((acc, i) => ({...acc, [i.industry_label]: Math.min(i.document_count, 100)}), {}) },
-                  { metric: '알림 수', ...industryImpact.industry_impact.reduce((acc, i) => ({...acc, [i.industry_label]: Math.min(i.alert_count * 10, 100)}), {}) },
-                  { metric: '영향 점수', ...industryImpact.industry_impact.reduce((acc, i) => ({...acc, [i.industry_label]: i.impact_score}), {}) },
-                  { metric: '고위험', ...industryImpact.industry_impact.reduce((acc, i) => ({...acc, [i.industry_label]: Math.min(i.high_severity_count * 20, 100)}), {}) },
-                ]}>
+                <RadarChart
+                  cx="50%"
+                  cy="50%"
+                  outerRadius="70%"
+                  data={buildMultiMetricRadarData(industryImpact.industry_impact)}
+                >
                   <PolarGrid stroke="#e2e8f0" />
                   <PolarAngleAxis dataKey="metric" tick={{ fontSize: 11, fill: '#64748b' }} />
                   <PolarRadiusAxis angle={30} domain={[0, 100]} tick={{ fontSize: 10 }} />
@@ -439,7 +445,7 @@ export default function AnalyticsDashboard() {
                     />
                   ))}
                   <Legend />
-                  <Tooltip />
+                  <Tooltip formatter={(v: number) => [`${Number(v).toFixed(1)}`, '점수 (0~100)']} />
                 </RadarChart>
               </ResponsiveContainer>
             ) : (

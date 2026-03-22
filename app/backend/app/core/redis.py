@@ -67,6 +67,14 @@ class _MemoryRedis:
             return [k for k in all_keys if k.startswith(prefix)]
         return [k for k in all_keys if k == pattern]
 
+    def scan_iter(self, match="*"):
+        """redis.scan_iter 호환 — 인메모리 폴백에서 패턴 매칭."""
+        import fnmatch
+        all_keys = set(self._store.keys()) | set(self._ttl.keys())
+        for k in sorted(all_keys):
+            if fnmatch.fnmatch(k, match):
+                yield k
+
     def delete(self, *keys):
         n = 0
         for k in keys:

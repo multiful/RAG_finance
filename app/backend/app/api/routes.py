@@ -23,6 +23,12 @@ from app.services.topic_detector import TopicDetector
 from app.services.checklist_service import ChecklistService
 from app.services.fss_scraper import fss_scraper
 from app.observability.langsmith_tracer import get_tracer
+from app.core.cache_helper import (
+    cache_get,
+    cache_set,
+    CACHE_TTL_DASHBOARD,
+    CACHE_TTL_DASHBOARD_HOURLY,
+)
 
 router = APIRouter()
 
@@ -711,6 +717,13 @@ async def export_checklist(document_id: str, format: str = Query("json")):
 async def get_dashboard_stats():
     """대시보드 통계. DB 조회 실패 시에만 demo_data 폴백.
     documents_this_week = max(최근7일 ingested_at 건수, 최근7일 published_at 건수) 로 구버전 NULL ingested_at 보정."""
+    _dash_cache_key = "dashboard:stats:v1"
+    _cached = cache_get(_dash_cache_key)
+    if _cached is not None:
+        try:
+            return DashboardStats.model_validate(_cached)
+        except Exception:
+            pass
     from app.models.schemas import CollectionStatus
     try:
         db = rss_collector.db
@@ -890,7 +903,7 @@ async def get_dashboard_stats():
         if sources_records.data:
             sources = await asyncio.gather(*[_source_status(s) for s in sources_records.data])
 
-        return DashboardStats(
+        out = DashboardStats(
             total_documents=collection_stats["total_documents"] or 0,
             documents_24h=collection_stats["documents_24h"] or 0,
             active_alerts=active_alerts_count,
@@ -902,6 +915,11 @@ async def get_dashboard_stats():
             domestic_this_week=domestic_this_week,
             international_this_week=international_this_week,
         )
+        try:
+            cache_set(_dash_cache_key, out.model_dump(mode="json"), CACHE_TTL_DASHBOARD)
+        except Exception:
+            pass
+        return out
     
     except Exception as e:
         logging.error(f"Error in get_dashboard_stats: {str(e)}")
@@ -928,6 +946,10 @@ async def get_dashboard_stats():
 @router.get("/dashboard/hourly-stats")
 async def get_hourly_collection_stats(hours: int = Query(24, ge=1, le=168)):
     """Get hourly document collection statistics for charts."""
+    _hk = f"dashboard:hourly:v1:{hours}"
+    _hc = cache_get(_hk)
+    if _hc is not None and isinstance(_hc, dict):
+        return _hc
     try:
         db = rss_collector.db
         since = datetime.now(timezone.utc) - timedelta(hours=hours)
@@ -964,12 +986,17 @@ async def get_hourly_collection_stats(hours: int = Query(24, ge=1, le=168)):
             name = source_names.get(sid, "Unknown")
             source_counts[name] = source_counts.get(name, 0) + 1
         
-        return {
+        payload = {
             "hourly": sorted(hourly_data.values(), key=lambda x: x["hour"]),
             "by_source": [{"name": k, "count": v} for k, v in source_counts.items()],
             "total": len(docs_result.data or []),
             "period_hours": hours
         }
+        try:
+            cache_set(_hk, payload, CACHE_TTL_DASHBOARD_HOURLY)
+        except Exception:
+            pass
+        return payload
     except Exception as e:
         logging.error(f"Error in hourly stats: {str(e)}")
         try:

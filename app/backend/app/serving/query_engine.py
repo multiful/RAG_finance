@@ -71,11 +71,13 @@ class CacheLayer:
             print(f"Cache set error: {e}")
     
     async def invalidate_document(self, document_id: str):
-        """문서 관련 캐시 무효화."""
+        """문서 관련 캐시 무효화 — KEYS 대신 SCAN으로 스캔(대량 키 시 병목 완화)."""
         try:
-            # 패턴 매칭으로 관련 캐시 삭제
-            keys = self.redis.keys("query:*")
-            for key in keys:
+            if hasattr(self.redis, "scan_iter"):
+                key_iter = self.redis.scan_iter(match="query:*")
+            else:
+                key_iter = self.redis.keys("query:*")
+            for key in key_iter:
                 cached = self.redis.get(key)
                 if cached and document_id in cached:
                     self.redis.delete(key)

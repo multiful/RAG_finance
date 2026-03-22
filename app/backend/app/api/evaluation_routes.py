@@ -5,18 +5,19 @@ KAI(핵심 성과 지표) 목표치는 competition 문서 page_29 기준.
 """
 from fastapi import APIRouter, HTTPException, Query, BackgroundTasks
 from typing import Optional, Dict, Any
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from datetime import datetime, timezone
 import logging
 
 from app.constants.kai_targets import get_kai_targets_summary, check_kai_pass, KAI_TARGETS
+from app.core.config import settings
 
 router = APIRouter(prefix="/evaluation", tags=["evaluation"])
 
 
 class EvaluationRequest(BaseModel):
-    """평가 요청 모델"""
-    sample_size: int = 16
+    """평가 요청 모델 — 기본 10건(골든 소규모). RAGAS·LLM 비용·시간 고려."""
+    sample_size: int = Field(default=10, ge=1, le=30, description="평가 샘플 수 (권장 10)")
 
 
 class AgentQuestionRequest(BaseModel):
@@ -30,10 +31,11 @@ def _run_ragas_in_thread(sample_size: int) -> None:
     import asyncio
     import threading
     from app.services.ragas_evaluator import ragas_evaluator
+    cap = min(sample_size, getattr(settings, "RAGAS_TEST_SIZE", 10), 30)
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
     try:
-        loop.run_until_complete(ragas_evaluator.evaluate_system(sample_size=sample_size))
+        loop.run_until_complete(ragas_evaluator.evaluate_system(sample_size=cap))
     except Exception as e:
         logging.error(f"RAGAS background evaluation error: {e}")
     finally:
@@ -172,6 +174,11 @@ async def get_metrics_summary():
     Returns:
         시스템 전체 성능 지표 및 벤치마크 비교
     """
+    from app.core.cache_helper import cache_get, cache_set, CACHE_TTL_METRICS_SUMMARY
+    _mk = "evaluation:metrics_summary:v1"
+    _mc = cache_get(_mk)
+    if _mc is not None and isinstance(_mc, dict):
+        return _mc
     try:
         from app.services.ragas_evaluator import ragas_evaluator
         from app.services.rss_collector import RSSCollector
@@ -228,7 +235,7 @@ async def get_metrics_summary():
                 "note": "평가 데이터 없음 - /evaluation/run 실행 필요",
             }
         
-        return {
+        payload = {
             "system_name": "RegTech RAG Platform",
             "version": "2.0.1",
             "generated_at": datetime.now(timezone.utc).isoformat(),
@@ -254,6 +261,11 @@ async def get_metrics_summary():
                 "출처 추적 시스템"
             ]
         }
+        try:
+            cache_set(_mk, payload, CACHE_TTL_METRICS_SUMMARY)
+        except Exception:
+            pass
+        return payload
     except Exception as e:
         logging.error(f"Metrics summary error: {e}")
         raise HTTPException(status_code=500, detail=str(e))

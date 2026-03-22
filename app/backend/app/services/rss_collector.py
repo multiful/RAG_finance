@@ -260,7 +260,13 @@ class RSSCollector:
             final_status = "success_collect" if results["total_new"] > 0 else "no_change"
             msg = f"완료: 신규 {results['total_new']}건 수집" if results["total_new"] > 0 else "신규 문서 없음"
             job_tracker.update_job(job_id, status=final_status, stage="완료", progress=100, count=results["total_new"], message=msg)
-            
+
+        try:
+            from app.core.cache_helper import invalidate_dashboard_caches
+            invalidate_dashboard_caches()
+        except Exception:
+            pass
+
         return results
     
     async def get_recent_documents(self, hours: int = 24) -> List[Dict[str, Any]]:

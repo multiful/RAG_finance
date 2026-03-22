@@ -252,10 +252,12 @@ async def get_cache_stats():
         redis = query_engine.cache.redis
         
         # Get Redis info
-        info = redis.info()
+        info = redis.info() if hasattr(redis, "info") else {}
         
-        # Count query cache keys
-        keys = redis.keys("query:*")
+        if hasattr(redis, "scan_iter"):
+            keys = list(redis.scan_iter(match="query:*"))
+        else:
+            keys = redis.keys("query:*")
         
         return {
             "total_cached_queries": len(keys),
@@ -272,15 +274,17 @@ async def get_cache_stats():
 async def clear_cache():
     """Clear query cache."""
     try:
+        from app.core.cache_helper import invalidate_query_cache_prefix
         redis = query_engine.cache.redis
-        keys = redis.keys("query:*")
-        
-        if keys:
-            redis.delete(*keys)
+        if hasattr(redis, "scan_iter"):
+            n = sum(1 for _ in redis.scan_iter(match="query:*"))
+        else:
+            n = len(redis.keys("query:*"))
+        invalidate_query_cache_prefix()
         
         return {
             "message": "Cache cleared",
-            "deleted_keys": len(keys)
+            "deleted_keys": n
         }
         
     except Exception as e:

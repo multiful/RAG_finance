@@ -52,7 +52,7 @@ class RAGASEvaluator:
         )
     
     def _get_test_dataset(self) -> List[Dict[str, Any]]:
-        """금융 규제 도메인 테스트 데이터셋 생성"""
+        """금융 규제 도메인 테스트 데이터셋 생성 (기본 10문항 골든 스모크)."""
         return [
             {
                 "question": "K-ICS 제도의 주요 내용은 무엇인가요?",
@@ -94,26 +94,6 @@ class RAGASEvaluator:
                 "question": "적합성 원칙과 적정성 원칙의 차이는?",
                 "ground_truth": "적합성은 고객의 투자성향·재산에 맞는 상품 권유, 적정성은 고객의 이해능력에 맞게 설명하는 원칙입니다."
             },
-            {
-                "question": "금융감독원의 역할은?",
-                "ground_truth": "금융감독원은 금융기관 감독·검사, 금융소비자 보호, 불공정거래 감시 등 금융질서 유지를 담당합니다."
-            },
-            {
-                "question": "스테이블코인 규제 방향은?",
-                "ground_truth": "스테이블코인은 발행·준비자산·이용자 보호 기준을 두고, 결제·저축형으로 구분해 규제하는 방향으로 논의됩니다."
-            },
-            {
-                "question": "내부거래 한도 규정은?",
-                "ground_truth": "금융지주회사와 자회사 간 내부거래는 한도·절차·공시 등이 법령과 감독규정으로 정해져 있습니다."
-            },
-            {
-                "question": "자본시장법상 불공정거래 행위는?",
-                "ground_truth": "내부자거래, 단기매매차익거래, 시세조종, 미공개중요정보 이용 매매 등이 불공정거래로 규정됩니다."
-            },
-            {
-                "question": "예금보험제도의 보험료율은?",
-                "ground_truth": "예금보험료율은 금융위원회가 정하며, 가입기관의 건전성·리스크에 따라 차등 적용될 수 있습니다."
-            },
         ]
     
     async def _get_rag_response(self, question: str) -> Dict[str, Any]:
@@ -142,7 +122,7 @@ class RAGASEvaluator:
                 "groundedness_score": 0,
             }
     
-    async def evaluate_system(self, sample_size: int = 16) -> EvaluationResult:
+    async def evaluate_system(self, sample_size: int = 10) -> EvaluationResult:
         """
         RAG 시스템 전체 평가 실행
         
@@ -152,7 +132,9 @@ class RAGASEvaluator:
         Returns:
             EvaluationResult: 평가 결과
         """
-        test_data = self._get_test_dataset()[:sample_size]
+        full = self._get_test_dataset()
+        cap = min(max(1, sample_size), getattr(settings, "RAGAS_TEST_SIZE", 10), len(full))
+        test_data = full[:cap]
         
         evaluation_data = {
             "question": [],
@@ -235,7 +217,12 @@ class RAGASEvaluator:
         )
         
         await self._save_evaluation(evaluation_result)
-        
+        try:
+            from app.core.cache_helper import cache_delete
+            cache_delete("evaluation:metrics_summary:v1")
+        except Exception:
+            pass
+
         return evaluation_result
     
     async def _save_evaluation(self, result: EvaluationResult):

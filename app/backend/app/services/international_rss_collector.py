@@ -198,6 +198,11 @@ class InternationalRSSCollector:
                 count=results["total_new"],
                 message=msg,
             )
+        try:
+            from app.core.cache_helper import invalidate_dashboard_caches
+            invalidate_dashboard_caches()
+        except Exception:
+            pass
         return results
 
 
