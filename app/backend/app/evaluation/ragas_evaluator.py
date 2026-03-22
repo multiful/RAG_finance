@@ -86,13 +86,9 @@ class EvaluationSummary:
     avg_context_precision: float
     avg_context_recall: float
     avg_overall_score: float
-    avg_answer_correctness: float = 0.0
-    
-    # Detailed results
     results: List[EvaluationResult]
-    
-    # Improvement suggestions
     suggestions: List[str]
+    avg_answer_correctness: float = 0.0
 
 
 class RagasEvaluator:
@@ -262,9 +258,9 @@ class RagasEvaluator:
                 avg_context_precision=0.0,
                 avg_context_recall=0.0,
                 avg_overall_score=0.0,
-                avg_answer_correctness=0.0,
                 results=[],
                 suggestions=[hint],
+                avg_answer_correctness=0.0,
             )
         results = []
         
@@ -472,9 +468,9 @@ class RagasEvaluator:
                 avg_context_precision=sum(r.context_precision for r in results) / len(results),
                 avg_context_recall=sum(r.context_recall for r in results) / len(results),
                 avg_overall_score=sum(r.overall_score for r in results) / len(results),
-                avg_answer_correctness=sum(r.answer_correctness for r in results) / len(results),
                 results=results,
-                suggestions=self._generate_suggestions(results)
+                suggestions=self._generate_suggestions(results),
+                avg_answer_correctness=sum(r.answer_correctness for r in results) / len(results),
             )
         else:
             summary = EvaluationSummary(
@@ -486,9 +482,9 @@ class RagasEvaluator:
                 avg_context_precision=0.0,
                 avg_context_recall=0.0,
                 avg_overall_score=0.0,
-                avg_answer_correctness=0.0,
                 results=[],
-                suggestions=["Evaluation failed"]
+                suggestions=["Evaluation failed"],
+                avg_answer_correctness=0.0,
             )
         
         # Save to database
