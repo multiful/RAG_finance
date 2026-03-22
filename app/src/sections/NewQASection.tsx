@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import { useRef, useEffect } from 'react';
 import {
   Send,
   Loader2,
@@ -15,6 +15,7 @@ import {
   Shield,
   BadgeCheck,
   Download,
+  RotateCcw,
 } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -36,6 +37,7 @@ import CitationHighlighter, { ConfidenceGauge } from '@/components/CitationHighl
 import { toast } from 'sonner';
 import { askQuestion, askAgentQuestion } from '@/lib/api';
 import { EXAMPLE_QUESTION_SOURCE_CHIP, SOURCE_LABEL_FULL, SOURCE_LABEL_ORIGIN, VERIFIER_SYSTEM_LABEL } from '@/lib/constants';
+import { useQA, type QAMessage } from '@/contexts/QAContext';
 import type { Citation } from '@/types';
 
 /** API가 0~1 또는 0~100 스케일로 줄 때 모두 0~1로 통일 */
@@ -44,23 +46,6 @@ function normalizeUnitInterval(n: unknown): number {
   let x = Number(n);
   if (x > 1.0001) x = x / 100;
   return Math.min(1, Math.max(0, x));
-}
-
-interface Message {
-  id: string;
-  type: 'user' | 'assistant';
-  content: string;
-  citations?: Citation[];
-  confidence?: number;
-  groundedness_score?: number;
-  citation_coverage?: number;
-  hallucination_flag?: boolean;
-  timestamp: Date;
-  agent_metadata?: {
-    question_type?: string;
-    agent_iterations?: number;
-    engine?: string;
-  };
 }
 
 interface QATemplate {
@@ -205,15 +190,31 @@ const INDUSTRY_TEMPLATES: Record<string, { icon: React.ElementType; label: strin
 };
 
 export default function NewQASection() {
-  const [messages, setMessages] = useState<Message[]>([]);
-  const [input, setInput] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [complianceMode, setComplianceMode] = useState(false);
-  /** 기본: 하이브리드 RAG(`/qa`) — 안정적. LangGraph는 토글 시 사용(폴백 포함). */
-  const [agentMode, setAgentMode] = useState(false);
-  const [selectedCitation, setSelectedCitation] = useState<Citation | null>(null);
-  const [inspectorOpen, setInspectorOpen] = useState(false);
+  const {
+    messages,
+    setMessages,
+    input,
+    setInput,
+    loading,
+    setLoading,
+    complianceMode,
+    setComplianceMode,
+    agentMode,
+    setAgentMode,
+    selectedCitation,
+    setSelectedCitation,
+    inspectorOpen,
+    setInspectorOpen,
+    resetQASession,
+  } = useQA();
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  /** /qa 이탈 시 로딩 플래그 정리(다시 들어왔을 때 스피너 고착 방지) */
+  useEffect(() => {
+    return () => {
+      setLoading(false);
+    };
+  }, [setLoading]);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -227,7 +228,7 @@ export default function NewQASection() {
     e.preventDefault();
     if (!input.trim() || loading) return;
 
-    const userMessage: Message = {
+    const userMessage: QAMessage = {
       id: Date.now().toString(),
       type: 'user',
       content: input,
@@ -239,7 +240,7 @@ export default function NewQASection() {
     setLoading(true);
 
     try {
-      let assistantMessage: Message;
+      let assistantMessage: QAMessage;
       
       if (agentMode) {
         const response = await askAgentQuestion(userMessage.content);
@@ -290,7 +291,7 @@ export default function NewQASection() {
             ? err.message
             : '요청을 처리할 수 없습니다.';
       toast.error(errText, { duration: 6000 });
-      const errorMessage: Message = {
+      const errorMessage: QAMessage = {
         id: (Date.now() + 1).toString(),
         type: 'assistant',
         content: `죄송합니다. 오류가 발생했습니다.\n\n${errText}\n\nAPI 키 설정, 네트워크, 서버 상태를 확인해 주세요.`,
@@ -364,12 +365,27 @@ export default function NewQASection() {
                 AI 질의
               </h2>
               <p className="text-sm text-slate-500">
-                공식 문서 기반 · 출처 추적 · 실시간 분석
+                공식 문서 기반 · 출처 추적 · 사이드 메뉴로 다른 화면에 갔다 와도 이 탭 안에서 대화 유지
               </p>
             </div>
           </div>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
+          {messages.length > 0 && (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                resetQASession();
+                toast.success('대화를 초기화했습니다.');
+              }}
+              className="rounded-xl border-slate-200 text-slate-600"
+            >
+              <RotateCcw className="w-4 h-4 mr-1.5" />
+              대화 초기화
+            </Button>
+          )}
           {/* Agent Mode Toggle */}
           <div className={`
             flex items-center gap-3 px-4 py-3 rounded-2xl transition-all duration-300
@@ -741,15 +757,29 @@ export default function NewQASection() {
               Session Insights
             </h3>
             {messages.length > 0 && (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={exportAuditLog}
-                className="text-xs font-bold border-slate-200 hover:bg-emerald-50 hover:text-emerald-600 hover:border-emerald-200"
-              >
-                <Download className="w-3 h-3 mr-1" />
-                감사 로그 내보내기
-              </Button>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    resetQASession();
+                    toast.success('대화를 초기화했습니다.');
+                  }}
+                  className="text-xs font-bold border-slate-200"
+                >
+                  <RotateCcw className="w-3 h-3 mr-1" />
+                  초기화
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={exportAuditLog}
+                  className="text-xs font-bold border-slate-200 hover:bg-emerald-50 hover:text-emerald-600 hover:border-emerald-200"
+                >
+                  <Download className="w-3 h-3 mr-1" />
+                  감사 로그 내보내기
+                </Button>
+              </div>
             )}
           </div>
 

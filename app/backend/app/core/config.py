@@ -18,9 +18,11 @@ class Settings(BaseSettings):
     SUPABASE_KEY: str = ""
     SUPABASE_SERVICE_KEY: str = ""
     
-    # OpenAI (디폴트 mini로 토큰 절감. 필요 시 .env에서 gpt-4o 등으로 변경)
+    # OpenAI — 일반 기능은 mini, RAG 질의는 OPENAI_MODEL_QA로 분리(정확도·근거 우선)
     OPENAI_API_KEY: str = ""
     OPENAI_MODEL: str = "gpt-4o-mini"
+    # RAG HyDE·답변가능성·최종 답변 전용. 비우면 OPENAI_MODEL 사용
+    OPENAI_MODEL_QA: str = "gpt-4o"
     OPENAI_MODEL_CLASSIFICATION: str = ""  # 비우면 OPENAI_MODEL 사용. 분류만 정확도 올리려면 gpt-4o 등 설정
     OPENAI_EMBEDDING_MODEL: str = "text-embedding-3-small"
     
@@ -28,7 +30,8 @@ class Settings(BaseSettings):
     LANGSMITH_API_KEY: str = ""
     LANGSMITH_ENDPOINT: str = "https://api.smith.langchain.com"
     LANGSMITH_PROJECT: str = "fsc-policy-rag"
-    LANGCHAIN_TRACING_V2: bool = True
+    # Railway 등 프로덕션: 키 없으면 false 권장(오버헤드·로그 감소). LangSmith 쓰면 true + LANGSMITH_API_KEY
+    LANGCHAIN_TRACING_V2: bool = False
     
     # LlamaParse
     LLAMAPARSE_API_KEY: str = ""
@@ -72,19 +75,23 @@ class Settings(BaseSettings):
     # Processing
     CHUNK_SIZE: int = 800
     CHUNK_OVERLAP: int = 100
-    # 검색·리랭크: 리콜 확보(컨텍스트 풍부) + 지연 균형 — 리랭크 미사용 시 TOP_K_RETRIEVAL 만으로 상위 청크 확보
-    TOP_K_RETRIEVAL: int = 14
-    TOP_K_RERANK: int = 8
-    # false: cross-encoder 미설치 시 매 요청 Import 시도·실패 로그 방지·지연 감소(기본). requirements-full 설치 후 True 권장.
-    ENABLE_RERANKING: bool = False
+    # 검색·리랭크: 정확도·근거 우선 — 후보 넉넉히 뽑고 리랭크로 정렬( sentence-transformers 필요, 실패 시 벡터 순 폴백)
+    TOP_K_RETRIEVAL: int = 20
+    TOP_K_RERANK: int = 10
+    ENABLE_RERANKING: bool = True
     RERANK_MODEL: str = "cross-encoder/ms-marco-MiniLM-L-6-v2"
-    # HyDE: 질문당 LLM 1회 추가 — 정확도↑·지연↑. 벤치/저지연은 ENABLE_QUERY_HYDE=false
+    # HyDE: 검색 품질 향상(질문당 LLM 1회). 정확도 우선 시 true 권장
     ENABLE_QUERY_HYDE: bool = True
+    # false: 답변가능성을 항상 전용 LLM으로 판정(근거 부족 시 조기 차단). true면 겹침/유사도 휴리스틱으로 생략 가능
+    ENABLE_FAST_ANSWERABILITY: bool = False
+    FAST_ANSWERABILITY_MIN_OVERLAP: float = 0.18
+    # -1: 유사도 기반 생략 비활성화(정확도 우선). 0 이상이면 상위 청크 유사도가 이 값 이상일 때만 생략
+    ANSWERABILITY_FAST_PATH_MIN_SIM: float = -1.0
     # Hybrid Search 가중치 (금융 용어 정확도: 키워드 비중 올리면 용어 매칭 강화)
     HYBRID_VECTOR_WEIGHT: float = 0.7
     HYBRID_KEYWORD_WEIGHT: float = 0.3
-    # RRF 후 필터: 낮출수록 후보↑(리콜↑) — 0.22 전후 권장
-    HYBRID_SIMILARITY_THRESHOLD: float = 0.22
+    # RRF 후 필터: 근거 후보 확보를 위해 기본은 다소 낮게(리콜↑), 리랭크로 정밀화
+    HYBRID_SIMILARITY_THRESHOLD: float = 0.20
     ENABLE_TRACING: bool = True     # LangSmith 트레이싱 (API 키 설정 시 동작)
     
     # LangGraph / Agentic RAG

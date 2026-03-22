@@ -15,6 +15,12 @@ from app.models.schemas import (
 )
 
 
+def _qa_llm_model() -> str:
+    """RAG 질의(HyDE·답변가능성·최종 답변) 전용 모델. OPENAI_MODEL_QA 미설정 시 OPENAI_MODEL."""
+    q = (getattr(settings, "OPENAI_MODEL_QA", None) or "").strip()
+    return q if q else settings.OPENAI_MODEL
+
+
 # 규제·금융 키워드가 있으면 BM25/키워드 채널 비중을 소폭 올려 조문·고시명 등 정확 매칭 강화
 _REGULATORY_QUERY_HINTS = (
     "금융위", "금융위원회", "금감원", "금융감독", "한국은행", "예금보험",
@@ -33,7 +39,8 @@ def hybrid_weights_for_query(question: str) -> Tuple[float, float]:
         re.search(r"제\s*\d+\s*조", q)
     )
     if looks_regulatory:
-        return (min(vw, 0.62), max(kw, 0.38))
+        # 조문·고시명 등 키워드 매칭 강화(근거 검색 정확도)
+        return (min(vw, 0.58), max(kw, 0.42))
     return (vw, kw)
 
 
@@ -111,15 +118,27 @@ class RAGService:
 
         try:
             response = await self.openai_client.chat.completions.create(
-                model=settings.OPENAI_MODEL,
+                model=_qa_llm_model(),
                 messages=[{"role": "user", "content": hyde_prompt}],
-                temperature=0.4,
-                max_tokens=200
+                temperature=0.35,
+                max_tokens=160
             )
             hyde_answer = response.choices[0].message.content
             return f"{query}\n{hyde_answer}"
         except Exception:
             return query
+
+    @staticmethod
+    def _lexical_overlap_score(query: str, chunks: List[Dict[str, Any]]) -> float:
+        """질문 토큰과 상위 청크 본문의 겹침 비율 (0~1). LLM 없이 답변가능성 힌트."""
+        if not chunks or not (query or "").strip():
+            return 0.0
+        q_words = set(re.findall(r"[가-힣a-zA-Z0-9]{2,}", query.lower()))
+        text = " ".join((c.get("chunk_text") or "") for c in chunks[:8]).lower()
+        hit = len(q_words & set(re.findall(r"[가-힣a-zA-Z0-9]{2,}", text)))
+        if not q_words:
+            return 0.0
+        return hit / max(1, len(q_words))
 
     async def _check_answerability(
         self,
@@ -129,20 +148,37 @@ class RAGService:
         """Check if query can be answered from retrieved chunks with high strictness."""
         if not chunks:
             return False, "검색된 문서가 없습니다.", 0.0
-        
-        combined_text = "\n\n".join([f"[{i+1}] {c['chunk_text']}" for i, c in enumerate(chunks[:5])])
+
+        top_sim = float(chunks[0].get("similarity") or 0.0)
+        sim_thresh = float(getattr(settings, "ANSWERABILITY_FAST_PATH_MIN_SIM", 0.46))
+        if (
+            getattr(settings, "ENABLE_FAST_ANSWERABILITY", True)
+            and sim_thresh >= 0
+            and top_sim >= sim_thresh
+        ):
+            consistency = min(0.94, 0.55 + top_sim * 0.4)
+            return True, "", consistency
+
+        overlap = self._lexical_overlap_score(query, chunks)
+        min_ov = float(getattr(settings, "FAST_ANSWERABILITY_MIN_OVERLAP", 0.18))
+        if getattr(settings, "ENABLE_FAST_ANSWERABILITY", True) and overlap >= min_ov:
+            consistency = min(0.93, 0.52 + overlap * 0.45)
+            return True, "", consistency
+
+        combined_text = "\n\n".join([f"[{i+1}] {c['chunk_text']}" for i, c in enumerate(chunks[:6])])
         
         check_prompt = f"""당신은 금융 정책 규제 준수 검증관입니다.
 질문: {query}
 
 참고 문서 내용:
-{combined_text[:3000]}
+{combined_text[:4800]}
 
 규칙:
-1. 제공된 문서 내용에 질문 주제와 직접 연결되는 설명(제도명, 목적, 원칙, 의무, 적용대상 등)이 있으면 답변 가능으로 본다.
+1. 제공된 문서 내용에 질문 주제와 직접 연결되는 설명(제도명, 목적, 원칙, 의무, 적용대상, 조문·고시명 등)이 있으면 답변 가능으로 본다.
 2. 추측하거나 외부 지식을 사용하지 마세요.
 3. 수치·기한이 없어도 문서가 질문의 핵심을 다루면 YES. 완전히 무관한 주제만 NO.
-4. 답변이 가능하면 'YES [근거번호]', 불가능하면 'NO [이유]'를 출력하세요.
+4. 문서가 질문과 관련은 있으나 핵심 근거 문장이 없으면 NO(근거 부족 명시).
+5. 답변이 가능하면 'YES [근거번호]', 불가능하면 'NO [이유]'를 출력하세요.
 
 출력 예시:
 YES [1, 2, 4]
@@ -150,10 +186,10 @@ NO [해당 문서에는 가계대출 금리에 대한 직접적인 언급이 없
 
         try:
             response = await self.openai_client.chat.completions.create(
-                model=settings.OPENAI_MODEL,
+                model=_qa_llm_model(),
                 messages=[{"role": "user", "content": check_prompt}],
                 temperature=0,
-                max_tokens=100
+                max_tokens=140
             )
             
             content = response.choices[0].message.content.strip().upper()
@@ -207,11 +243,12 @@ NO [해당 문서에는 가계대출 금리에 대한 직접적인 언급이 없
 5. 금융·규제 용어를 정확히 쓰고, 보도자료·고시·지침·시행령 등 문서 유형에 맞는 어조를 유지하십시오.
 6. 참고 문서 제목·본문에 나온 제도명·고시명·조문 표기가 있으면 답변에서도 동일하게 사용하십시오. 시행일·게시일·적용 시점이 문서에 있으면 함께 언급하십시오.
 7. 비율·한도·기한·의무·적용 대상 등 수치·조건은 해당 문서에 근거가 있을 때만 서술하고, 반드시 [번호] 인용과 연결하십시오.
-8. 반드시 아래 JSON 형식으로만 출력하십시오.
+8. "answer" 문자열 안에는 반드시 참고 문서 번호 [1]~[{len(chunks)}] 형식의 인용을 문장마다 포함하십시오. 인용 없이 문장을 쓰지 마십시오.
+9. 반드시 아래 JSON 형식으로만 출력하십시오.
 
 출력 JSON 형식:
 {{
-    "answer": "상세 답변 내용 (문장별 인용 포함)",
+    "answer": "상세 답변 내용 (문장별 [1][2] 인용 필수)",
     "summary": "3줄 이내 요약",
     "industry_impact": {{
         "BANKING": 0.0~1.0,
@@ -232,10 +269,15 @@ NO [해당 문서에는 가계대출 금리에 대한 직접적인 언급이 없
                     {"role": "user", "content": f"질문: {query}\n\n[참고 문서]\n{context}"}
                 ],
                 response_format={"type": "json_object"},
-                temperature=0.2
+                temperature=0.2,
+                max_tokens=2200,
             )
-            
-            return json.loads(response.choices[0].message.content)
+            raw = response.choices[0].message.content or "{}"
+            data = json.loads(raw)
+            ans = data.get("answer")
+            if ans is not None and not isinstance(ans, str):
+                data["answer"] = json.dumps(ans, ensure_ascii=False) if isinstance(ans, (dict, list)) else str(ans)
+            return data
         except Exception as e:
             print(f"Answer generation error: {e}")
             return {
@@ -413,7 +455,7 @@ NO [해당 문서에는 가계대출 금리에 대한 직접적인 언급이 없
         start_time = datetime.now(timezone.utc)
         
         # 1. HyDE Query Expansion (비활성 시 질문만 임베딩 — 지연·비용 절감)
-        if getattr(settings, "ENABLE_QUERY_HYDE", True):
+        if getattr(settings, "ENABLE_QUERY_HYDE", False):
             expanded_query = await self._expand_query_hyde(request.question)
         else:
             expanded_query = request.question

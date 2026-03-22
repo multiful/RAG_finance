@@ -6,6 +6,7 @@ from fastapi import FastAPI, Response, Request, HTTPException
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from starlette.middleware.gzip import GZipMiddleware
 from contextlib import asynccontextmanager
 from datetime import datetime
 
@@ -139,6 +140,7 @@ async def health_head_compat_middleware(request: Request, call_next):
     return await call_next(request)
 
 
+app.add_middleware(GZipMiddleware, minimum_size=1000)
 app.add_middleware(RateLimitMiddleware)
 app.add_middleware(
     CORSMiddleware,

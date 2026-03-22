@@ -7,6 +7,7 @@ import { Routes, Route, Navigate, Link } from 'react-router-dom';
 import DashboardLayout from '@/components/dashboard/DashboardLayout';
 import { Toaster } from '@/components/ui/sonner';
 import { CollectionProvider } from '@/contexts/CollectionContext';
+import { QAProvider } from '@/contexts/QAContext';
 
 const UnifiedDashboard = lazy(() => import('./sections/UnifiedDashboard'));
 const AnalyticsDashboard = lazy(() => import('./sections/AnalyticsDashboard'));
@@ -48,6 +49,7 @@ function NotFound() {
 function App() {
   return (
     <CollectionProvider>
+      <QAProvider>
       <DashboardLayout>
         <Suspense fallback={<RouteFallback />}>
           <Routes>
@@ -73,6 +75,7 @@ function App() {
         </Suspense>
         <Toaster />
       </DashboardLayout>
+      </QAProvider>
     </CollectionProvider>
   );
 }
