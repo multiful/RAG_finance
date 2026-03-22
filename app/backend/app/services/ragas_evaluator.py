@@ -41,10 +41,13 @@ class RAGASEvaluator:
     
     def __init__(self):
         self.db = get_db()
+        _ragas_model = (
+            getattr(settings, "RAGAS_EVAL_MODEL", "") or ""
+        ).strip() or settings.OPENAI_MODEL
         self.llm = ChatOpenAI(
-            model=settings.OPENAI_MODEL,
+            model=_ragas_model,
             api_key=settings.OPENAI_API_KEY,
-            temperature=0
+            temperature=0,
         )
         self.embeddings = OpenAIEmbeddings(
             model=settings.OPENAI_EMBEDDING_MODEL,
@@ -52,7 +55,7 @@ class RAGASEvaluator:
         )
     
     def _get_test_dataset(self) -> List[Dict[str, Any]]:
-        """금융 규제 도메인 테스트 데이터셋 생성 (기본 10문항 골든 스모크)."""
+        """금융 규제 도메인 테스트 데이터셋 생성 (12문항, RAGAS_TEST_SIZE 와 정합)."""
         return [
             {
                 "question": "K-ICS 제도의 주요 내용은 무엇인가요?",
@@ -94,6 +97,14 @@ class RAGASEvaluator:
                 "question": "적합성 원칙과 적정성 원칙의 차이는?",
                 "ground_truth": "적합성은 고객의 투자성향·재산에 맞는 상품 권유, 적정성은 고객의 이해능력에 맞게 설명하는 원칙입니다."
             },
+            {
+                "question": "공매도 규제 현황은?",
+                "ground_truth": "무차입 공매도 금지, 차입공매도에 대한 공시·결제 등 규제가 적용되어 시장 질서와 투자자 보호를 도모한다."
+            },
+            {
+                "question": "금융위원회와 금융감독원의 역할 차이는?",
+                "ground_truth": "금융위원회는 정책 수립과 제도 설계를 담당하고, 금융감독원은 검사·감독 등 현장 감독 업무를 수행한다."
+            },
         ]
     
     async def _get_rag_response(self, question: str) -> Dict[str, Any]:
@@ -122,7 +133,7 @@ class RAGASEvaluator:
                 "groundedness_score": 0,
             }
     
-    async def evaluate_system(self, sample_size: int = 10) -> EvaluationResult:
+    async def evaluate_system(self, sample_size: int = 12) -> EvaluationResult:
         """
         RAG 시스템 전체 평가 실행
         
@@ -133,7 +144,7 @@ class RAGASEvaluator:
             EvaluationResult: 평가 결과
         """
         full = self._get_test_dataset()
-        cap = min(max(1, sample_size), getattr(settings, "RAGAS_TEST_SIZE", 10), len(full))
+        cap = min(max(1, sample_size), getattr(settings, "RAGAS_TEST_SIZE", 12), len(full))
         test_data = full[:cap]
         
         evaluation_data = {

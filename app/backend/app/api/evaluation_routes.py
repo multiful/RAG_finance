@@ -16,8 +16,8 @@ router = APIRouter(prefix="/evaluation", tags=["evaluation"])
 
 
 class EvaluationRequest(BaseModel):
-    """평가 요청 모델 — 기본 10건(골든 소규모). RAGAS·LLM 비용·시간 고려."""
-    sample_size: int = Field(default=10, ge=1, le=30, description="평가 샘플 수 (권장 10)")
+    """평가 요청 모델 — 기본 12건(골든셋 정합). RAGAS·LLM 비용·시간 고려."""
+    sample_size: int = Field(default=12, ge=1, le=30, description="평가 샘플 수 (권장 12)")
 
 
 class AgentQuestionRequest(BaseModel):
@@ -31,7 +31,7 @@ def _run_ragas_in_thread(sample_size: int) -> None:
     import asyncio
     import threading
     from app.services.ragas_evaluator import ragas_evaluator
-    cap = min(sample_size, getattr(settings, "RAGAS_TEST_SIZE", 10), 30)
+    cap = min(sample_size, getattr(settings, "RAGAS_TEST_SIZE", 12), 30)
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
     try:

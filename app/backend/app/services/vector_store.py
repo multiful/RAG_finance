@@ -16,6 +16,13 @@ import numpy as np
 from app.core.config import settings
 from app.core.database import get_db
 
+
+def _vlog(msg: str) -> None:
+    """DEBUG=True 일 때만 검색 단계 로그 (프로덕션 I/O·지연 감소)."""
+    if getattr(settings, "DEBUG", False):
+        print(msg)
+
+
 # Cross-Encoder는 로딩 비용이 크므로 프로세스당 1회 캐시
 _cross_encoder = None
 _cross_encoder_model_id: Optional[str] = None
@@ -94,7 +101,7 @@ class VectorStore:
     ) -> List[SearchResult]:
         """Pure vector similarity search using match_chunks_v3 RPC."""
         try:
-            print(f"DEBUG: Starting similarity search (dims={len(query_embedding)})")
+            _vlog(f"DEBUG: Starting similarity search (dims={len(query_embedding)})")
             
             # Use the RPC to avoid selecting the embedding column directly
             # and to handle computed similarity server-side
@@ -107,10 +114,10 @@ class VectorStore:
             result = self.db.rpc("match_chunks_v3", rpc_params).execute()
             
             if not result.data:
-                print("DEBUG: match_chunks_v3 returned 0 rows.")
+                _vlog("DEBUG: match_chunks_v3 returned 0 rows.")
                 return []
             
-            print(f"DEBUG: Vector search found {len(result.data)} raw hits.")
+            _vlog(f"DEBUG: Vector search found {len(result.data)} raw hits.")
             
             results = []
             for item in result.data:
@@ -148,7 +155,7 @@ class VectorStore:
     ) -> List[SearchResult]:
         """Trigram-based and FTS keyword search with better acronym handling."""
         try:
-            print(f"DEBUG: Starting keyword search for: '{query}'")
+            _vlog(f"DEBUG: Starting keyword search for: '{query}'")
             top_k = max(1, min(100, int(top_k)))
             safe_query = self._escape_sql_literal(query)
             if not safe_query.strip():
@@ -201,7 +208,7 @@ class VectorStore:
     ) -> List[SearchResult]:
         """Fallback keyword search using liberal ILIKE word matching."""
         try:
-            print(f"DEBUG: Falling back to word-based ILIKE for: '{query}'")
+            _vlog(f"DEBUG: Falling back to word-based ILIKE for: '{query}'")
             
             # Split query into words and build a liberal search
             words = [w for w in query.split() if len(w) > 1]
@@ -233,7 +240,7 @@ class VectorStore:
                     metadata={}
                 ))
             
-            print(f"DEBUG: Fallback word search found {len(results)} results.")
+            _vlog(f"DEBUG: Fallback word search found {len(results)} results.")
             return results
             
         except Exception as e:
@@ -293,7 +300,7 @@ class VectorStore:
         vector_results = self._normalize_scores(vector_results)
         keyword_results = self._normalize_scores(keyword_results)
         
-        print(f"DEBUG: Hybrid combining {len(vector_results)} vector vs {len(keyword_results)} keyword results.")
+        _vlog(f"DEBUG: Hybrid combining {len(vector_results)} vector vs {len(keyword_results)} keyword results.")
         
         # 3. Combine results using Reciprocal Rank Fusion (RRF)
         combined = self._reciprocal_rank_fusion(
@@ -308,7 +315,7 @@ class VectorStore:
         final_results = self._normalize_scores(combined)
         filtered = [r for r in final_results if r.similarity >= similarity_threshold]
         
-        print(f"DEBUG: Hybrid filtered {len(final_results)} -> {len(filtered)} results (threshold={similarity_threshold})")
+        _vlog(f"DEBUG: Hybrid filtered {len(final_results)} -> {len(filtered)} results (threshold={similarity_threshold})")
         return filtered[:top_k]
     
     def _reciprocal_rank_fusion(
@@ -408,7 +415,7 @@ class VectorStore:
             # Sort by new scores
             results.sort(key=lambda x: x.similarity, reverse=True)
             
-            print(f"DEBUG: Reranking complete. Top score: {results[0].similarity if results else 'N/A'}")
+            _vlog(f"DEBUG: Reranking complete. Top score: {results[0].similarity if results else 'N/A'}")
             return results[:top_k]
             
         except Exception as e:

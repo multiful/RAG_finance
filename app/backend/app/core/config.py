@@ -72,15 +72,19 @@ class Settings(BaseSettings):
     # Processing
     CHUNK_SIZE: int = 800
     CHUNK_OVERLAP: int = 100
-    TOP_K_RETRIEVAL: int = 10
-    TOP_K_RERANK: int = 5
-    # false: sentence-transformers 없이 동작(Dockerfile 기본). 풀 설치 후 true 권장.
-    ENABLE_RERANKING: bool = True
+    # 검색·리랭크: 리콜 확보(컨텍스트 풍부) + 지연 균형 — 리랭크 미사용 시 TOP_K_RETRIEVAL 만으로 상위 청크 확보
+    TOP_K_RETRIEVAL: int = 14
+    TOP_K_RERANK: int = 8
+    # false: cross-encoder 미설치 시 매 요청 Import 시도·실패 로그 방지·지연 감소(기본). requirements-full 설치 후 True 권장.
+    ENABLE_RERANKING: bool = False
     RERANK_MODEL: str = "cross-encoder/ms-marco-MiniLM-L-6-v2"
+    # HyDE: 질문당 LLM 1회 추가 — 정확도↑·지연↑. 벤치/저지연은 ENABLE_QUERY_HYDE=false
+    ENABLE_QUERY_HYDE: bool = True
     # Hybrid Search 가중치 (금융 용어 정확도: 키워드 비중 올리면 용어 매칭 강화)
     HYBRID_VECTOR_WEIGHT: float = 0.7
     HYBRID_KEYWORD_WEIGHT: float = 0.3
-    HYBRID_SIMILARITY_THRESHOLD: float = 0.3
+    # RRF 후 필터: 낮출수록 후보↑(리콜↑) — 0.22 전후 권장
+    HYBRID_SIMILARITY_THRESHOLD: float = 0.22
     ENABLE_TRACING: bool = True     # LangSmith 트레이싱 (API 키 설정 시 동작)
     
     # LangGraph / Agentic RAG
@@ -97,8 +101,10 @@ class Settings(BaseSettings):
     TAVILY_SEARCH_TOPIC: str = "finance"    # 금융 RAG 기본값 (에이전트 웹 보강 시 도메인 정렬)
     TAVILY_INCLUDE_ANSWER: str = "none"     # none | true (검색 요약 포함 여부)
     
-    # Ragas Evaluation (API /evaluation/run 기본 10건과 정합)
-    RAGAS_TEST_SIZE: int = 10
+    # Ragas Evaluation (골든 기본 12문항과 정합)
+    RAGAS_TEST_SIZE: int = 12
+    # Ragas 메트릭 채점 전용 LLM (비우면 OPENAI_MODEL 사용). 골든 벤치마크 시 .env에 RAGAS_EVAL_MODEL=gpt-4o 권장.
+    RAGAS_EVAL_MODEL: str = ""
     
     # Notifications
     SLACK_WEBHOOK_URL: str = ""

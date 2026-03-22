@@ -99,10 +99,12 @@ class RagasEvaluator:
     """RAG evaluation using Ragas metrics."""
     
     def __init__(self):
+        _m = getattr(settings, "RAGAS_EVAL_MODEL", "") or ""
+        _ragas_model = _m.strip() if _m.strip() else settings.OPENAI_MODEL
         self.llm = ChatOpenAI(
-            model=settings.OPENAI_MODEL,
+            model=_ragas_model,
             temperature=0,
-            api_key=settings.OPENAI_API_KEY
+            api_key=settings.OPENAI_API_KEY,
         )
         self.embeddings = OpenAIEmbeddings(
             model=settings.OPENAI_EMBEDDING_MODEL,

@@ -55,10 +55,12 @@ class RAGService:
         import hashlib
         text_hash = hashlib.md5(text.encode()).hexdigest()
         cache_key = f"emb:{text_hash}"
-        cached = self.redis.get(cache_key)
-        
-        if cached:
-            return json.loads(cached)
+        try:
+            cached = self.redis.get(cache_key)
+            if cached:
+                return json.loads(cached)
+        except Exception:
+            pass
         
         response = await self.openai_client.embeddings.create(
             model=settings.OPENAI_EMBEDDING_MODEL,
@@ -66,8 +68,10 @@ class RAGService:
         )
         embedding = response.data[0].embedding
         
-        # Cache for 24 hours
-        self.redis.setex(cache_key, 86400, json.dumps(embedding))
+        try:
+            self.redis.setex(cache_key, 86400, json.dumps(embedding))
+        except Exception:
+            pass
         return embedding
 
     async def _get_embeddings_batch(self, texts: List[str], batch_size: int = 48) -> List[List[float]]:
@@ -91,7 +95,10 @@ class RAGService:
                 out.append(vec)
                 raw = batch[k]
                 h = hashlib.md5(raw.encode()).hexdigest()
-                self.redis.setex(f"emb:{h}", 86400, json.dumps(vec))
+                try:
+                    self.redis.setex(f"emb:{h}", 86400, json.dumps(vec))
+                except Exception:
+                    pass
         return out
 
     async def _expand_query_hyde(self, query: str) -> str:
@@ -132,9 +139,9 @@ class RAGService:
 {combined_text[:3000]}
 
 규칙:
-1. 제공된 문서 내용('참고 문서 내용')에 질문에 대한 명확한 답이 포함되어 있는가?
+1. 제공된 문서 내용에 질문 주제와 직접 연결되는 설명(제도명, 목적, 원칙, 의무, 적용대상 등)이 있으면 답변 가능으로 본다.
 2. 추측하거나 외부 지식을 사용하지 마세요.
-3. 문서에 구체적인 수치, 대상, 기한 등이 명시되어 있지 않으면 'NO'라고 하세요.
+3. 수치·기한이 없어도 문서가 질문의 핵심을 다루면 YES. 완전히 무관한 주제만 NO.
 4. 답변이 가능하면 'YES [근거번호]', 불가능하면 'NO [이유]'를 출력하세요.
 
 출력 예시:
@@ -194,12 +201,13 @@ NO [해당 문서에는 가계대출 금리에 대한 직접적인 언급이 없
 다음 규칙을 엄격히 준수하여 답변하십시오:
 
 1. 오직 제공된 [참고 문서]의 내용만을 기반으로 답변하십시오.
-2. {mode_instruction}
-3. 문서에 없는 내용은 절대 추측하여 답변하지 마십시오. 모르는 경우 '제공된 문서에서 관련 내용을 찾을 수 없습니다'라고 하십시오.
-4. 금융·규제 용어를 정확히 쓰고, 보도자료·고시·지침·시행령 등 문서 유형에 맞는 어조를 유지하십시오.
-5. 참고 문서 제목·본문에 나온 제도명·고시명·조문 표기가 있으면 답변에서도 동일하게 사용하십시오. 시행일·게시일·적용 시점이 문서에 있으면 함께 언급하십시오.
-6. 비율·한도·기한·의무·적용 대상 등 수치·조건은 해당 문서에 근거가 있을 때만 서술하고, 반드시 [번호] 인용과 연결하십시오.
-7. 반드시 아래 JSON 형식으로만 출력하십시오.
+2. 첫 문장에서 질문의 핵심에 직접 답한 뒤, 필요하면 세부 설명을 이어가십시오 (질문과 무관한 서론 금지).
+3. {mode_instruction}
+4. 문서에 없는 내용은 절대 추측하여 답변하지 마십시오. 모르는 경우 '제공된 문서에서 관련 내용을 찾을 수 없습니다'라고 하십시오.
+5. 금융·규제 용어를 정확히 쓰고, 보도자료·고시·지침·시행령 등 문서 유형에 맞는 어조를 유지하십시오.
+6. 참고 문서 제목·본문에 나온 제도명·고시명·조문 표기가 있으면 답변에서도 동일하게 사용하십시오. 시행일·게시일·적용 시점이 문서에 있으면 함께 언급하십시오.
+7. 비율·한도·기한·의무·적용 대상 등 수치·조건은 해당 문서에 근거가 있을 때만 서술하고, 반드시 [번호] 인용과 연결하십시오.
+8. 반드시 아래 JSON 형식으로만 출력하십시오.
 
 출력 JSON 형식:
 {{
@@ -404,8 +412,11 @@ NO [해당 문서에는 가계대출 금리에 대한 직접적인 언급이 없
         """Main RAG pipeline: HyDE -> Hybrid Search -> Rerank -> LLM -> Parse."""
         start_time = datetime.now(timezone.utc)
         
-        # 1. HyDE Query Expansion
-        expanded_query = await self._expand_query_hyde(request.question)
+        # 1. HyDE Query Expansion (비활성 시 질문만 임베딩 — 지연·비용 절감)
+        if getattr(settings, "ENABLE_QUERY_HYDE", True):
+            expanded_query = await self._expand_query_hyde(request.question)
+        else:
+            expanded_query = request.question
         
         # 2. Get query embedding
         query_embedding = await self._get_embedding(expanded_query)
@@ -495,6 +506,7 @@ NO [해당 문서에는 가계대출 금리에 대한 직접적인 언급이 없
         try:
             from fastapi.encoders import jsonable_encoder
             latency_ms = int((datetime.now(timezone.utc) - start_time).total_seconds() * 1000)
+            # confidence 컬럼은 스키마에 없을 수 있음(PGRST204) — 핵심 필드만 삽입
             self.db.table("qa_logs").insert(jsonable_encoder({
                 "user_query": request.question,
                 "retrieved_chunk_ids": [chunk["chunk_id"] for chunk in reranked_chunks],
@@ -503,7 +515,6 @@ NO [해당 문서에는 가계대출 금리에 대한 직접적인 언급이 없
                 "latency_ms": latency_ms,
                 "response_time_ms": latency_ms,
                 "groundedness_score": grounding_score / 100.0,
-                "confidence": confidence_score / 100.0,
                 "citation_coverage": coverage,
                 "status": "success",
                 "created_at": datetime.now(timezone.utc).isoformat()
