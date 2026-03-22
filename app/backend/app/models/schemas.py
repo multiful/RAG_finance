@@ -109,6 +109,7 @@ class QARequest(BaseModel):
     date_to: Optional[datetime] = None
     top_k: int = 5
     compliance_mode: bool = False
+    include_retrieval_contexts: bool = False  # 골든/Ragas: 리트리벌 청크 전체 텍스트
 
 
 class Citation(BaseModel):
@@ -134,6 +135,7 @@ class QAResponse(BaseModel):
     citation_coverage: float = 0.0
     uncertainty_note: Optional[str] = None
     answerable: bool = True
+    retrieval_contexts: Optional[List[str]] = None
 
 
 # ==================== Topic/Alert Models ====================

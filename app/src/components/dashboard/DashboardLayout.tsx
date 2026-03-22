@@ -21,7 +21,12 @@ import {
   GitCompare
 } from 'lucide-react';
 import { APP_NAME } from '@/lib/constants';
+import { getSmartAlerts, getAlertStats } from '@/lib/api';
+import type { SmartAlert, AlertStats } from '@/types';
 import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { ScrollArea } from '@/components/ui/scroll-area';
 import { useCollection } from '@/contexts/CollectionContext';
 
 interface NavItem {

@@ -35,7 +35,6 @@ import type {
 } from '@/lib/api';
 import type { SandboxSimulateResponse } from '@/lib/api';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
 import {
   Table,
   TableBody,

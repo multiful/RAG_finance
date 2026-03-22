@@ -460,10 +460,26 @@ NO [해당 문서에는 가계대출 금리에 대한 직접적인 언급이 없
             }
             for r in reranked_results
         ]
-        
+        # 본문이 비어 있는 청크는 답변·Ragas 입력 품질을 망가뜨리므로 제외
+        reranked_chunks = [c for c in reranked_chunks if (c.get("chunk_text") or "").strip()]
+        if not reranked_chunks:
+            return QAResponse(
+                answer="죄송합니다. 검색 결과에 유효한 문서 본문이 없습니다. 다른 질문으로 시도해 주세요.",
+                summary="답변 불가",
+                industry_impact={"BANKING": 0.0, "INSURANCE": 0.0, "SECURITIES": 0.0},
+                checklist=[],
+                citations=[],
+                confidence=0.0,
+                groundedness_score=0.0,
+                citation_coverage=0.0,
+                uncertainty_note="유효 청크 없음",
+                answerable=False,
+                retrieval_contexts=None,
+            )
+
         # 5. Answerability Guardrail
         can_answer, reason, consistency = await self._check_answerability(request.question, reranked_chunks)
-        
+
         if not can_answer:
             return QAResponse(
                 answer=f"죄송합니다. {reason}\n\n다른 질문으로 시도하시거나, 더 구체적인 키워드를 입력해 주세요.",
@@ -475,7 +491,12 @@ NO [해당 문서에는 가계대출 금리에 대한 직접적인 언급이 없
                 groundedness_score=0.0,
                 citation_coverage=0.0,
                 uncertainty_note=reason,
-                answerable=False
+                answerable=False,
+                retrieval_contexts=(
+                    [c.get("chunk_text") or "" for c in reranked_chunks]
+                    if request.include_retrieval_contexts
+                    else None
+                ),
             )
         
         # 6. Generate Answer
@@ -532,7 +553,12 @@ NO [해당 문서에는 가계대출 금리에 대한 직접적인 언급이 없
             groundedness_score=grounding_score / 100.0,
             citation_coverage=coverage,
             uncertainty_note=structured_data.get("uncertainty_note"),
-            answerable=True
+            answerable=True,
+            retrieval_contexts=(
+                [c.get("chunk_text") or "" for c in reranked_chunks]
+                if request.include_retrieval_contexts
+                else None
+            ),
         )
 
     async def stream_answer(self, request: QARequest):

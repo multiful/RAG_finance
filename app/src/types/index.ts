@@ -34,6 +34,8 @@ export interface QARequest {
   date_to?: string;
   top_k?: number;
   compliance_mode?: boolean;
+  /** 평가용: 리트리벌 청크 전체 텍스트 포함 */
+  include_retrieval_contexts?: boolean;
 }
 
 export interface Citation {
@@ -58,6 +60,7 @@ export interface QAResponse {
   citation_coverage: number;
   uncertainty_note?: string;
   answerable?: boolean;
+  retrieval_contexts?: string[];
 }
 
 export interface Topic {
