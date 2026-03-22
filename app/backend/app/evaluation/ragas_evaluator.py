@@ -8,7 +8,9 @@ Provides quantitative metrics for:
 - Faithfulness
 """
 import json
+import logging
 import math
+import time
 from typing import List, Dict, Any, Optional
 from dataclasses import dataclass
 import asyncio
@@ -150,12 +152,16 @@ class RagasEvaluator:
         if has_answer_correctness and answer_correctness is not None:
             metrics_list.append(answer_correctness)
         try:
-            result = evaluate(
-                dataset,
-                metrics=metrics_list,
-                llm=self.llm,
-                embeddings=self.embeddings
-            )
+            # Ragas evaluate()는 CPU·LLM 동기 호출 → 메인 이벤트 루프 블로킹 방지
+            def _run_single_ragas():
+                return evaluate(
+                    dataset,
+                    metrics=metrics_list,
+                    llm=self.llm,
+                    embeddings=self.embeddings,
+                )
+
+            result = await asyncio.to_thread(_run_single_ragas)
             # ragas 0.1.x: dict-like or Result with to_pandas()
             if hasattr(result, "to_pandas"):
                 df = result.to_pandas()
@@ -218,16 +224,36 @@ class RagasEvaluator:
         Returns:
             EvaluationSummary with aggregated metrics
         """
-        (
-            evaluate,
-            Dataset,
-            faithfulness,
-            answer_relevancy,
-            context_precision,
-            context_recall,
-            answer_correctness,
-            has_answer_correctness,
-        ) = _load_ragas_eval_deps()
+        try:
+            (
+                evaluate,
+                Dataset,
+                faithfulness,
+                answer_relevancy,
+                context_precision,
+                context_recall,
+                answer_correctness,
+                has_answer_correctness,
+            ) = _load_ragas_eval_deps()
+        except ImportError as e:
+            hint = (
+                "Ragas/instructor가 현재 openai 패키지와 맞지 않습니다. "
+                "골든 평가 CLI: `pip install -r requirements-ragas-compat.txt` 후 재시도. "
+                f"원인: {e}"
+            )
+            logging.error(hint)
+            return EvaluationSummary(
+                run_id="ragas_import_error",
+                total_questions=0,
+                avg_groundedness=0.0,
+                avg_faithfulness=0.0,
+                avg_answer_relevancy=0.0,
+                avg_context_precision=0.0,
+                avg_context_recall=0.0,
+                avg_overall_score=0.0,
+                results=[],
+                suggestions=[hint],
+            )
         results = []
         
         # Create dataset
@@ -249,13 +275,16 @@ class RagasEvaluator:
         metrics_batch = [faithfulness, answer_relevancy, context_precision, context_recall]
         if has_answer_correctness and answer_correctness is not None:
             metrics_batch.append(answer_correctness)
-        try:
-            ragas_result = evaluate(
+        def _run_batch_ragas():
+            return evaluate(
                 dataset,
                 metrics=metrics_batch,
                 llm=self.llm,
                 embeddings=self.embeddings,
             )
+
+        try:
+            ragas_result = await asyncio.to_thread(_run_batch_ragas)
             n = len(test_cases)
 
             def _to_float(x) -> float:
@@ -406,7 +435,7 @@ class RagasEvaluator:
         # Calculate summary statistics
         if results:
             summary = EvaluationSummary(
-                run_id=f"run_{asyncio.get_event_loop().time()}",
+                run_id=f"run_{time.time():.3f}",
                 total_questions=len(results),
                 avg_groundedness=sum(r.groundedness for r in results) / len(results),
                 avg_faithfulness=sum(r.faithfulness for r in results) / len(results),

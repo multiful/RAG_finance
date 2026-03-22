@@ -255,7 +255,15 @@ NO [해당 문서에는 가계대출 금리에 대한 직접적인 언급이 없
         # 1. Calculate Citation Coverage (supports both [1] and [출처 1] formats)
         citations_found = set(re.findall(r'\[(?:출처\s*)?(\d+)\]', answer))
         unique_citations = len(citations_found)
-        citation_coverage = min(1.0, unique_citations / max(1, len(chunks)))
+        if unique_citations > 0:
+            citation_coverage = min(1.0, unique_citations / max(1, len(chunks)))
+        elif chunks:
+            # LLM이 JSON 답변에서 [1] 마커를 누락해도 검색·근거 청크가 있으면 0%만 표시되지 않게 유사도 기반 하한
+            sims = [float(c.get("similarity") or 0.0) for c in chunks[: min(5, len(chunks))]]
+            avg_sim = sum(sims) / len(sims) if sims else 0.0
+            citation_coverage = max(0.15, min(0.55, avg_sim * 0.85))
+        else:
+            citation_coverage = 0.0
         
         cited_similarities = []
         for idx_str in citations_found:

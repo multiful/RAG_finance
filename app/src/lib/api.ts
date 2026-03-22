@@ -26,6 +26,8 @@ import type {
 
 const api = axios.create({
   baseURL: API_BASE_URL,
+  /** RAG·에이전트·대용량 JSON 응답 (프록시 60s보다 길게 잡되, /evaluation/run 은 202 비동기) */
+  timeout: 120000,
   headers: {
     'Content-Type': 'application/json',
   },

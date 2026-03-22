@@ -49,7 +49,9 @@ async def run_evaluation(
 ):
     """
     RAGAS 평가 실행.
-    장시간 소요 시 타임아웃을 피하기 위해 백그라운드 스레드에서 실행하고 202를 반환합니다.
+    즉시 **202 Accepted** 만 반환하므로 Railway/Vercel 게이트웨이 **요청 타임아웃(보통 60s)** 에 걸리지 않음.
+    실제 Ragas·LLM 호출은 데몬 스레드에서 실행되며, `app.evaluation.ragas_evaluator` 의 `evaluate()` 는
+    `asyncio.to_thread` 로 이벤트 루프를 막지 않음.
     결과는 GET /evaluation/latest 로 폴링하거나, 설정 화면 새로고침으로 확인하세요.
     """
     import threading

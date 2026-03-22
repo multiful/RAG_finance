@@ -1,3 +1,6 @@
 # PyPI에 scikit-learn==1.4.1 wheel이 없어 발생하는 설치 실패 방지.
 # 의존성 중 1.4.1을 요구하는 경우에도 1.4.2로 통일.
 scikit-learn==1.4.2
+# openai SDK + httpx: 0.28에서 proxies 인자 제거 — 다른 패키지가 httpx를 올리면 AsyncClient 초기화 실패 가능
+httpx==0.27.2
+httpcore==1.0.5

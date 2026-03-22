@@ -1,0 +1,5 @@
+# RAGAS 골든셋·evaluate_batch 용 (ragas→instructor가 요구하는 openai API)
+# 기본 requirements.txt 의 openai==1.12 와 병행 시 충돌할 수 있음 →
+#   별도 venv 이거나, 평가 전에만:  pip install -r requirements-ragas-compat.txt
+# 프로덕션 API는 슬림 openai 1.12 유지 권장.
+openai>=1.40.0,<2.0.0

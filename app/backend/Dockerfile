@@ -16,6 +16,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 COPY constraints.txt requirements.txt ./
+# `-c constraints.txt` 대신 pip가 공식 지원하는 PIP_CONSTRAINT (Railway/Nixpacks에서 플래그 생략 시 동일 효과)
 RUN pip install --upgrade pip && \
     PIP_CONSTRAINT=/app/constraints.txt pip install -r requirements.txt
 

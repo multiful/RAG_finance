@@ -1,6 +1,13 @@
 # Railway: 서비스 Root Directory를 app/backend 로 두었을 때 사용합니다.
 # 대시보드의 Custom Start Command가 Dockerfile CMD보다 우선하면 $PORT가 그대로 넘어가 오류가 납니다.
 # 아래 startCommand로 통일하거나, Deploy 설정에서 Custom Start Command를 비우세요.
+#
+# 빌드가 Dockerfile이 아니라 Nixpacks일 때, constraints.txt를 못 쓰는 경우:
+#   Settings → Build → Custom Build Command 예:
+#     pip install -r requirements.txt -c constraints.txt
+#   또는 (pip가 -c 대신 env만 지원하는 환경)
+#     PIP_CONSTRAINT=constraints.txt pip install -r requirements.txt
+# Dockerfile 빌더(builder=DOCKERFILE)면 COPY constraints.txt + Dockerfile의 PIP_CONSTRAINT로 해결됨.
 
 [build]
 builder = "DOCKERFILE"

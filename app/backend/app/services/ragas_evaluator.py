@@ -174,8 +174,8 @@ class RAGASEvaluator:
         
         dataset = Dataset.from_dict(evaluation_data)
         
-        try:
-            result = evaluate(
+        def _run_ragas_system():
+            return evaluate(
                 dataset,
                 metrics=[
                     faithfulness,
@@ -186,6 +186,9 @@ class RAGASEvaluator:
                 llm=self.llm,
                 embeddings=self.embeddings,
             )
+
+        try:
+            result = await asyncio.to_thread(_run_ragas_system)
             # ragas 0.1.x: Result.to_pandas() 또는 dict-like
             if hasattr(result, "to_pandas"):
                 scores = result.to_pandas().mean()

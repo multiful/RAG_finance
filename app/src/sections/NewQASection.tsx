@@ -38,6 +38,14 @@ import { askQuestion, askAgentQuestion } from '@/lib/api';
 import { EXAMPLE_QUESTION_SOURCE_CHIP, SOURCE_LABEL_FULL, SOURCE_LABEL_ORIGIN, VERIFIER_SYSTEM_LABEL } from '@/lib/constants';
 import type { Citation } from '@/types';
 
+/** API가 0~1 또는 0~100 스케일로 줄 때 모두 0~1로 통일 */
+function normalizeUnitInterval(n: unknown): number {
+  if (n == null || Number.isNaN(Number(n))) return 0;
+  let x = Number(n);
+  if (x > 1.0001) x = x / 100;
+  return Math.min(1, Math.max(0, x));
+}
+
 interface Message {
   id: string;
   type: 'user' | 'assistant';
@@ -240,9 +248,9 @@ export default function NewQASection() {
           type: 'assistant',
           content: response.answer,
           citations: response.citations,
-          confidence: response.confidence,
-          groundedness_score: response.groundedness_score,
-          citation_coverage: response.citation_coverage,
+          confidence: normalizeUnitInterval(response.confidence),
+          groundedness_score: normalizeUnitInterval(response.groundedness_score),
+          citation_coverage: normalizeUnitInterval(response.citation_coverage),
           hallucination_flag: (response.confidence ?? 0) < 0.4,
           timestamp: new Date(),
           agent_metadata: {
@@ -261,9 +269,9 @@ export default function NewQASection() {
           type: 'assistant',
           content: response.answer,
           citations: response.citations,
-          confidence: response.confidence,
-          groundedness_score: response.groundedness_score,
-          citation_coverage: response.citation_coverage,
+          confidence: normalizeUnitInterval(response.confidence),
+          groundedness_score: normalizeUnitInterval(response.groundedness_score),
+          citation_coverage: normalizeUnitInterval(response.citation_coverage),
           hallucination_flag: (response.confidence ?? 0) < 0.4,
           timestamp: new Date(),
         };
@@ -343,7 +351,7 @@ export default function NewQASection() {
       : null;
 
   return (
-    <div className="h-[calc(100vh-180px)] max-w-7xl mx-auto flex flex-col gap-6">
+    <div className="min-h-[calc(100vh-120px)] max-w-[min(1600px,calc(100vw-2rem))] mx-auto flex flex-col gap-4 pb-4">
       {/* Premium Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
         <div>
@@ -459,11 +467,11 @@ export default function NewQASection() {
         </div>
       </div>
 
-      <div className="flex-1 grid grid-cols-1 lg:grid-cols-5 gap-8 overflow-hidden">
-        {/* Chat Area */}
-        <div className="lg:col-span-3 flex flex-col gap-4 overflow-hidden">
-          <Card className="flex-1 flex flex-col border-none shadow-xl shadow-slate-200/50 bg-white rounded-[2rem] overflow-hidden">
-            <CardContent className="flex-1 overflow-y-auto p-6 space-y-6 scrollbar-hide">
+      <div className="flex-1 grid grid-cols-1 xl:grid-cols-12 gap-6 min-h-0 overflow-hidden">
+        {/* Chat Area — 넓은 화면에서 8/12 */}
+        <div className="xl:col-span-8 flex flex-col gap-4 min-h-0 overflow-hidden">
+          <Card className="flex-1 flex flex-col min-h-[min(78vh,820px)] border-none shadow-xl shadow-slate-200/50 bg-white rounded-[2rem] overflow-hidden">
+            <CardContent className="flex-1 min-h-0 overflow-y-auto p-6 md:p-8 space-y-6 scrollbar-hide">
               {messages.length === 0 ? (
                 <div className="h-full flex flex-col p-4">
                   <div className="text-center mb-6">
@@ -493,7 +501,7 @@ export default function NewQASection() {
                     </TabsList>
                     
                     {Object.entries(INDUSTRY_TEMPLATES).map(([key, { templates, color }]) => (
-                      <TabsContent key={key} value={key} className="mt-0 space-y-4 overflow-y-auto max-h-[400px]">
+                      <TabsContent key={key} value={key} className="mt-0 space-y-4 overflow-y-auto max-h-[min(52vh,560px)]">
                         {templates.map((template) => (
                           <div key={template.category} className="space-y-2">
                             <h4 className="text-xs font-black text-slate-400 uppercase tracking-wider px-2">
@@ -725,8 +733,8 @@ export default function NewQASection() {
           </Card>
         </div>
 
-        {/* Info Panel */}
-        <div className="lg:col-span-2 flex flex-col gap-6 overflow-hidden">
+        {/* Info Panel — 4/12 */}
+        <div className="xl:col-span-4 flex flex-col gap-4 min-h-0 overflow-hidden">
           <div className="flex items-center justify-between px-2">
             <h3 className="text-xl font-bold text-slate-900 flex items-center gap-2">
               <Info className="w-5 h-5 text-primary" />

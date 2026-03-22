@@ -14,12 +14,14 @@ def main() -> None:
         port = int(raw)
     except ValueError:
         port = 8000
+    # timeout_keep_alive: 긴 RAG 응답 후에도 연결 재사용. Railway/리버스프록시는 보통 60~120s 요청 한도가 별도.
     uvicorn.run(
         "app.main:app",
         host="0.0.0.0",
         port=port,
         proxy_headers=True,
         forwarded_allow_ips="*",
+        timeout_keep_alive=120,
     )
 
 
