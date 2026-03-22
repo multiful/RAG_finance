@@ -3,6 +3,7 @@
 Extracts key dates (effective dates, deadlines, grace periods) from policy documents
 and provides calendar-ready timeline events.
 """
+import logging
 import openai
 import json
 from typing import List, Dict, Any, Optional
@@ -16,6 +17,8 @@ from app.models.schemas import (
     IndustryType, TimelineEvent, TimelineEventType,
     TimelineResponse, TimelineExtractRequest
 )
+
+_log = logging.getLogger(__name__)
 
 
 class TimelineExtractorService:
@@ -157,13 +160,13 @@ class TimelineExtractorService:
                         is_critical=ev.get("is_critical", False)
                     ))
                 except Exception as e:
-                    print(f"Error parsing event: {e}")
+                    _log.debug("Error parsing event: %s", e)
                     continue
             
             return events
             
         except Exception as e:
-            print(f"Error extracting timeline: {e}")
+            _log.warning("Error extracting timeline: %s", e)
             return []
     
     def _save_event(self, event: TimelineEvent, document_id: str):
@@ -181,7 +184,7 @@ class TimelineExtractorService:
         try:
             self.db.table("timeline_events").insert(event_data).execute()
         except Exception as e:
-            print(f"Error saving timeline event: {e}")
+            _log.warning("Error saving timeline event: %s", e)
     
     def _convert_to_events(
         self,
@@ -254,7 +257,7 @@ class TimelineExtractorService:
                 return TimelineResponse(events=[], total_events=0, upcoming_critical=0)
         except Exception as e:
             # Table doesn't exist or other DB error
-            print(f"Timeline events query failed: {e}")
+            _log.warning("Timeline events query failed: %s", e)
             return TimelineResponse(events=[], total_events=0, upcoming_critical=0)
         
         events = []
@@ -323,7 +326,7 @@ class TimelineExtractorService:
             if not result.data:
                 return []
         except Exception as e:
-            print(f"Timeline date range query failed: {e}")
+            _log.warning("Timeline date range query failed: %s", e)
             return []
         
         today = date.today()

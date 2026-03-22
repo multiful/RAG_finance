@@ -45,12 +45,12 @@ function loadFromStorage(): {
   agentMode: boolean;
 } {
   if (typeof window === 'undefined') {
-    return { messages: [], input: '', complianceMode: false, agentMode: false };
+    return { messages: [], input: '', complianceMode: true, agentMode: false };
   }
   try {
     const raw = sessionStorage.getItem(STORAGE_KEY);
     if (!raw) {
-      return { messages: [], input: '', complianceMode: false, agentMode: false };
+      return { messages: [], input: '', complianceMode: true, agentMode: false };
     }
     const parsed = JSON.parse(raw) as PersistedPayload;
     const messages = (parsed.messages ?? []).map((m) => ({
@@ -60,7 +60,7 @@ function loadFromStorage(): {
     return {
       messages,
       input: parsed.input ?? '',
-      complianceMode: parsed.complianceMode ?? false,
+      complianceMode: parsed.complianceMode ?? true,
       agentMode: parsed.agentMode ?? false,
     };
   } catch {
@@ -128,7 +128,7 @@ export function QAProvider({ children }: { children: ReactNode }) {
     setMessages([]);
     setInput('');
     setLoading(false);
-    setComplianceMode(false);
+    setComplianceMode(true);
     setAgentMode(false);
     setSelectedCitation(null);
     setInspectorOpen(false);

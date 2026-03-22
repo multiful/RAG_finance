@@ -21,8 +21,8 @@ class Settings(BaseSettings):
     # OpenAI — 일반 기능은 mini, RAG 질의는 OPENAI_MODEL_QA로 분리(정확도·근거 우선)
     OPENAI_API_KEY: str = ""
     OPENAI_MODEL: str = "gpt-4o-mini"
-    # RAG HyDE·답변가능성·최종 답변 전용. 비우면 OPENAI_MODEL 사용
-    OPENAI_MODEL_QA: str = "gpt-4o"
+    # RAG HyDE·답변가능성·최종 답변 전용. 비우면 OPENAI_MODEL(gpt-4o-mini 등)과 동일 — 비용·지연 최우선 시 비움 유지
+    OPENAI_MODEL_QA: str = ""
     OPENAI_MODEL_CLASSIFICATION: str = ""  # 비우면 OPENAI_MODEL 사용. 분류만 정확도 올리려면 gpt-4o 등 설정
     OPENAI_EMBEDDING_MODEL: str = "text-embedding-3-small"
     
@@ -75,15 +75,15 @@ class Settings(BaseSettings):
     # Processing
     CHUNK_SIZE: int = 800
     CHUNK_OVERLAP: int = 100
-    # 검색·리랭크: 정확도·근거 우선 — 후보 넉넉히 뽑고 리랭크로 정렬( sentence-transformers 필요, 실패 시 벡터 순 폴백)
+    # 검색·리랭크: 후보는 넉넉히, 리랭크는 sentence-transformers 필요(Railway 슬림은 false 권장)
     TOP_K_RETRIEVAL: int = 20
     TOP_K_RERANK: int = 10
-    ENABLE_RERANKING: bool = True
+    ENABLE_RERANKING: bool = False
     RERANK_MODEL: str = "cross-encoder/ms-marco-MiniLM-L-6-v2"
-    # HyDE: 검색 품질 향상(질문당 LLM 1회). 정확도 우선 시 true 권장
-    ENABLE_QUERY_HYDE: bool = True
-    # false: 답변가능성을 항상 전용 LLM으로 판정(근거 부족 시 조기 차단). true면 겹침/유사도 휴리스틱으로 생략 가능
-    ENABLE_FAST_ANSWERABILITY: bool = False
+    # HyDE: 질문당 LLM 1회 추가. 프로덕션 기본 false(지연·비용), 검색 품질 필요 시 true
+    ENABLE_QUERY_HYDE: bool = False
+    # true: 유사도·어휘 겹침 충족 시 답변가능성 LLM 생략(요청당 1회 절감)
+    ENABLE_FAST_ANSWERABILITY: bool = True
     FAST_ANSWERABILITY_MIN_OVERLAP: float = 0.18
     # -1: 유사도 기반 생략 비활성화(정확도 우선). 0 이상이면 상위 청크 유사도가 이 값 이상일 때만 생략
     ANSWERABILITY_FAST_PATH_MIN_SIM: float = -1.0

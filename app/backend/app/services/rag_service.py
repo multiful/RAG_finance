@@ -1,4 +1,5 @@
 """RAG (Retrieval Augmented Generation) service."""
+import logging
 import openai
 from typing import List, Dict, Any, Optional, Tuple
 from datetime import datetime, timezone
@@ -13,6 +14,8 @@ from app.models.schemas import (
     QARequest, QAResponse, Citation, IndustryType,
     ChunkResponse, ChecklistItem
 )
+
+_log = logging.getLogger(__name__)
 
 
 def _qa_llm_model() -> str:
@@ -229,9 +232,9 @@ NO [해당 문서에는 가계대출 금리에 대한 직접적인 언급이 없
         
         mode_instruction = ""
         if compliance_mode:
-            mode_instruction = "당신은 현재 '컴플라이언스 모드'입니다. 모든 문장의 끝에 반드시 근거 문서 번호 [번호]를 명시하십시오. 근거가 없는 문장은 작성하지 마십시오."
+            mode_instruction = "당신은 현재 '컴플라이언스 모드'입니다. 모든 문장의 끝에 반드시 근거 문서 번호 [번호]를 명시하십시오. 근거가 없는 문장은 작성하지 마십시오. 한 문장에 복수 근거가 있으면 [1][2]처럼 표기하십시오."
         else:
-            mode_instruction = "답변의 모든 문장에는 근거가 되는 문서의 번호를 [1], [2]와 같이 표시하십시오."
+            mode_instruction = "답변의 모든 문장에는 근거가 되는 문서의 번호를 [1], [2]와 같이 표시하십시오. 인용 번호는 [참고 문서]에 부여된 번호와 일치해야 합니다."
 
         system_prompt = f"""당신은 금융위원회(FSC) 정책·규제 문서를 근거로 답변하는 'FSC AI 어시스턴트'입니다.
 다음 규칙을 엄격히 준수하여 답변하십시오:
@@ -263,14 +266,14 @@ NO [해당 문서에는 가계대출 금리에 대한 직접적인 언급이 없
 
         try:
             response = await self.openai_client.chat.completions.create(
-                model=settings.OPENAI_MODEL,
+                model=_qa_llm_model(),
                 messages=[
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": f"질문: {query}\n\n[참고 문서]\n{context}"}
                 ],
                 response_format={"type": "json_object"},
-                temperature=0.2,
-                max_tokens=2200,
+                temperature=0.1,
+                max_tokens=2800,
             )
             raw = response.choices[0].message.content or "{}"
             data = json.loads(raw)
@@ -455,7 +458,7 @@ NO [해당 문서에는 가계대출 금리에 대한 직접적인 언급이 없
         start_time = datetime.now(timezone.utc)
         
         # 1. HyDE Query Expansion (비활성 시 질문만 임베딩 — 지연·비용 절감)
-        if getattr(settings, "ENABLE_QUERY_HYDE", False):
+        if getattr(settings, "ENABLE_QUERY_HYDE", True):
             expanded_query = await self._expand_query_hyde(request.question)
         else:
             expanded_query = request.question
@@ -583,7 +586,7 @@ NO [해당 문서에는 가계대출 금리에 대한 직접적인 언급이 없
                 "created_at": datetime.now(timezone.utc).isoformat()
             })).execute()
         except Exception as log_err:
-            print(f"Logging to qa_logs failed: {log_err}")
+            _log.debug("qa_logs insert skipped or failed: %s", log_err)
 
         return QAResponse(
             answer=structured_data["answer"],

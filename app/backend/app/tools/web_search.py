@@ -1,14 +1,16 @@
-"""
-Agentic RAG: 정보 부족 시 외부 검색 도구.
+"""Agentic RAG: 정보 부족 시 외부 검색 도구.
 
 - Serper (Google Search API): SERPER_API_KEY
 - Tavily (AI 검색): TAVILY_API_KEY
 
 .env에 하나라도 설정하면 "검색 결과 부족 → 추가로 웹 검색" 플로우에서 사용됩니다.
 """
+import logging
 import httpx
 from typing import List, Dict, Any
 from app.core.config import settings
+
+_log = logging.getLogger(__name__)
 
 
 async def web_search_serper(query: str, num: int = 5) -> List[Dict[str, Any]]:
@@ -34,7 +36,7 @@ async def web_search_serper(query: str, num: int = 5) -> List[Dict[str, Any]]:
                 })
             return out
     except Exception as e:
-        print(f"[web_search] Serper error: {e}")
+        _log.debug("Serper search error: %s", e)
         return []
 
 
@@ -71,7 +73,7 @@ async def web_search_tavily(query: str, num: int = 5) -> List[Dict[str, Any]]:
                 })
             return out
     except Exception as e:
-        print(f"[web_search] Tavily error: {e}")
+        _log.debug("Tavily search error: %s", e)
         return []
 
 

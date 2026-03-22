@@ -129,7 +129,16 @@ qa_check.txt
 # -----------------------------
 # 로컬 전용: 데이터 / 스크립트 / 테스트 (원격 비추적, 로컬 파일 유지)
 # -----------------------------
-app/backend/data/*.jsonl
-app/backend/scripts/**/__pycache__/
+app/backend/data/
+app/backend/scripts/
 app/backend/tests/
 app/backend/pytest.ini
+
+# 빌드·실행 산출물 (실수로 커밋 방지)
+*.exe
+*.dll
+*.dylib
+*.spec
+*.msi
+**/bin/
+**/obj/

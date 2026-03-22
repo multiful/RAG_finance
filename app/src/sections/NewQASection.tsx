@@ -437,7 +437,7 @@ export default function NewQASection() {
               <Label htmlFor="compliance-mode" className="text-sm font-semibold text-slate-900 cursor-pointer">
                 컴플라이언스
               </Label>
-              <span className="text-xs text-slate-500">출처 추적</span>
+              <span className="text-xs text-slate-500">문장별 근거·출처 (권장)</span>
             </div>
             <Switch 
               id="compliance-mode" 

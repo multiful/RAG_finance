@@ -108,7 +108,7 @@ class QARequest(BaseModel):
     date_from: Optional[datetime] = None
     date_to: Optional[datetime] = None
     top_k: int = 5
-    compliance_mode: bool = False
+    compliance_mode: bool = True  # 기본: 문장별 근거·출처 강제(정확도·감사 추적)
     include_retrieval_contexts: bool = False  # 골든/Ragas: 리트리벌 청크 전체 텍스트
 
 

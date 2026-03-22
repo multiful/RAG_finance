@@ -1,4 +1,5 @@
 """Industry classification service."""
+import logging
 import openai
 import json
 from typing import List, Dict, Any, Optional
@@ -11,6 +12,8 @@ from app.models.schemas import (
     IndustryClassificationResponse,
     IndustryType
 )
+
+_log = logging.getLogger(__name__)
 
 
 class IndustryClassifier:
@@ -88,7 +91,7 @@ class IndustryClassifier:
                 return json.loads(json_match.group())
             
         except Exception as e:
-            print(f"LLM classification error: {e}")
+            _log.warning("LLM classification error: %s", e)
         
         return {
             "insurance": 0.0,

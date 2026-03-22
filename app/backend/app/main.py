@@ -2,7 +2,8 @@
 import asyncio
 import logging
 import re
-from fastapi import FastAPI, Response, Request, HTTPException
+import time
+from fastapi import FastAPI, Response, Request, HTTPException, Query
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -28,31 +29,37 @@ from app.api.sandbox_checklist_routes import router as sandbox_checklist_router
 from app.api.sandbox_simulate_routes import router as sandbox_simulate_router
 from app.api.references_routes import router as references_router
 
+logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan handler."""
     # Startup
     install_log_masking()  # 로그 마스킹: API 키·토큰 등 민감 정보 필터
-    print(f"[START] Starting {settings.APP_NAME}")
-    print(f"[INFO] Phase A: Data Ingestion (LLM Ops)")
-    print(f"[INFO] Phase B: Serving Service (FastAPI + Redis)")
+    logger.info("Starting %s", settings.APP_NAME)
     langsmith_on = bool(settings.LANGSMITH_API_KEY) and getattr(settings, "LANGCHAIN_TRACING_V2", True)
-    print(f"[INFO] LangSmith: {'enabled (tracing on)' if langsmith_on else 'key set but tracing off' if settings.LANGSMITH_API_KEY else 'disabled'}")
-    print(f"[INFO] LlamaParse enabled: {bool(settings.LLAMAPARSE_API_KEY)}")
-    
+    logger.info(
+        "LangSmith=%s LlamaParse=%s",
+        "on" if langsmith_on else ("off key set" if settings.LANGSMITH_API_KEY else "off"),
+        bool(settings.LLAMAPARSE_API_KEY),
+    )
+
     # Check Redis (미연결 시 인메모리 폴백으로 서버는 정상 기동)
     redis_ok = RedisClient.ping()
     if redis_ok:
-        print("[OK] Redis connection: OK")
+        logger.info("Redis: OK")
     else:
-        print("[WARN] Redis unavailable — using in-memory cache (REDIS_URL or Docker optional)")
-    
+        logger.warning("Redis unavailable — in-memory cache fallback")
+
     # Check OpenAI
     if not settings.OPENAI_API_KEY:
-        print("[WARN] WARNING: OPENAI_API_KEY is missing. RAG and Topic Detection will fail.")
+        logger.warning("OPENAI_API_KEY missing — RAG/topic will fail")
     else:
-        print(f"[OK] OpenAI API: Configured (Model: {settings.OPENAI_MODEL})")
+        qa_m = (getattr(settings, "OPENAI_MODEL_QA", None) or "").strip()
+        if qa_m:
+            logger.info("OpenAI: base=%s RAG_QA=%s", settings.OPENAI_MODEL, qa_m)
+        else:
+            logger.info("OpenAI: model=%s", settings.OPENAI_MODEL)
 
     # 일일 1회 자동 수집 (경량, 추가 디펜던시 없음)
     schedule_task = None
@@ -60,9 +67,9 @@ async def lifespan(app: FastAPI):
         try:
             from app.scheduler import run_daily_collection_loop
             schedule_task = asyncio.create_task(run_daily_collection_loop())
-            print("[OK] Daily collection schedule: enabled (1x/day)")
+            logger.info("Daily collection schedule: enabled")
         except Exception as e:
-            print(f"[WARN] Daily schedule not started: {e}")
+            logger.warning("Daily schedule not started: %s", e)
 
     yield
 
@@ -73,7 +80,7 @@ async def lifespan(app: FastAPI):
         except asyncio.CancelledError:
             pass
     # Shutdown
-    print(f"[STOP] Shutting down {settings.APP_NAME}")
+    logger.info("Shutting down %s", settings.APP_NAME)
     RedisClient.close()
 
 
@@ -151,10 +158,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-print(
-    f"[INFO] CORS: explicit_origins={len(_cors_origins)}, "
-    f"vercel_regex=on, sample_match=https://rag-finance-rho.vercel.app"
-)
+logger.debug("CORS explicit_origins=%s vercel_regex=on", len(_cors_origins))
 
 # Include routers
 app.include_router(main_router, prefix=settings.API_V1_PREFIX)
@@ -213,8 +217,13 @@ async def root_head():
 
 
 @app.get("/health")
-async def health_check():
-    """Health check endpoint. 수집·벡터 건수 등 확장."""
+async def health_check(refresh: bool = Query(False, description="true면 캐시 없이 전체 점검")):
+    """Health check endpoint. 기본 5초 캐시로 DB count 부하 완화. 상세 진단 시 ?refresh=true"""
+    global _health_cache
+    now = time.time()
+    if not refresh and _health_cache and (now - _health_cache[0]) < _HEALTH_CACHE_TTL_SEC:
+        return _health_cache[1]
+
     redis_ok = RedisClient.ping()
     openai_ok = bool(settings.OPENAI_API_KEY)
 
@@ -251,7 +260,7 @@ async def health_check():
 
     all_ok = redis_ok and openai_ok and db_ok
 
-    return {
+    payload = {
         "status": "healthy" if all_ok else "degraded" if (openai_ok and db_ok) else "warning",
         "timestamp": datetime.now().isoformat(),
         "services": {
@@ -279,6 +288,8 @@ async def health_check():
             "last_collection_success": last_collection_success,
         },
     }
+    _health_cache = (now, payload)
+    return payload
 
 
 @app.head("/health")

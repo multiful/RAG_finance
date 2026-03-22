@@ -1,4 +1,5 @@
 """Topic surge detection service."""
+import logging
 import numpy as np
 from typing import List, Dict, Any, Optional
 from datetime import datetime, timedelta, timezone
@@ -43,7 +44,7 @@ class TopicDetector:
         ).execute()
         
         if not result.data:
-            print(f"No documents found for clustering between {start_date} and {end_date}")
+            _log.debug("No documents for clustering %s ~ %s", start_date, end_date)
             return []
         
         # Group by document
@@ -109,8 +110,13 @@ class TopicDetector:
         # Debug similarity stats
         upper_tri = similarity_matrix[np.triu_indices(n, k=1)]
         if len(upper_tri) > 0:
-            print(f"DEBUG: Similarity matrix stats - Mean: {np.mean(upper_tri):.4f}, Max: {np.max(upper_tri):.4f}, Min: {np.min(upper_tri):.4f}")
-            print(f"DEBUG: Document count: {n}, Potential pairs: {len(upper_tri)}")
+            _log.debug(
+                "Similarity matrix mean=%.4f max=%.4f min=%.4f pairs=%s",
+                float(np.mean(upper_tri)),
+                float(np.max(upper_tri)),
+                float(np.min(upper_tri)),
+                len(upper_tri),
+            )
         
         # Hierarchical clustering (simplified)
         clusters = []
@@ -130,7 +136,7 @@ class TopicDetector:
                     visited.add(j)
             
             if len(cluster) >= min_cluster_size:
-                print(f"DEBUG: Found cluster of size {len(cluster)} around doc {i}")
+                _log.debug("Cluster size=%s around doc %s", len(cluster), i)
                 cluster_docs = [doc_ids[idx] for idx in cluster]
                 
                 # Calculate centroid
@@ -177,7 +183,7 @@ class TopicDetector:
             # Give bonus based on cluster quality
             score += 30  # Novelty bonus for new system
             score += min(current_size * 5, 20)  # Extra size bonus
-            print(f"DEBUG: No previous period data, assigning novelty score: {score}")
+            _log.debug("No previous period data, novelty score=%s", score)
             return min(score, 100)
         
         # Check if similar cluster existed in previous period
@@ -218,7 +224,7 @@ class TopicDetector:
         
         # Current period clusters
         current_clusters = await self.cluster_documents(start_date, end_date, min_cluster_size=2)
-        print(f"DEBUG: Clusters detected: {len(current_clusters)}")
+        _log.debug("Current-period clusters: %s", len(current_clusters))
         
         # Previous period clusters (for comparison)
         prev_clusters = await self.cluster_documents(prev_start, start_date, min_cluster_size=2)

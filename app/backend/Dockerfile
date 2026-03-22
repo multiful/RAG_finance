@@ -7,8 +7,11 @@ WORKDIR /app
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
-    PIP_DISABLE_PIP_VERSION_CHECK=1 \
-    ENABLE_RERANKING=false
+    PIP_DISABLE_PIP_VERSION_CHECK=1
+# 리랭크(cross-encoder): 기본 설정은 config에서 ENABLE_RERANKING=true.
+# 슬림 이미지에 sentence-transformers 없으면 런타임에서 폴백. 필요 시:
+#   pip install sentence-transformers scikit-learn
+# 또는 Railway Variables: ENABLE_RERANKING=false
 
 # 일부 휠이 없을 때를 대비한 최소 빌드 도구(psycopg2-binary 등은 보통 휠 사용)
 RUN apt-get update && apt-get install -y --no-install-recommends \
