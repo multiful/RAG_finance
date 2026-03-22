@@ -282,7 +282,7 @@ NO [해당 문서에는 가계대출 금리에 대한 직접적인 언급이 없
                 data["answer"] = json.dumps(ans, ensure_ascii=False) if isinstance(ans, (dict, list)) else str(ans)
             return data
         except Exception as e:
-            print(f"Answer generation error: {e}")
+            _log.warning("Answer generation error: %s", e)
             return {
                 "answer": "죄송합니다. 답변 생성 중 오류가 발생했습니다.",
                 "summary": "오류 발생",

@@ -8,6 +8,7 @@ Features:
 """
 import asyncio
 import json
+import logging
 import re
 from typing import List, Dict, Any, Optional, Tuple
 from dataclasses import dataclass
@@ -16,11 +17,13 @@ import numpy as np
 from app.core.config import settings
 from app.core.database import get_db
 
+_log = logging.getLogger(__name__)
+
 
 def _vlog(msg: str) -> None:
     """DEBUG=True 일 때만 검색 단계 로그 (프로덕션 I/O·지연 감소)."""
     if getattr(settings, "DEBUG", False):
-        print(msg)
+        _log.debug("%s", msg)
 
 
 # Cross-Encoder는 로딩 비용이 크므로 프로세스당 1회 캐시
@@ -136,7 +139,7 @@ class VectorStore:
             return results
             
         except Exception as e:
-            print(f"ERROR: Similarity search failed: {e}")
+            _log.warning("Similarity search failed: %s", e)
             return []
 
     @staticmethod
@@ -197,7 +200,7 @@ class VectorStore:
             return self._parse_bm25_results(result.data)
             
         except Exception as e:
-            print(f"BM25/Trigram error: {e}")
+            _log.debug("BM25/Trigram error (fallback): %s", e)
             return await self._fallback_keyword_search(query, top_k, filters)
 
     async def _fallback_keyword_search(
@@ -397,7 +400,7 @@ class VectorStore:
         if not getattr(settings, "ENABLE_RERANKING", True):
             return results[:top_k]
         
-        print(f"DEBUG: Reranking {len(results)} results using cross-encoder...")
+        _vlog(f"Reranking {len(results)} results using cross-encoder...")
         try:
             model_name = getattr(settings, "RERANK_MODEL", "cross-encoder/ms-marco-MiniLM-L-6-v2")
             model = _get_cached_cross_encoder(model_name)

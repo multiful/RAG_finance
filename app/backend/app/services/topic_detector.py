@@ -10,6 +10,8 @@ from app.core.config import settings
 from app.core.database import get_db
 from app.models.schemas import TopicResponse, AlertResponse, AlertSeverity, IndustryType
 
+_log = logging.getLogger(__name__)
+
 
 class TopicDetector:
     """Detect emerging topics and generate alerts."""
@@ -90,10 +92,10 @@ class TopicDetector:
         n = len(doc_ids)
         
         if n < min_cluster_size:
-            print(f"Only {n} documents with embeddings found. Minimum required for clustering is {min_cluster_size}.")
+            _log.debug("Too few docs for clustering: %s < %s", n, min_cluster_size)
             return []
-        
-        print(f"Clustering {n} documents...")
+
+        _log.debug("Clustering %s documents", n)
         
         # Similarity matrix
         similarity_matrix = np.zeros((n, n))
@@ -219,8 +221,7 @@ class TopicDetector:
         start_date = end_date - timedelta(days=days)
         prev_start = start_date - timedelta(days=days)
         
-        print(f"DEBUG: Current UTC time: {end_date.isoformat()}")
-        print(f"DEBUG: Clustering window: {start_date.isoformat()} ~ {end_date.isoformat()}")
+        _log.debug("Topic detect window %s ~ %s", start_date.isoformat(), end_date.isoformat())
         
         # Current period clusters
         current_clusters = await self.cluster_documents(start_date, end_date, min_cluster_size=2)
