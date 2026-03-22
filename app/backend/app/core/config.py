@@ -77,7 +77,7 @@ class Settings(BaseSettings):
     CHUNK_OVERLAP: int = 120  # 재귀 청킹 시 문맥 연속성
     # 검색·리랭크: 후보는 넉넉히, 리랭크는 sentence-transformers 필요(Railway 슬림은 false 권장)
     # 골든셋·규제 QA 리콜: 후보를 넉넉히(리랭크 전)
-    TOP_K_RETRIEVAL: int = 24
+    TOP_K_RETRIEVAL: int = 30
     TOP_K_RERANK: int = 10
     ENABLE_RERANKING: bool = False
     RERANK_MODEL: str = "cross-encoder/ms-marco-MiniLM-L-6-v2"
@@ -93,7 +93,7 @@ class Settings(BaseSettings):
     HYBRID_VECTOR_WEIGHT: float = 0.7
     HYBRID_KEYWORD_WEIGHT: float = 0.3
     # RRF 후 필터: 근거 후보 확보를 위해 기본은 다소 낮게(리콜↑), 리랭크로 정밀화
-    HYBRID_SIMILARITY_THRESHOLD: float = 0.20
+    HYBRID_SIMILARITY_THRESHOLD: float = 0.16
     ENABLE_TRACING: bool = True     # LangSmith 트레이싱 (API 키 설정 시 동작)
     
     # LangGraph / Agentic RAG

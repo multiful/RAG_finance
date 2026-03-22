@@ -71,9 +71,8 @@ class EvaluationResult:
     answer_relevancy: float  # 답변 관련성
     context_precision: float  # 컨텍스트 정확도
     context_recall: float  # 컨텍스트 재현율
-    
-    # Composite score
-    overall_score: float
+    overall_score: float  # Composite score
+    answer_correctness: float = 0.0  # 정답 대비 정확도(Ragas, 선택 메트릭)
 
 
 @dataclass
@@ -87,6 +86,7 @@ class EvaluationSummary:
     avg_context_precision: float
     avg_context_recall: float
     avg_overall_score: float
+    avg_answer_correctness: float = 0.0
     
     # Detailed results
     results: List[EvaluationResult]
@@ -186,14 +186,23 @@ class RagasEvaluator:
                     "answer_correctness": (result.get("answer_correctness") or [0])[0],
                 }
             
-            # Calculate overall score (weighted average)
-            scores["overall_score"] = (
-                scores["groundedness"] * 0.35 +
-                scores["answer_relevancy"] * 0.25 +
-                scores["context_precision"] * 0.20 +
-                scores["context_recall"] * 0.20
-            )
-            
+            ac = scores.get("answer_correctness") or 0.0
+            if ac > 0:
+                scores["overall_score"] = (
+                    scores["groundedness"] * 0.28
+                    + scores["answer_relevancy"] * 0.22
+                    + scores["context_precision"] * 0.17
+                    + scores["context_recall"] * 0.17
+                    + float(ac) * 0.16
+                )
+            else:
+                scores["overall_score"] = (
+                    scores["groundedness"] * 0.35
+                    + scores["answer_relevancy"] * 0.25
+                    + scores["context_precision"] * 0.20
+                    + scores["context_recall"] * 0.20
+                )
+
             return scores
             
         except Exception as e:
@@ -253,6 +262,7 @@ class RagasEvaluator:
                 avg_context_precision=0.0,
                 avg_context_recall=0.0,
                 avg_overall_score=0.0,
+                avg_answer_correctness=0.0,
                 results=[],
                 suggestions=[hint],
             )
@@ -288,6 +298,7 @@ class RagasEvaluator:
         try:
             ragas_result = await asyncio.to_thread(_run_batch_ragas)
             n = len(test_cases)
+            ac_col = [0.0] * n  # answer_correctness (Ragas 옵션 메트릭)
 
             def _to_float(x) -> float:
                 """Ragas Score 객체(.value/.score), dict, 또는 스칼라를 float으로 변환."""
@@ -356,12 +367,14 @@ class RagasEvaluator:
                 rel_col = _from_sd(["answer_relevancy", "answer_relevance"])
                 prec_col = _from_sd(["context_precision", "context_precision_with_reference", "llm_context_precision_with_reference"])
                 rec_col = _from_sd(["context_recall"])
+                ac_col = _from_sd(["answer_correctness"])
             elif hasattr(ragas_result, "scores") and ragas_result.scores:
                 scores_list = ragas_result.scores
                 faith_col = _col_from_scores(scores_list, ["faithfulness"])
                 rel_col = _col_from_scores(scores_list, ["answer_relevancy", "answer_relevance"])
                 prec_col = _col_from_scores(scores_list, ["context_precision", "context_precision_with_reference", "llm_context_precision_with_reference"])
                 rec_col = _col_from_scores(scores_list, ["context_recall"])
+                ac_col = _col_from_scores(scores_list, ["answer_correctness"])
             elif hasattr(ragas_result, "to_pandas"):
                 df = ragas_result.to_pandas()
                 # DataFrame에서 데이터 컬럼이 아닌 점수 컬럼만 사용 (컬럼명 다양성 대응)
@@ -377,11 +390,13 @@ class RagasEvaluator:
                 rel_col = _col_by_substring(["answer_relevancy", "answer_relevance"])
                 prec_col = _col_by_substring(["context_precision"])
                 rec_col = _col_by_substring(["context_recall"])
+                ac_col = _col_by_substring(["answer_correctness"])
             else:
                 faith_col = _safe_float_list(ragas_result.get("faithfulness"), n)
                 rel_col = _safe_float_list(ragas_result.get("answer_relevancy") or ragas_result.get("answer_relevance"), n)
                 prec_col = _safe_float_list(ragas_result.get("context_precision"), n)
                 rec_col = _safe_float_list(ragas_result.get("context_recall"), n)
+                ac_col = _safe_float_list(ragas_result.get("answer_correctness"), n)
 
             # 지표가 전부 0이면 to_pandas()에서 재추출 (일부 Ragas 버전은 DF에만 실제 값 존재)
             if (sum(faith_col) + sum(rel_col) + sum(prec_col) + sum(rec_col)) == 0 and hasattr(ragas_result, "to_pandas"):
@@ -397,6 +412,8 @@ class RagasEvaluator:
                         prec_col = _safe_float_list(_df["context_precision"].tolist(), n)
                     if "context_recall" in _df.columns:
                         rec_col = _safe_float_list(_df["context_recall"].tolist(), n)
+                    if "answer_correctness" in _df.columns:
+                        ac_col = _safe_float_list(_df["answer_correctness"].tolist(), n)
                 except Exception as _e:
                     logging.getLogger(__name__).debug("to_pandas fallback failed: %s", _e)
 
@@ -407,6 +424,7 @@ class RagasEvaluator:
                 ar = rel_col[i] if i < len(rel_col) else 0
                 cp = prec_col[i] if i < len(prec_col) else 0
                 cr = rec_col[i] if i < len(rec_col) else 0
+                ac = ac_col[i] if i < len(ac_col) else 0.0
                 result = EvaluationResult(
                     question_id=case.get("question_id", f"q{i}"),
                     question=case["question"],
@@ -418,17 +436,26 @@ class RagasEvaluator:
                     answer_relevancy=ar,
                     context_precision=cp,
                     context_recall=cr,
-                    overall_score=0.0
+                    overall_score=0.0,
+                    answer_correctness=ac,
                 )
-                
-                # Calculate overall score
-                result.overall_score = (
-                    result.groundedness * 0.35 +
-                    result.answer_relevancy * 0.25 +
-                    result.context_precision * 0.20 +
-                    result.context_recall * 0.20
-                )
-                
+
+                if ac > 0:
+                    result.overall_score = (
+                        result.groundedness * 0.28
+                        + result.answer_relevancy * 0.22
+                        + result.context_precision * 0.17
+                        + result.context_recall * 0.17
+                        + result.answer_correctness * 0.16
+                    )
+                else:
+                    result.overall_score = (
+                        result.groundedness * 0.35
+                        + result.answer_relevancy * 0.25
+                        + result.context_precision * 0.20
+                        + result.context_recall * 0.20
+                    )
+
                 results.append(result)
             
         except Exception as e:
@@ -445,6 +472,7 @@ class RagasEvaluator:
                 avg_context_precision=sum(r.context_precision for r in results) / len(results),
                 avg_context_recall=sum(r.context_recall for r in results) / len(results),
                 avg_overall_score=sum(r.overall_score for r in results) / len(results),
+                avg_answer_correctness=sum(r.answer_correctness for r in results) / len(results),
                 results=results,
                 suggestions=self._generate_suggestions(results)
             )
@@ -458,6 +486,7 @@ class RagasEvaluator:
                 avg_context_precision=0.0,
                 avg_context_recall=0.0,
                 avg_overall_score=0.0,
+                avg_answer_correctness=0.0,
                 results=[],
                 suggestions=["Evaluation failed"]
             )
@@ -473,7 +502,7 @@ class RagasEvaluator:
         
         # Check groundedness
         avg_groundedness = sum(r.groundedness for r in results) / len(results)
-        if avg_groundedness < 0.7:
+        if avg_groundedness < 0.8:
             suggestions.append(
                 f"근거일치율(Groundedness)이 낮습니다 ({avg_groundedness:.2f}). "
                 "검색 결과와 답변 간의 일치도를 높이기 위해 리랭커를 개선하세요."
@@ -489,7 +518,7 @@ class RagasEvaluator:
         
         # Check context recall
         avg_recall = sum(r.context_recall for r in results) / len(results)
-        if avg_recall < 0.6:
+        if avg_recall < 0.8:
             suggestions.append(
                 f"컨텍스트 재현율(Context Recall)이 낮습니다 ({avg_recall:.2f}). "
                 "검색 결과에 필요한 정보가 모두 포함되도록 top_k 값을 늘리세요."
@@ -497,7 +526,7 @@ class RagasEvaluator:
         
         # Check answer relevancy
         avg_relevancy = sum(r.answer_relevancy for r in results) / len(results)
-        if avg_relevancy < 0.7:
+        if avg_relevancy < 0.8:
             suggestions.append(
                 f"답변 관련성(Answer Relevancy)이 낮습니다 ({avg_relevancy:.2f}). "
                 "프롬프트 엔지니어링을 통해 질문과 관련 없는 내용을 줄이세요."
