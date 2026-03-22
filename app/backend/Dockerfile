@@ -22,7 +22,9 @@ RUN pip install --upgrade pip && \
 
 COPY run_prod.py ./
 COPY app ./app
-COPY scripts ./scripts
+# scripts/ 는 로컬 도구(골든 평가 등)용이며 .gitignore 대상일 수 있어 이미지에 포함하지 않음.
+# API 런타임(run_prod.py)에는 불필요. 스크립트를 컨테이너에 넣으려면 git 추적 후 아래 주석 해제.
+# COPY scripts ./scripts
 
 EXPOSE 8000
 
