@@ -125,3 +125,11 @@ assets/
 # 임시/QA 산출물 (저장소에서 제거)
 QAResponse
 qa_check.txt
+
+# -----------------------------
+# 로컬 전용: 데이터 / 스크립트 / 테스트 (원격 비추적, 로컬 파일 유지)
+# -----------------------------
+app/backend/data/*.jsonl
+app/backend/scripts/
+app/backend/tests/
+app/backend/pytest.ini
