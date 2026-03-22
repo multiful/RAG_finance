@@ -6,7 +6,7 @@ from fastapi import APIRouter, Query, Path, HTTPException
 
 from app.core.config import settings
 from app.core.database import get_db
-from app.core.cache_helper import cache_get, cache_set, CACHE_TTL_GAP_MAP
+from app.core.cache_helper import cache_get, cache_set, CACHE_TTL_GAP_MAP, invalidate_gap_map_caches
 from app.services.gap_map_service import (
     get_gap_map,
     get_gap_map_fallback,
@@ -256,4 +256,5 @@ async def api_get_gi_components():
 async def api_put_gi_components(body: GiComponentsBulkUpdate = ...):
     """관리자: 국제 데이터(Freq/Rec/Inc/Sys) 일괄 입력. 있으면 해당 축 GI는 공식으로 자동 계산됨."""
     upsert_gi_components_bulk([c.model_dump() for c in body.components])
+    invalidate_gap_map_caches()
     return {"ok": True, "updated": len(body.components)}

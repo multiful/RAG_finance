@@ -193,7 +193,7 @@ export const getAlerts = async (params?: {
   severity?: string;
   status?: string;
 }): Promise<Alert[]> => {
-  const response = await api.get('/alerts', { params });
+  const response = await api.get('/alerts/topics', { params });
   return response.data;
 };
 
@@ -658,6 +658,34 @@ export const getGapMapDomesticInternationalComparison = async (
     '/gap-map/domestic-international-comparison',
     { params: { days } }
   );
+  return response.data;
+};
+
+/** Heatmap API — 축별 GI/LC/Gap (메인 맵과 동일 소스, Redis 캐시 공유) */
+export interface GapMapHeatmapRow {
+  axis_id: string;
+  name_ko: string;
+  gi: number;
+  lc: number;
+  gap: number;
+}
+export const getGapMapHeatmap = async (): Promise<GapMapHeatmapRow[]> => {
+  const response = await api.get<GapMapHeatmapRow[]>('/gap-map/heatmap');
+  return response.data;
+};
+
+/** GI = 0.3·Freq + 0.3·Rec + 0.2·Inc + 0.2·Sys (gap_map_gi_components) */
+export interface GiComponentRow {
+  axis_id: string;
+  freq: number;
+  rec: number;
+  inc: number;
+  sys: number;
+  source_doc?: string | null;
+  gi_computed: number;
+}
+export const getGapMapGiComponents = async (): Promise<{ items: GiComponentRow[] }> => {
+  const response = await api.get<{ items: GiComponentRow[] }>('/gap-map/gi-components');
   return response.data;
 };
 

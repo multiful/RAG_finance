@@ -42,8 +42,24 @@ def cache_set(key: str, value: Any, ttl_seconds: int = 300) -> bool:
         return False
 
 
+def invalidate_gap_map_caches() -> None:
+    """Gap Map Redis 키(gap_map:*) 삭제 — 점수/GI 컴포넌트 갱신·수집 후 일관성."""
+    try:
+        r = get_redis()
+        to_del = []
+        if hasattr(r, "scan_iter"):
+            for k in r.scan_iter(match="gap_map:*"):
+                to_del.append(k)
+        else:
+            to_del.extend(r.keys("gap_map:*") or [])
+        if to_del:
+            r.delete(*to_del)
+    except Exception:
+        pass
+
+
 def invalidate_dashboard_caches() -> None:
-    """RSS/FSS 수집 완료 후 대시보드·평가 요약 캐시 무효화."""
+    """RSS/FSS 수집 완료 후 대시보드·평가 요약·Gap Map 요약 캐시 무효화."""
     try:
         r = get_redis()
         keys_to_del = []
@@ -55,6 +71,7 @@ def invalidate_dashboard_caches() -> None:
         for k in keys_to_del:
             r.delete(k)
         cache_delete("evaluation:metrics_summary:v1")
+        invalidate_gap_map_caches()
     except Exception:
         pass
 

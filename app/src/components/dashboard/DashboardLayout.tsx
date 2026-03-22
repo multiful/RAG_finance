@@ -2,7 +2,7 @@
  * DashboardLayout: Premium Financial-grade layout with sidebar and top header.
  * React state: sidebarOpen, mobileMenuOpen. Tailwind: transitions, hover, focus.
  */
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import { 
   Menu,
@@ -53,10 +53,35 @@ export default function DashboardLayout({
 }: DashboardLayoutProps) {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [alertOpen, setAlertOpen] = useState(false);
+  const [smartAlerts, setSmartAlerts] = useState<SmartAlert[]>([]);
+  const [alertStats, setAlertStats] = useState<AlertStats | null>(null);
   const location = useLocation();
   const { isCollecting, jobProgress, startCollection, lastResult } = useCollection();
 
   const activeItem = navItems.find(item => item.path === location.pathname);
+
+  const loadAlerts = useCallback(async () => {
+    try {
+      const [alerts, stats] = await Promise.all([
+        getSmartAlerts({ limit: 30 }),
+        getAlertStats().catch(() => null),
+      ]);
+      setSmartAlerts(Array.isArray(alerts) ? alerts : []);
+      setAlertStats(stats);
+    } catch {
+      setSmartAlerts([]);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadAlerts();
+    const id = setInterval(loadAlerts, 120000);
+    return () => clearInterval(id);
+  }, [loadAlerts]);
+
+  const alertBadgeCount =
+    alertStats?.total_alerts_24h ?? smartAlerts.length;
 
   return (
     <div className="min-h-screen bg-[#fafafa] flex">
@@ -193,10 +218,84 @@ export default function DashboardLayout({
                 </div>
               )}
               
-              <Button variant="ghost" size="icon" className="relative h-10 w-10 rounded-2xl text-slate-500 hover:bg-slate-100 hover:text-slate-700 transition-colors" aria-label="알림">
-                <Bell className="w-5 h-5" />
-                <span className="absolute top-2 right-2 w-2.5 h-2.5 bg-red-500 rounded-full border-2 border-white animate-pulse" />
-              </Button>
+              <Popover
+                open={alertOpen}
+                onOpenChange={(open) => {
+                  setAlertOpen(open);
+                  if (open) loadAlerts();
+                }}
+              >
+                <PopoverTrigger asChild>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="relative h-10 w-10 rounded-2xl text-slate-500 hover:bg-slate-100 hover:text-slate-700 transition-colors"
+                    aria-label="알림"
+                  >
+                    <Bell className="w-5 h-5" />
+                    {alertBadgeCount > 0 && (
+                      <span className="absolute top-1.5 right-1.5 min-w-[18px] h-[18px] px-1 flex items-center justify-center bg-red-500 text-white text-[10px] font-bold rounded-full border-2 border-white">
+                        {alertBadgeCount > 99 ? '99+' : alertBadgeCount}
+                      </span>
+                    )}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-[min(100vw-2rem,22rem)] p-0" align="end">
+                  <div className="px-4 py-3 border-b border-slate-100 flex items-center justify-between gap-2">
+                    <span className="font-semibold text-slate-900 text-sm">스마트 알림</span>
+                    {alertStats != null && (
+                      <span className="text-xs text-slate-500">
+                        24h {alertStats.total_alerts_24h}건 · 긴급 {alertStats.critical_alerts + alertStats.high_alerts}
+                      </span>
+                    )}
+                  </div>
+                  <ScrollArea className="h-[min(60vh,320px)]">
+                    {smartAlerts.length === 0 ? (
+                      <p className="p-4 text-sm text-slate-500 leading-relaxed">
+                        표시할 알림이 없습니다. 문서 수집 후 백엔드에서 알림을 생성하면 여기에 표시됩니다.
+                      </p>
+                    ) : (
+                      <ul className="divide-y divide-slate-100">
+                        {smartAlerts.map((a) => (
+                          <li key={a.alert_id} className="p-3 text-left hover:bg-slate-50/80">
+                            <div className="flex items-start justify-between gap-2">
+                              <p className="text-sm font-medium text-slate-900 line-clamp-2">{a.document_title}</p>
+                              <Badge
+                                variant="outline"
+                                className={
+                                  a.priority === 'critical'
+                                    ? 'border-red-200 bg-red-50 text-red-800 shrink-0'
+                                    : a.priority === 'high'
+                                      ? 'border-amber-200 bg-amber-50 text-amber-900 shrink-0'
+                                      : 'shrink-0'
+                                }
+                              >
+                                {a.priority}
+                              </Badge>
+                            </div>
+                            {a.impact_summary && (
+                              <p className="text-xs text-slate-600 mt-1 line-clamp-3">{a.impact_summary}</p>
+                            )}
+                            <p className="text-[11px] text-slate-400 mt-1">
+                              {a.industries?.join(' · ') || '업권 미분류'} · 긴급도 {(a.urgency_score ?? 0).toFixed(0)}
+                            </p>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </ScrollArea>
+                  <div className="px-3 py-2 border-t border-slate-100 bg-slate-50/80">
+                    <NavLink
+                      to="/analytics"
+                      className="text-xs font-medium text-indigo-600 hover:text-indigo-800"
+                      onClick={() => setAlertOpen(false)}
+                    >
+                      규제 분석에서 상세 보기 →
+                    </NavLink>
+                  </div>
+                </PopoverContent>
+              </Popover>
               
               <div className="h-8 w-px bg-slate-200 mx-2 hidden sm:block" />
               

@@ -611,12 +611,12 @@ async def list_topics(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.get("/alerts", response_model=List[AlertResponse])
-async def list_alerts(
+@router.get("/alerts/topics", response_model=List[AlertResponse])
+async def list_topic_alerts(
     severity: Optional[str] = None,
     status: Optional[str] = "open"
 ):
-    """List alerts."""
+    """토픽 서지 기반 알림 (Supabase `alerts` 테이블). 스마트 알림은 GET /alerts 사용."""
     try:
         db = topic_detector.db
         query = db.table("alerts").select("*, topics(topic_name)")

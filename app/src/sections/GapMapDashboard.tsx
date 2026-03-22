@@ -18,10 +18,32 @@ import {
   Legend,
   ResponsiveContainer,
 } from 'recharts';
-import { getGapMap, getTopBlindSpots, getGapMapDomesticInternationalComparison, sandboxSimulate, getLCEvidence } from '@/lib/api';
-import type { RiskAxisScore, BlindSpotItem, GapMapDomesticInternationalComparison, LCEvidenceItem } from '@/lib/api';
+import {
+  getGapMap,
+  getTopBlindSpots,
+  getGapMapDomesticInternationalComparison,
+  sandboxSimulate,
+  getLCEvidence,
+  getGapMapGiComponents,
+} from '@/lib/api';
+import type {
+  RiskAxisScore,
+  BlindSpotItem,
+  GapMapDomesticInternationalComparison,
+  LCEvidenceItem,
+  GiComponentRow,
+} from '@/lib/api';
 import type { SandboxSimulateResponse } from '@/lib/api';
 import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
 import {
   Dialog,
   DialogContent,
@@ -57,21 +79,24 @@ export default function GapMapDashboard() {
   const [lcEvidenceOpen, setLcEvidenceOpen] = useState(false);
   const [lcEvidence, setLcEvidence] = useState<LCEvidenceItem[]>([]);
   const [lcEvidenceLoading, setLcEvidenceLoading] = useState(false);
+  const [giComponents, setGiComponents] = useState<GiComponentRow[]>([]);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const [mapRes, spotsRes, comparisonRes] = await Promise.all([
+      const [mapRes, spotsRes, comparisonRes, giRes] = await Promise.all([
         getGapMap(),
         getTopBlindSpots(3),
         getGapMapDomesticInternationalComparison(90),
+        getGapMapGiComponents().catch(() => ({ items: [] as GiComponentRow[] })),
       ]);
       setItems(mapRes.items);
       setBlindSpots(spotsRes.items);
       setFormula(mapRes.formula || 'Gap = GI × (1 - LC)');
       setDataSource(mapRes.data_source);
       setComparison(comparisonRes);
+      setGiComponents(giRes.items ?? []);
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : 'Gap Map 데이터를 불러오지 못했습니다.';
       setError(msg);
@@ -252,6 +277,47 @@ export default function GapMapDashboard() {
         </div>
       </header>
 
+      {giComponents.length > 0 && (
+        <Card className="border-slate-200">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base text-slate-900">GI 산출 구조 (국제 문헌 기반 세부 지표)</CardTitle>
+            <p className="text-sm text-slate-600 font-normal">
+              GI = 0.3×Freq + 0.3×Rec + 0.2×Inc + 0.2×Sys (0~1). 아래는 Supabase <code className="text-xs bg-slate-100 px-1 rounded">gap_map_gi_components</code> 실데이터입니다.
+            </p>
+          </CardHeader>
+          <CardContent className="overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="w-[72px]">축</TableHead>
+                  <TableHead>Freq</TableHead>
+                  <TableHead>Rec</TableHead>
+                  <TableHead>Inc</TableHead>
+                  <TableHead>Sys</TableHead>
+                  <TableHead>GI(계산)</TableHead>
+                  <TableHead className="min-w-[140px]">근거 문헌 메모</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {giComponents.map((row) => (
+                  <TableRow key={row.axis_id}>
+                    <TableCell className="font-mono text-xs">{row.axis_id}</TableCell>
+                    <TableCell>{row.freq.toFixed(2)}</TableCell>
+                    <TableCell>{row.rec.toFixed(2)}</TableCell>
+                    <TableCell>{row.inc.toFixed(2)}</TableCell>
+                    <TableCell>{row.sys.toFixed(2)}</TableCell>
+                    <TableCell className="font-semibold text-emerald-800">{row.gi_computed.toFixed(4)}</TableCell>
+                    <TableCell className="text-xs text-slate-600 max-w-[240px] truncate" title={row.source_doc || ''}>
+                      {row.source_doc || '—'}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
+      )}
+
       {comparison && (comparison.domestic.document_count > 0 || comparison.international.document_count > 0) && (
         <Card className="border-emerald-100 bg-emerald-50/30">
           <CardHeader className="pb-2">
@@ -325,6 +391,30 @@ export default function GapMapDashboard() {
             <span className="flex items-center gap-2">
               <span className="w-3 h-3 rounded-sm bg-[#94a3b8]" /> Local Coverage (LC)
             </span>
+          </div>
+          <div className="mt-6 overflow-x-auto rounded-lg border border-slate-200">
+            <Table>
+              <TableHeader>
+                <TableRow className="bg-slate-50">
+                  <TableHead>축</TableHead>
+                  <TableHead>리스크 요약</TableHead>
+                  <TableHead className="text-right">GI</TableHead>
+                  <TableHead className="text-right">LC</TableHead>
+                  <TableHead className="text-right">Gap</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {items.map((row) => (
+                  <TableRow key={row.axis_id}>
+                    <TableCell className="font-mono text-xs">{row.axis_id}</TableCell>
+                    <TableCell className="text-sm max-w-md">{row.name_ko}</TableCell>
+                    <TableCell className="text-right tabular-nums">{row.gi.toFixed(4)}</TableCell>
+                    <TableCell className="text-right tabular-nums">{row.lc.toFixed(4)}</TableCell>
+                    <TableCell className="text-right font-medium tabular-nums text-amber-900">{row.gap.toFixed(4)}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
           </div>
         </CardContent>
       </Card>

@@ -2,8 +2,12 @@
 
 Contains 50+ financial policy questions with ground truth answers,
 difficulty levels, and expected retrieval sources for benchmark testing.
+
+JSONL 로드: `load_golden_from_jsonl(path)` — 한 줄당 하나의 JSON 객체.
 """
-from typing import List, Dict, Any, Optional
+import json
+from pathlib import Path
+from typing import List, Dict, Any, Optional, Union
 from dataclasses import dataclass, field
 from enum import Enum
 
@@ -602,6 +606,59 @@ GOLDEN_DATASET: List[GoldenQuestion] = [
         tags=["금융위", "금감원", "역할"]
     ),
 ]
+
+
+def load_golden_from_jsonl(path: Union[str, Path]) -> List[GoldenQuestion]:
+    """
+    JSONL 골든셋 로드 (임시·외부 벤치마크용).
+
+    각 줄은 하나의 JSON 객체. 필수: id, question.
+    권장: ground_truth_summary (또는 ground_truth), expected_citations_keywords.
+
+    선택 필드:
+      difficulty: factual|reasoning|comparative|multi_hop (기본 factual)
+      industry: INSURANCE|BANKING|SECURITIES|GENERAL (기본 GENERAL)
+      expected_answer_contains, tags: 배열
+    """
+    p = Path(path)
+    if not p.is_file():
+        raise FileNotFoundError(f"Golden JSONL not found: {p.resolve()}")
+
+    out: List[GoldenQuestion] = []
+    for line_no, line in enumerate(p.read_text(encoding="utf-8").splitlines(), 1):
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        row = json.loads(line)
+        if not row.get("question"):
+            raise ValueError(f"{p}:{line_no}: 'question' 필수")
+        qid = row.get("id") or f"line-{line_no}"
+        diff_raw = row.get("difficulty", "factual")
+        try:
+            difficulty = QuestionDifficulty(diff_raw)
+        except ValueError:
+            difficulty = QuestionDifficulty.FACTUAL
+        ind_raw = row.get("industry", "GENERAL")
+        try:
+            industry = IndustryFocus(ind_raw)
+        except ValueError:
+            industry = IndustryFocus.GENERAL
+        gt = row.get("ground_truth_summary") or row.get("ground_truth") or ""
+        out.append(
+            GoldenQuestion(
+                id=str(qid),
+                question=str(row["question"]),
+                difficulty=difficulty,
+                industry=industry,
+                expected_answer_contains=list(row.get("expected_answer_contains") or []),
+                expected_citations_keywords=list(row.get("expected_citations_keywords") or []),
+                ground_truth_summary=str(gt),
+                tags=list(row.get("tags") or []),
+            )
+        )
+    if not out:
+        raise ValueError(f"No golden rows parsed from {p}")
+    return out
 
 
 def get_golden_dataset() -> List[GoldenQuestion]:

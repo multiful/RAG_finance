@@ -201,7 +201,8 @@ export default function NewQASection() {
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [complianceMode, setComplianceMode] = useState(false);
-  const [agentMode, setAgentMode] = useState(true);
+  /** 기본: 하이브리드 RAG(`/qa`) — 안정적. LangGraph는 토글 시 사용(폴백 포함). */
+  const [agentMode, setAgentMode] = useState(false);
   const [selectedCitation, setSelectedCitation] = useState<Citation | null>(null);
   const [inspectorOpen, setInspectorOpen] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);

@@ -106,39 +106,77 @@ async def get_latest_evaluation():
         return {"has_evaluation": False, "error": str(e)}
 
 
+def _norm_agent_citation(c: dict) -> dict:
+    pub = c.get("published_at")
+    if hasattr(pub, "isoformat"):
+        pub = pub.isoformat()
+    return {
+        "chunk_id": str(c.get("chunk_id", "")),
+        "document_id": str(c.get("document_id", "")),
+        "document_title": str(c.get("document_title", "")),
+        "snippet": str(c.get("snippet", ""))[:500],
+        "published_at": str(pub) if pub else "",
+        "url": str(c.get("url", "")),
+    }
+
+
 @router.post("/agent/ask")
 async def agent_ask_question(request: AgentQuestionRequest):
     """
-    LangGraph 멀티 에이전트로 질문 처리
-    
-    에이전트 파이프라인:
-    1. Planner: 질문 분석 및 검색 전략
-    2. Retriever: 관련 문서 검색
-    3. Analyzer: 답변 초안 작성
-    4. Verifier: 답변 검증
-    5. Synthesizer: 최종 답변 생성
+    LangGraph 멀티 에이전트로 질문 처리. 실패·저품질 응답 시 RAG(`/qa` 동일 파이프라인)로 자동 폴백.
     """
-    try:
-        from app.services.langgraph_agent import regulation_agent
+    from app.services.langgraph_agent import regulation_agent
+    from app.services.rag_service import RAGService
+    from app.models.schemas import QARequest
 
-        result = await regulation_agent.process_question(request.question)
-        raw_citations = result.get("citations") or []
-
-        def norm_citation(c: dict) -> dict:
-            pub = c.get("published_at")
+    async def _rag_fallback() -> dict:
+        rag = RAGService()
+        qa = await rag.answer_question(QARequest(question=request.question))
+        cites = []
+        for c in qa.citations:
+            pub = c.published_at
             if hasattr(pub, "isoformat"):
                 pub = pub.isoformat()
-            return {
-                "chunk_id": str(c.get("chunk_id", "")),
-                "document_id": str(c.get("document_id", "")),
-                "document_title": str(c.get("document_title", "")),
-                "snippet": str(c.get("snippet", ""))[:500],
-                "published_at": str(pub) if pub else "",
-                "url": str(c.get("url", "")),
-            }
+            cites.append(
+                {
+                    "chunk_id": str(c.chunk_id),
+                    "document_id": str(c.document_id),
+                    "document_title": str(c.document_title),
+                    "snippet": str(c.snippet)[:500],
+                    "published_at": str(pub) if pub else "",
+                    "url": str(c.url),
+                }
+            )
+        return {
+            "answer": qa.answer,
+            "citations": cites,
+            "confidence": float(qa.confidence),
+            "groundedness_score": float(qa.groundedness_score),
+            "citation_coverage": float(qa.citation_coverage),
+            "metadata": {
+                "question_type": "qa",
+                "agent_iterations": 0,
+                "processed_at": datetime.now(timezone.utc).isoformat(),
+                "engine": "rag_fallback",
+            },
+        }
 
-        citations = [norm_citation(x) for x in raw_citations if isinstance(x, dict)]
+    try:
+        result = await regulation_agent.process_question(request.question)
+        raw_citations = result.get("citations") or []
+        ans = (result.get("answer") or "").strip()
+        err = result.get("error")
+        bad = bool(
+            err
+            or "오류가 발생했습니다" in ans
+            or "처리 중 오류" in ans
+            or (len(ans) < 30 and not raw_citations)
+        )
+        if bad:
+            logging.warning("Agent low-quality or error; RAG fallback. err=%s", err)
+            return await _rag_fallback()
 
+        citations = [_norm_agent_citation(x) for x in raw_citations if isinstance(x, dict)]
         return {
             "answer": result.get("answer", ""),
             "citations": citations,
@@ -153,8 +191,12 @@ async def agent_ask_question(request: AgentQuestionRequest):
             },
         }
     except Exception as e:
-        logging.exception("Agent error: %s", e)
-        raise HTTPException(status_code=500, detail=str(e))
+        logging.warning("Agent exception; RAG fallback: %s", e)
+        try:
+            return await _rag_fallback()
+        except Exception as e2:
+            logging.exception("RAG fallback failed: %s", e2)
+            raise HTTPException(status_code=500, detail=str(e2))
 
 
 @router.get("/kai-targets")
