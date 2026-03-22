@@ -197,7 +197,7 @@ class RagasEvaluator:
             return scores
             
         except Exception as e:
-            print(f"Ragas evaluation error: {e}")
+            logging.getLogger(__name__).warning("Ragas evaluation error: %s", e)
             return {
                 "groundedness": 0.0,
                 "faithfulness": 0.0,
@@ -398,7 +398,7 @@ class RagasEvaluator:
                     if "context_recall" in _df.columns:
                         rec_col = _safe_float_list(_df["context_recall"].tolist(), n)
                 except Exception as _e:
-                    print("[DEBUG] to_pandas() fallback failed:", _e)
+                    logging.getLogger(__name__).debug("to_pandas fallback failed: %s", _e)
 
             # Convert to EvaluationResult objects
             for i, case in enumerate(test_cases):
@@ -432,7 +432,7 @@ class RagasEvaluator:
                 results.append(result)
             
         except Exception as e:
-            print(f"Batch evaluation error: {e}")
+            logging.getLogger(__name__).warning("Batch evaluation error: %s", e)
         
         # Calculate summary statistics
         if results:
@@ -534,10 +534,10 @@ class RagasEvaluator:
                     try:
                         self.db.table("eval_results").insert(result_data).execute()
                     except Exception as ins_err:
-                        print(f"Insert warning (schema may differ): {ins_err}")
-        
+                        logging.getLogger(__name__).debug("eval_results insert skipped: %s", ins_err)
+
         except Exception as e:
-            print(f"Error saving evaluation: {e}")
+            logging.getLogger(__name__).warning("Error saving evaluation: %s", e)
     
     async def compare_systems(
         self,

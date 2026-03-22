@@ -8,6 +8,7 @@ Enhanced Multi-Step Reasoning Agent with:
 
 Implements: 분석 -> 검색 전략 -> 검색 -> 평가 -> 생성 -> 자가검증
 """
+import logging
 from typing import TypedDict, Annotated, Sequence, Literal, Optional
 from langchain_core.messages import BaseMessage, HumanMessage, AIMessage, SystemMessage
 from langchain_core.prompts import ChatPromptTemplate
@@ -21,6 +22,8 @@ from app.core.config import settings
 from app.services.rag_service import RAGService, hybrid_weights_for_query
 from app.services.industry_classifier import IndustryClassifier
 from app.services.checklist_service import ChecklistService
+
+_log = logging.getLogger(__name__)
 
 
 # ============ Enhanced State Definition ============
@@ -267,7 +270,7 @@ async def adaptive_retrieval_node(state: AgentState) -> AgentState:
                         AIMessage(content=f"Added {len(web_results)} web search results for context.")
                     ]
             except Exception as web_err:
-                print(f"[policy_agent] Web search fallback error: {web_err}")
+                _log.debug("Web search fallback error: %s", web_err)
         
         state["retrieved_chunks"] = all_chunks[:10]
         state["messages"] = list(state["messages"]) + [

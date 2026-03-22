@@ -11,6 +11,8 @@ import logging
 
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 
+_log = logging.getLogger(__name__)
+
 from app.core.config import settings
 from app.core.database import get_db
 
@@ -157,7 +159,12 @@ class RAGASEvaluator:
         details = []
         
         for i, test_case in enumerate(test_data):
-            print(f"Evaluating {i+1}/{len(test_data)}: {test_case['question'][:30]}...")
+            _log.debug(
+                "Evaluating %s/%s: %s...",
+                i + 1,
+                len(test_data),
+                test_case["question"][:30],
+            )
             
             response = await self._get_rag_response(test_case["question"])
             

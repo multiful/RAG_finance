@@ -225,7 +225,7 @@ class TimelineExtractorService:
                     is_critical=item.get("is_critical", False)
                 ))
             except Exception as e:
-                print(f"Error converting event: {e}")
+                _log.debug("Error converting event: %s", e)
                 continue
         
         return events
@@ -297,7 +297,7 @@ class TimelineExtractorService:
                     critical_count += 1
                     
             except Exception as e:
-                print(f"Error processing event: {e}")
+                _log.debug("Error processing event: %s", e)
                 continue
         
         return TimelineResponse(

@@ -93,7 +93,7 @@ class VectorStore:
             return True
             
         except Exception as e:
-            print(f"Error adding embeddings: {e}")
+            _log.warning("Error adding embeddings: %s", e)
             return False
     
     async def similarity_search(
@@ -247,7 +247,7 @@ class VectorStore:
             return results
             
         except Exception as e:
-            print(f"Fallback search fatal error: {e}")
+            _log.warning("Fallback search fatal error: %s", e)
             return []
     
     def _normalize_scores(self, results: List[SearchResult]) -> List[SearchResult]:
@@ -422,7 +422,7 @@ class VectorStore:
             return results[:top_k]
             
         except Exception as e:
-            print(f"Reranking error: {e}")
+            _log.warning("Reranking error: %s", e)
             # Return original results if reranking fails
             return results[:top_k]
     
@@ -498,7 +498,7 @@ class VectorStore:
             return True
             
         except Exception as e:
-            print(f"Error deleting embeddings: {e}")
+            _log.warning("Error deleting embeddings: %s", e)
             return False
     
     async def get_stats(self) -> Dict[str, Any]:
@@ -526,7 +526,7 @@ class VectorStore:
             }
             
         except Exception as e:
-            print(f"Error getting stats: {e}")
+            _log.warning("Vector store stats failed: %s", e)
             return {
                 "total_chunks": 0,
                 "total_embeddings": 0,

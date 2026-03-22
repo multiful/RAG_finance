@@ -3,6 +3,7 @@
 Pipeline: Request → Cache → Reasoning → Retrieval → Reranker → Generation & Guardrail
 """
 import asyncio
+import logging
 import json
 import hashlib
 from datetime import datetime
@@ -16,6 +17,8 @@ from app.core.config import settings
 from app.core.redis import get_redis
 from app.services.vector_store import get_vector_store, SearchResult, _get_cached_cross_encoder
 from app.services.rag_service import hybrid_weights_for_query
+
+_log = logging.getLogger(__name__)
 
 
 @dataclass
@@ -55,7 +58,7 @@ class CacheLayer:
             return None
             
         except Exception as e:
-            print(f"Cache get error: {e}")
+            _log.debug("Cache get error: %s", e)
             return None
     
     async def set(self, query: str, result: Dict, filters: Optional[Dict] = None):
@@ -68,7 +71,7 @@ class CacheLayer:
                 json.dumps(result, ensure_ascii=False)
             )
         except Exception as e:
-            print(f"Cache set error: {e}")
+            _log.debug("Cache set error: %s", e)
     
     async def invalidate_document(self, document_id: str):
         """문서 관련 캐시 무효화 — KEYS 대신 SCAN으로 스캔(대량 키 시 병목 완화)."""
@@ -82,7 +85,7 @@ class CacheLayer:
                 if cached and document_id in cached:
                     self.redis.delete(key)
         except Exception as e:
-            print(f"Cache invalidation error: {e}")
+            _log.debug("Cache invalidation error: %s", e)
 
 
 class ReasoningEngine:
@@ -227,7 +230,7 @@ class Reranker:
             return results[:top_k]
             
         except Exception as e:
-            print(f"Reranking error: {e}")
+            _log.debug("Reranking error: %s", e)
             return results[:top_k]
 
 

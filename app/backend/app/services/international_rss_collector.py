@@ -4,6 +4,7 @@
 Gap Map GI 국제 데이터 출처로 활용 가능.
 """
 import asyncio
+import logging
 import hashlib
 from datetime import datetime, timezone
 from typing import List, Dict, Any, Optional
@@ -51,7 +52,7 @@ class InternationalRSSCollector:
             loop = asyncio.get_event_loop()
             feed = await loop.run_in_executor(None, lambda: feedparser.parse(url))
         except Exception as e:
-            print(f"[InternationalRSS] fetch error {fid} {url}: {e}")
+            _log.warning("[InternationalRSS] fetch error %s %s: %s", fid, url, e)
             return []
 
         documents = []
@@ -119,7 +120,7 @@ class InternationalRSSCollector:
                     if r.data:
                         fid_to_source[fid] = r.data[0]
                 except Exception as e:
-                    print(f"[InternationalRSS] source insert {fid}: {e}")
+                    _log.warning("[InternationalRSS] source insert %s: %s", fid, e)
         except Exception as e:
             if job_id:
                 job_tracker.update_job(job_id, status="error", message=f"소스 조회 실패: {e}")

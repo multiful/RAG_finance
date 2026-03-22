@@ -1,4 +1,5 @@
 """Compliance checklist extraction service."""
+import logging
 import openai
 import json
 import re
@@ -8,6 +9,8 @@ from datetime import datetime
 from app.core.config import settings
 from app.core.database import get_db
 from app.models.schemas import ChecklistRequest, ChecklistResponse, ChecklistItem
+
+_log = logging.getLogger(__name__)
 
 
 class ChecklistService:
@@ -37,9 +40,9 @@ class ChecklistService:
         doc = doc_result.data[0]
         
         # Get chunks
-        chunks_result = self.db.table("chunks").select("*").eq(
-            "document_id", request.document_id
-        ).order("chunk_index").execute()
+        chunks_result = self.db.table("chunks").select(
+            "chunk_id, chunk_index, chunk_text"
+        ).eq("document_id", request.document_id).order("chunk_index").execute()
         
         if not chunks_result.data:
             return ChecklistResponse(
@@ -133,14 +136,14 @@ class ChecklistService:
             )
             
             content = response.choices[0].message.content
-            print(f"DEBUG: Checklist LLM Response: {content}")
+            _log.debug("Checklist LLM response length=%s", len(content or ""))
             
             # Extract JSON
             json_match = re.search(r'\{.*\}', content, re.DOTALL)
             if json_match:
                 data = json.loads(json_match.group())
                 checklist_data = data.get("checklist", [])
-                print(f"DEBUG: Extracted {len(checklist_data)} items")
+                _log.debug("Extracted %s checklist items", len(checklist_data))
                 
                 items = []
                 for item_data in checklist_data:
@@ -178,7 +181,7 @@ class ChecklistService:
                 return items
         
         except Exception as e:
-            print(f"Checklist extraction error: {e}")
+            _log.warning("Checklist extraction error: %s", e)
         
         return []
     

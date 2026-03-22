@@ -1,11 +1,14 @@
 """Governance Evaluation Pipeline."""
 import asyncio
 import json
+import logging
 import re
 from datetime import datetime
 from typing import List, Dict, Any, Optional
 
 from app.core.config import settings
+
+_log = logging.getLogger(__name__)
 from app.core.database import get_db
 import openai
 
@@ -50,7 +53,7 @@ class EvaluationPipeline:
                 }).execute()
                 processed += 1
             except Exception as e:
-                print(f"Eval Error for QA {log['qa_id']}: {e}")
+                _log.warning("Eval error for QA %s: %s", log["qa_id"], e)
         
         return {"processed": processed}
 
@@ -107,7 +110,7 @@ Return JSON: {{"results": [true, false, ...]}} matching the statements."""
             if results:
                 groundedness = sum(1 for x in results if x is True) / len(results)
         except Exception as e:
-            print(f"LLM Judge Error: {e}")
+            _log.warning("LLM Judge error: %s", e)
 
         return {
             "groundedness": groundedness,

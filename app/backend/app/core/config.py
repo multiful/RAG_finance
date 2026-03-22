@@ -74,7 +74,7 @@ class Settings(BaseSettings):
     
     # Processing
     CHUNK_SIZE: int = 800
-    CHUNK_OVERLAP: int = 100
+    CHUNK_OVERLAP: int = 120  # 재귀 청킹 시 문맥 연속성
     # 검색·리랭크: 후보는 넉넉히, 리랭크는 sentence-transformers 필요(Railway 슬림은 false 권장)
     TOP_K_RETRIEVAL: int = 20
     TOP_K_RERANK: int = 10

@@ -1,4 +1,5 @@
 """Smart Alert Service for policy change notifications."""
+import logging
 import openai
 import json
 import hashlib
@@ -13,6 +14,8 @@ from app.models.schemas import (
     IndustryType, AlertPriority, AlertChannel,
     SmartAlertResponse, AlertSubscription, AlertStatsResponse
 )
+
+_log = logging.getLogger(__name__)
 
 
 @dataclass
@@ -88,7 +91,7 @@ class SmartAlertService:
             
             return json.loads(response.choices[0].message.content)
         except Exception as e:
-            print(f"Error analyzing document urgency: {e}")
+            _log.warning("Error analyzing document urgency: %s", e)
             return {
                 "deadline_info": [],
                 "affected_industries": [],
@@ -320,7 +323,7 @@ class SmartAlertService:
                 )
                 return response.status_code == 200
         except Exception as e:
-            print(f"Webhook notification failed: {e}")
+            _log.warning("Webhook notification failed: %s", e)
             return False
     
     async def create_subscription(

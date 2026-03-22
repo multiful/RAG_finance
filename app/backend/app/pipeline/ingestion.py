@@ -4,6 +4,7 @@ Pipeline: Collector → Parser → Chunker → Embedder → Supabase(pgvector)
 """
 import asyncio
 import hashlib
+import logging
 from datetime import datetime, timedelta, timezone
 from typing import List, Dict, Any, Optional
 from dataclasses import dataclass
@@ -12,6 +13,8 @@ import json
 from app.core.config import settings
 from app.core.database import get_db
 from langchain_openai import OpenAIEmbeddings
+
+_log = logging.getLogger(__name__)
 
 
 @dataclass
@@ -53,21 +56,26 @@ class RSSCollector:
         import feedparser
         
         url = (base_url + f"?fid={fid}") if base_url else self._get_rss_url(fid)
-        print(f"Fetching RSS feed from: {url}")
+        _log.debug("Fetching RSS feed from: %s", url)
         
         try:
             feed = feedparser.parse(url)
             documents = []
             
             if not feed.entries:
-                print(f"No entries found for fid {fid}")
+                _log.debug("No entries found for fid %s", fid)
                 return []
             
             all_entries = feed.entries
             limit = getattr(settings, "RSS_MAX_ITEMS", 200)
             entries_to_process = all_entries[:limit] if limit else all_entries
             
-            print(f"Feed entries total={len(all_entries)}, to process={len(entries_to_process)} (RSS_MAX_ITEMS={limit})")
+            _log.debug(
+                "Feed entries total=%s, to process=%s (RSS_MAX_ITEMS=%s)",
+                len(all_entries),
+                len(entries_to_process),
+                limit,
+            )
             
             for entry in entries_to_process:
                 published_str = entry.get("published", "")
@@ -94,11 +102,11 @@ class RSSCollector:
                 )
                 documents.append(doc)
             
-            print(f"Parsed {len(documents)} documents for fid {fid}")
+            _log.debug("Parsed %s documents for fid %s", len(documents), fid)
             return documents
             
         except Exception as e:
-            print(f"Error fetching RSS feed {fid}: {e}")
+            _log.warning("Error fetching RSS feed %s: %s", fid, e)
             return []
     
     def _parse_date(self, date_str: str) -> datetime:
@@ -127,9 +135,9 @@ class RSSCollector:
         try:
             sources_res = self.db.table("sources").select("source_id, fid, base_url, active").execute()
             fid_map = {s["fid"]: s for s in (sources_res.data or [])}
-            print(f"Found sources in DB: {list(fid_map.keys())}")
+            _log.debug("Found sources in DB: %s", list(fid_map.keys()))
         except Exception as e:
-            print(f"Error fetching sources: {e}")
+            _log.warning("Error fetching sources: %s", e)
             return {"error": str(e)}
         
         for fid in settings.FSC_RSS_FIDS:
@@ -138,11 +146,11 @@ class RSSCollector:
             try:
                 source_rec = fid_map.get(fid)
                 if not source_rec:
-                    print(f"No source record found for fid {fid}, skipping")
+                    _log.debug("No source record found for fid %s, skipping", fid)
                     continue
-                
+
                 if not source_rec.get("active", True):
-                    print(f"Source for fid {fid} is inactive, skipping")
+                    _log.debug("Source for fid %s is inactive, skipping", fid)
                     continue
                     
                 source_uuid = source_rec["source_id"]
@@ -185,10 +193,10 @@ class RSSCollector:
                             results["total_new"] += 1
                             results["documents"].append(result.data[0])
                     except Exception as ins_err:
-                        print(f"Error inserting document {doc['url']}: {ins_err}")
-                
+                        _log.warning("Error inserting document %s: %s", doc["url"], ins_err)
+
             except Exception as e:
-                print(f"Error in collect_all for fid {fid}: {e}")
+                _log.warning("Error in collect_all for fid %s: %s", fid, e)
                 results["errors"].append({"fid": fid, "error": str(e)})
         
         return results
@@ -203,16 +211,16 @@ class LlamaDocumentParser:
     async def parse_document(self, document_id: str) -> Dict[str, Any]:
         """문서 파싱 및 청킹."""
         start_time = datetime.now()
-        print(f"[{document_id}] Starting parsing phase...")
-        
+        _log.debug("[%s] Starting parsing phase...", document_id)
+
         try:
-            # 문서 조회
-            doc_result = self.db.table("documents").select("*").eq(
-                "document_id", document_id
-            ).execute()
-            
+            # 문서 조회 (파싱에 필요한 컬럼만 — 대용량 필드 페이로드 축소)
+            doc_result = self.db.table("documents").select(
+                "document_id, raw_html, title, url, status"
+            ).eq("document_id", document_id).execute()
+
             if not doc_result.data:
-                print(f"[{document_id}] Error: Document not found")
+                _log.warning("[%s] Error: Document not found", document_id)
                 return {"status": "failed", "error": "Document not found"}
             
             doc = doc_result.data[0]
@@ -225,7 +233,11 @@ class LlamaDocumentParser:
                 ).execute()
                 
                 if files_result.data:
-                    print(f"[{document_id}] Found {len(files_result.data)} attachments. Using LlamaParse...")
+                    _log.debug(
+                        "[%s] Found %s attachments. Using LlamaParse...",
+                        document_id,
+                        len(files_result.data),
+                    )
                     from app.parsers.llama_parser import parse_and_chunk_document
 
                     async def _parse_att(f):
@@ -241,23 +253,23 @@ class LlamaDocumentParser:
                     )
                     for item in att_results:
                         if isinstance(item, Exception):
-                            print(f"[{document_id}] attachment parse error: {item}")
+                            _log.warning("[%s] attachment parse error: %s", document_id, item)
                             continue
                         all_chunks.extend(item)
                 else:
-                    print(f"[{document_id}] No attachments found.")
+                    _log.debug("[%s] No attachments found.", document_id)
             except Exception as e:
-                print(f"[{document_id}] document_files check failed, assuming empty: {e}")
+                _log.debug("[%s] document_files check failed, assuming empty: %s", document_id, e)
 
             if not all_chunks:
                 # HTML 본문 직접 파싱
                 raw_html = doc.get("raw_html", "")
                 if raw_html:
-                    print(f"[{document_id}] Extracting chunks from raw_html...")
+                    _log.debug("[%s] Extracting chunks from raw_html...", document_id)
                     all_chunks = self._parse_html_to_chunks(raw_html, document_id)
             
             if not all_chunks:
-                print(f"[{document_id}] No content available for parsing.")
+                _log.warning("[%s] No content available for parsing.", document_id)
                 return {"status": "failed", "error": "No content found"}
 
             # 청크 저장 — 행 단위 insert N회 대신 배치 insert (RTT·부하 감소)
@@ -271,7 +283,7 @@ class LlamaDocumentParser:
                         "chunk_index": start + i,
                         "chunk_text": c["chunk_text"],
                         "chunk_tokens": c.get("chunk_tokens", 0),
-                        "chunking_version": "llamaparse_v1",
+                        "chunking_version": c.get("chunking_version", "llamaparse_v1"),
                         "section_title": c.get("section_title"),
                     }
                     for i, c in enumerate(slice_chunks)
@@ -287,7 +299,7 @@ class LlamaDocumentParser:
             }).eq("document_id", document_id).execute()
             
             processing_time = int((datetime.now() - start_time).total_seconds() * 1000)
-            print(f"[{document_id}] Successfully parsed into {len(chunk_ids)} chunks.")
+            _log.info("[%s] Successfully parsed into %s chunks.", document_id, len(chunk_ids))
             
             return {
                 "status": "success",
@@ -306,30 +318,22 @@ class LlamaDocumentParser:
             return {"status": "failed", "error": str(e)}
     
     def _parse_html_to_chunks(self, html: str, document_id: str) -> List[Dict]:
-        """HTML을 청크로 변환."""
+        """HTML을 청크로 변환 (재귀 분할 — 단어 단위 고정 윈도 제거)."""
         from bs4 import BeautifulSoup
-        
+        from app.chunking.recursive_split import split_text_recursive
+
         soup = BeautifulSoup(html, 'html.parser')
-        
-        # 텍스트 추출
         text = soup.get_text(separator='\n', strip=True)
-        
-        # 청킹
-        chunks = []
-        chunk_size = settings.CHUNK_SIZE
-        chunk_overlap = settings.CHUNK_OVERLAP
-        
-        words = text.split()
-        
-        for i in range(0, len(words), chunk_size - chunk_overlap):
-            chunk_text = ' '.join(words[i:i + chunk_size])
-            chunks.append({
-                "chunk_text": chunk_text,
-                "chunk_tokens": len(chunk_text.split()),
-                "section_title": None
-            })
-        
-        return chunks
+        pieces = split_text_recursive(text)
+        return [
+            {
+                "chunk_text": p,
+                "chunk_tokens": len(p.split()),
+                "section_title": None,
+                "chunking_version": "recursive_ko_v1",
+            }
+            for p in pieces
+        ]
 
 
 class ContextualChunker:
@@ -341,11 +345,11 @@ class ContextualChunker:
     async def enrich_chunks(self, document_id: str) -> Dict[str, Any]:
         """청크에 메타데이터 부착."""
         try:
-            # 청크 조회
-            chunks_result = self.db.table("chunks").select("*").eq(
+            # 청크 조회 (메타데이터 부착에 필요한 필드만)
+            chunks_result = self.db.table("chunks").select("chunk_id, chunk_text").eq(
                 "document_id", document_id
             ).execute()
-            
+
             if not chunks_result.data:
                 return {"status": "failed", "error": "No chunks found"}
             
@@ -406,16 +410,16 @@ class OpenAIEmbedder:
     async def embed_chunks(self, document_id: str) -> Dict[str, Any]:
         """청크 임베딩 생성 및 저장."""
         start_time = datetime.now()
-        print(f"[{document_id}] Starting embedding phase...")
-        
+        _log.debug("[%s] Starting embedding phase...", document_id)
+
         try:
-            # 청크 조회
-            chunks_result = self.db.table("chunks").select("*").eq(
+            # 청크 조회 (임베딩에 필요한 필드만)
+            chunks_result = self.db.table("chunks").select("chunk_id, chunk_text").eq(
                 "document_id", document_id
             ).execute()
-            
+
             if not chunks_result.data:
-                print(f"[{document_id}] Error: No chunks found to embed")
+                _log.warning("[%s] Error: No chunks found to embed", document_id)
                 return {"status": "failed", "error": "No chunks found"}
             
             # 이미 임베딩된 청크 제외
@@ -431,7 +435,11 @@ class OpenAIEmbedder:
             ]
             
             if not chunks_to_embed:
-                print(f"[{document_id}] All {len(chunks_result.data)} chunks already embedded. Skipping.")
+                _log.debug(
+                    "[%s] All %s chunks already embedded. Skipping.",
+                    document_id,
+                    len(chunks_result.data),
+                )
                 # Ensure status is indexed
                 self.db.table("documents").update({
                     "status": "indexed",
@@ -446,7 +454,12 @@ class OpenAIEmbedder:
                 }
             
             # 배치 임베딩 (한 번에 수백 문단이면 API 한도·지연 증가 → 청크 단위로 분할)
-            print(f"[{document_id}] Generating embeddings for {len(chunks_to_embed)} chunks using {settings.OPENAI_EMBEDDING_MODEL}...")
+            _log.info(
+                "[%s] Generating embeddings for %s chunks using %s...",
+                document_id,
+                len(chunks_to_embed),
+                settings.OPENAI_EMBEDDING_MODEL,
+            )
             texts = [c["chunk_text"] for c in chunks_to_embed]
             embed_batch = 48
             vectors: List[List[float]] = []
@@ -474,7 +487,12 @@ class OpenAIEmbedder:
             }).eq("document_id", document_id).execute()
             
             processing_time = int((datetime.now() - start_time).total_seconds() * 1000)
-            print(f"[{document_id}] Embedding success: {len(embedding_data)} vectors in {processing_time}ms")
+            _log.info(
+                "[%s] Embedding success: %s vectors in %sms",
+                document_id,
+                len(embedding_data),
+                processing_time,
+            )
             
             return {
                 "status": "success",
@@ -531,7 +549,7 @@ class IngestionPipeline:
                     "processing_status": "indexed"
                 }).eq("document_id", document_id).execute()
             except Exception as db_err:
-                print(f"[{document_id}] DB Update warning: {db_err}")
+                _log.warning("[%s] DB update warning: %s", document_id, db_err)
                 # Continue anyway as processing itself succeeded
             
             doc_result = self.parser.db.table("documents").select("*").eq(
@@ -627,7 +645,7 @@ class IngestionPipeline:
                 msg = f"Completed: {results['collected']} collected, {results['processed']} processed"
                 job_tracker.update_job(job_id, status=final_status, stage="done", progress=100, count=results["collected"], message=msg)
         except Exception as e:
-            print(f"Pipeline error: {e}")
+            _log.exception("Pipeline error: %s", e)
             if job_id:
                 job_tracker.update_job(job_id, status="error", message=f"Pipeline crashed: {str(e)}")
             

@@ -3,6 +3,7 @@
 Handles: HWP, PDF with tables, images, and complex layouts.
 Converts to structured markdown format.
 """
+import logging
 import os
 import tempfile
 from typing import List, Dict, Any, Optional
@@ -11,6 +12,8 @@ import aiohttp
 import aiofiles
 
 from app.core.config import settings
+
+_log = logging.getLogger(__name__)
 
 
 class LlamaDocumentParser:
@@ -73,7 +76,7 @@ class LlamaDocumentParser:
             }
             
         except Exception as e:
-            print(f"LlamaParse error: {e}")
+            _log.warning("LlamaParse error: %s", e)
             return await self._fallback_pdf_parse(file_path)
     
     async def parse_hwp(self, file_path: str) -> Dict[str, Any]:
@@ -239,67 +242,38 @@ class LlamaDocumentParser:
 # ============ Chunking with Table Preservation ============
 
 class TableAwareChunker:
-    """Chunk documents while preserving table structure."""
-    
-    def __init__(self, chunk_size: int = 800, chunk_overlap: int = 100):
-        self.chunk_size = chunk_size
-        self.chunk_overlap = chunk_overlap
-    
+    """파싱된 문서를 재귀 청킹 — 표 메타데이터는 키워드 매칭으로 청크에 연결."""
+
+    def __init__(self, chunk_size: Optional[int] = None, chunk_overlap: Optional[int] = None):
+        from app.core.config import settings as _s
+        self.chunk_size = chunk_size if chunk_size is not None else _s.CHUNK_SIZE
+        self.chunk_overlap = chunk_overlap if chunk_overlap is not None else _s.CHUNK_OVERLAP
+
     def chunk_document(self, parsed_doc: Dict[str, Any]) -> List[Dict[str, Any]]:
-        """Create chunks from parsed document.
-        
-        Preserves table boundaries and section headers.
-        """
-        chunks = []
-        text = parsed_doc.get("text", "")
+        """전체 텍스트를 RecursiveCharacter 기반으로 분할 후 표 연관성 표시."""
+        from app.chunking.recursive_split import split_text_recursive
+
+        text = parsed_doc.get("text", "") or ""
         tables = parsed_doc.get("tables", [])
-        
-        # Split by sections (## Page X or ## Section X)
-        import re
-        sections = re.split(r'\n##?\s+', text)
-        
-        chunk_index = 0
-        current_chunk_text = ""
-        current_chunk_tables = []
-        
-        for section in sections:
-            if not section.strip():
-                continue
-            
-            # Check if adding this section would exceed chunk size
-            if len(current_chunk_text) + len(section) > self.chunk_size and current_chunk_text:
-                # Save current chunk
-                chunks.append({
-                    "chunk_index": chunk_index,
-                    "chunk_text": current_chunk_text.strip(),
-                    "tables": current_chunk_tables,
-                    "token_count": len(current_chunk_text.split())
-                })
-                chunk_index += 1
-                
-                # Start new chunk with overlap
-                words = current_chunk_text.split()
-                overlap_text = " ".join(words[-self.chunk_overlap:]) if len(words) > self.chunk_overlap else current_chunk_text
-                current_chunk_text = overlap_text + "\n\n" + section
-                current_chunk_tables = []
-            else:
-                current_chunk_text += "\n\n" + section
-            
-            # Check if any tables belong to this section
+        pieces = split_text_recursive(text, self.chunk_size, self.chunk_overlap)
+        chunks: List[Dict[str, Any]] = []
+        for i, chunk_text in enumerate(pieces):
+            row_tables: List[Dict[str, Any]] = []
+            ct_lower = chunk_text.lower()
             for table in tables:
-                table_text = self._table_to_text(table)
-                if table_text in section or any(h in section for h in table.get("headers", [])):
-                    current_chunk_tables.append(table)
-        
-        # Save final chunk
-        if current_chunk_text.strip():
+                tbl_txt = self._table_to_text(table)
+                headers = table.get("headers") or []
+                if tbl_txt and (tbl_txt[:120] in chunk_text or any((h or "") in chunk_text for h in headers)):
+                    row_tables.append(table)
+                elif headers and any(str(h).lower() in ct_lower for h in headers if h):
+                    row_tables.append(table)
             chunks.append({
-                "chunk_index": chunk_index,
-                "chunk_text": current_chunk_text.strip(),
-                "tables": current_chunk_tables,
-                "token_count": len(current_chunk_text.split())
+                "chunk_index": i,
+                "chunk_text": chunk_text.strip(),
+                "tables": row_tables,
+                "token_count": len(chunk_text.split()),
+                "chunking_version": "recursive_ko_v1",
             })
-        
         return chunks
     
     def _table_to_text(self, table: Dict[str, Any]) -> str:
@@ -330,10 +304,11 @@ def get_parser() -> LlamaDocumentParser:
     return _llama_parser
 
 def get_chunker() -> TableAwareChunker:
-    """Get singleton chunker instance."""
+    """Get singleton chunker instance (CHUNK_SIZE / CHUNK_OVERLAP 반영)."""
     global _chunker
     if _chunker is None:
-        _chunker = TableAwareChunker()
+        from app.core.config import settings as _s
+        _chunker = TableAwareChunker(_s.CHUNK_SIZE, _s.CHUNK_OVERLAP)
     return _chunker
 
 async def parse_and_chunk_document(file_path: str, file_type: str) -> List[Dict[str, Any]]:

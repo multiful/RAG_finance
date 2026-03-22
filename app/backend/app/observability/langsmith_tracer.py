@@ -7,6 +7,7 @@ Traces and monitors:
 - Verification loops
 - Performance metrics
 """
+import logging
 import os
 from typing import Dict, Any, Optional, List
 from datetime import datetime
@@ -21,6 +22,8 @@ except ImportError:
 from langchain_core.callbacks import Callbacks
 
 from app.core.config import settings
+
+_log = logging.getLogger(__name__)
 
 
 class LangSmithTracer:
@@ -101,7 +104,7 @@ class LangSmithTracer:
             return run
             
         except Exception as e:
-            print(f"Error creating LangSmith run: {e}")
+            _log.warning("Error creating LangSmith run: %s", e)
             return None
     
     def end_run(
@@ -127,7 +130,7 @@ class LangSmithTracer:
                 run.end(outputs=outputs or {})
             run.patch()
         except Exception as e:
-            print(f"Error ending LangSmith run: {e}")
+            _log.debug("Error ending LangSmith run: %s", e)
     
     def trace_rag_pipeline(
         self,
@@ -195,7 +198,7 @@ class LangSmithTracer:
             return main_run.id
             
         except Exception as e:
-            print(f"Error tracing RAG pipeline: {e}")
+            _log.warning("Error tracing RAG pipeline: %s", e)
             return None
     
     def _trace_classification(
@@ -328,7 +331,7 @@ class LangSmithTracer:
             return main_run.id
             
         except Exception as e:
-            print(f"Error tracing agent workflow: {e}")
+            _log.warning("Error tracing agent workflow: %s", e)
             return None
     
     def add_feedback(
@@ -357,7 +360,7 @@ class LangSmithTracer:
                 comment=comment
             )
         except Exception as e:
-            print(f"Error adding feedback: {e}")
+            _log.debug("Error adding feedback: %s", e)
     
     def get_run_stats(
         self,
@@ -428,7 +431,7 @@ class LangSmithTracer:
             end_time: End time filter
         """
         if not self.is_enabled():
-            print("LangSmith not enabled")
+            _log.info("LangSmith not enabled; export_traces skipped")
             return
         
         try:
@@ -455,10 +458,10 @@ class LangSmithTracer:
             with open(output_path, 'w', encoding='utf-8') as f:
                 json.dump(traces, f, ensure_ascii=False, indent=2)
             
-            print(f"Exported {len(traces)} traces to {output_path}")
-            
+            _log.info("Exported %s traces to %s", len(traces), output_path)
+
         except Exception as e:
-            print(f"Error exporting traces: {e}")
+            _log.warning("Error exporting traces: %s", e)
 
 
 # ============ Decorator for Easy Tracing ============

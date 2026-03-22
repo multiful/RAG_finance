@@ -1,8 +1,12 @@
 import json
+import logging
 import uuid
 from datetime import datetime, timezone
 from typing import Optional, Dict, Any
 from app.core.redis import get_redis
+
+_log = logging.getLogger(__name__)
+
 
 class JobTracker:
     """Tracks status of long-running collection jobs in Redis."""
@@ -28,7 +32,7 @@ class JobTracker:
 
     def create_job(self, stage: str = "collecting") -> Optional[str]:
         if not self.is_available():
-            print("❌ Cannot create job: Redis is unavailable")
+            _log.debug("Cannot create job: Redis unavailable")
             return None
 
         job_id = str(uuid.uuid4())
@@ -48,18 +52,18 @@ class JobTracker:
             key = f"{self.prefix}{job_id}"
             latest_key = f"{self.prefix}latest"
             
-            print(f"DEBUG: Creating job {job_id} at key {key}")
+            _log.debug("Creating job %s", job_id)
             self.redis.setex(key, self.expiry, json.dumps(job_data))
             self.redis.setex(latest_key, self.expiry, job_id)
             
             # Verify immediately
             verify = self.redis.get(key)
             if not verify:
-                print(f"⚠️ WARNING: Job {job_id} was NOT found immediately after setex!")
+                _log.warning("Job %s was NOT found immediately after setex", job_id)
             
             return job_id
         except Exception as e:
-            print(f"Redis error in create_job: {e}")
+            _log.warning("Redis error in create_job: %s", e)
             return None
 
     def update_job(self, job_id: str, status: Optional[str] = None, count: Optional[int] = None, 
@@ -71,7 +75,7 @@ class JobTracker:
         key = f"{self.prefix}{job_id}"
         data = self.get_job(job_id)
         if not data:
-            print(f"⚠️ WARNING: Tried to update non-existent job {job_id} at key {key}")
+            _log.debug("update_job: missing job %s", job_id)
             return
         
         if status: data["status"] = status
@@ -93,7 +97,7 @@ class JobTracker:
         try:
             self.redis.setex(f"{self.prefix}{job_id}", self.expiry, json.dumps(data))
         except Exception as e:
-            print(f"Redis error in update_job: {e}")
+            _log.warning("Redis error in update_job: %s", e)
 
     def get_job(self, job_id: str) -> Optional[Dict[str, Any]]:
         if not self.is_available():
@@ -107,7 +111,7 @@ class JobTracker:
                 raw = raw.decode("utf-8")
             return json.loads(raw)
         except Exception as e:
-            print(f"Redis error in get_job: {e}")
+            _log.debug("Redis error in get_job: %s", e)
             return None
 
     def get_latest_job_id(self) -> Optional[str]:

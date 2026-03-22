@@ -1,9 +1,12 @@
 """Notification service for compliance items."""
+import logging
 import httpx
 from typing import Dict, Any, Optional
 from datetime import datetime
 
 from app.core.config import settings
+
+_log = logging.getLogger(__name__)
 
 
 class NotificationService:
@@ -16,7 +19,10 @@ class NotificationService:
     async def send_action_item_notification(self, item: Dict[str, Any], event_type: str = "update") -> bool:
         """Sends notification to Slack (if configured)."""
         if not self.webhook_url:
-            print(f"DEBUG: Notification skipped for {item.get('action_item_id')} (No Slack webhook configured)")
+            _log.debug(
+                "Notification skipped for %s (no Slack webhook)",
+                item.get("action_item_id"),
+            )
             return False
             
         try:
@@ -48,5 +54,5 @@ class NotificationService:
                 return response.status_code == 200
                 
         except Exception as e:
-            print(f"ERROR: Failed to send Slack notification: {e}")
+            _log.warning("Slack notification failed: %s", e)
             return False

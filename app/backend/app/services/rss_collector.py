@@ -1,5 +1,6 @@
 """RSS feed collector service."""
 import asyncio
+import logging
 import feedparser
 import hashlib
 from datetime import datetime, timedelta, timezone
@@ -7,6 +8,8 @@ from typing import List, Dict, Any, Optional
 from app.core.config import settings
 from app.core.database import get_db
 from app.models.schemas import DocumentCreate, DocumentStatus
+
+_log = logging.getLogger(__name__)
 
 
 class RSSCollector:
@@ -60,22 +63,27 @@ class RSSCollector:
         똑같은 것만 호출하는 것이 아니라, 서버 쪽 목록이 일별로 갱신됩니다.
         """
         url = (base_url + f"?fid={fid}") if base_url else self._get_rss_url(fid)
-        print(f"Fetching RSS feed from: {url}")
-        
+        _log.debug("Fetching RSS feed from: %s", url)
+
         try:
             feed = feedparser.parse(url)
             documents = []
             
             if not feed.entries:
-                print(f"No entries found for fid {fid}")
+                _log.debug("No entries found for fid %s", fid)
                 return []
             
             all_entries = feed.entries
             limit = getattr(settings, "RSS_MAX_ITEMS", 500)
             entries_to_process = all_entries[:limit] if limit else all_entries
-            
-            print(f"Feed entries total={len(all_entries)}, to process={len(entries_to_process)} (RSS_MAX_ITEMS={limit})")
-            
+
+            _log.debug(
+                "Feed entries total=%s, to process=%s (RSS_MAX_ITEMS=%s)",
+                len(all_entries),
+                len(entries_to_process),
+                limit,
+            )
+
             for entry in entries_to_process:
                 # Get published date with multiple fallbacks
                 published_str = entry.get("published", "")
@@ -102,11 +110,11 @@ class RSSCollector:
                 )
                 documents.append(doc)
             
-            print(f"Parsed {len(documents)} documents for fid {fid}")
+            _log.debug("Parsed %s documents for fid %s", len(documents), fid)
             return documents
-            
+
         except Exception as e:
-            print(f"Error fetching RSS feed {fid}: {e}")
+            _log.warning("Error fetching RSS feed %s: %s", fid, e)
             return []
     
     async def collect_all(self, job_id: Optional[str] = None) -> Dict[str, Any]:
@@ -140,15 +148,15 @@ class RSSCollector:
                             "fid": fid,
                             "active": True,
                         }).execute()
-                        print(f"Created source for fid={fid} ({name})")
+                        _log.info("Created source for fid=%s (%s)", fid, name)
                     except Exception as ins_e:
-                        print(f"Failed to create source for fid={fid}: {ins_e}")
+                        _log.warning("Failed to create source for fid=%s: %s", fid, ins_e)
             # 재조회하여 새로 넣은 행 반영
             sources_res = self.db.table("sources").select("source_id, fid, base_url, active").execute()
             fid_map = {s["fid"]: s for s in (sources_res.data or [])}
-            print(f"Found sources in DB: {list(fid_map.keys())}")
+            _log.debug("Found sources in DB: %s", list(fid_map.keys()))
         except Exception as e:
-            print(f"Error fetching sources: {e}")
+            _log.warning("Error fetching sources: %s", e)
             if job_id:
                 job_tracker.update_job(job_id, status="error", message=f"소스 조회 실패: {str(e)}")
             return {"error": str(e)}
@@ -196,8 +204,8 @@ class RSSCollector:
                     if existing_res.data:
                         existing_hashes.update(d["hash"] for d in existing_res.data)
             except Exception as e:
-                print(f"Error batch checking hashes: {e}")
-        
+                _log.warning("Error batch checking hashes: %s", e)
+
         if job_id:
             job_tracker.update_job(job_id, stage="저장 중", progress=60, message="신규 문서 저장 중...")
         
@@ -239,7 +247,7 @@ class RSSCollector:
                     feed_result["new"] = len(new_docs_batch)
                     results["total_new"] += len(new_docs_batch)
                 except Exception as ins_err:
-                    print(f"Error batch inserting for fid {fid}: {ins_err}")
+                    _log.warning("Error batch inserting for fid %s: %s", fid, ins_err)
                     # Fallback to individual inserts
                     for payload in new_docs_batch:
                         try:

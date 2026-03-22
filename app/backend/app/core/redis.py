@@ -1,6 +1,9 @@
 """Redis connection management. Redis 미사용 시 인메모리 폴백으로 서버 기동."""
+import logging
 import redis
 from app.core.config import settings
+
+_log = logging.getLogger(__name__)
 
 
 class _MemoryRedis:
@@ -121,7 +124,7 @@ class RedisClient:
             cls._is_fallback = False
             return cls._client
         except Exception as e:
-            print(f"[WARN] Redis 연결 실패, 인메모리 캐시로 동작합니다: {e}")
+            _log.warning("Redis unavailable, using in-memory fallback: %s", e)
             cls._client = _MemoryRedis()
             cls._is_fallback = True
             return cls._client
@@ -133,7 +136,7 @@ class RedisClient:
             client = cls.get_client()
             return client.ping()
         except Exception as e:
-            print(f"Redis ping failed: {e}")
+            _log.debug("Redis ping failed: %s", e)
             return False
 
     @classmethod

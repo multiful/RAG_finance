@@ -1,5 +1,6 @@
 """Financial Supervisory Service (FSS) web scraper."""
 import hashlib
+import logging
 import httpx
 from datetime import datetime, timezone
 from typing import List, Dict, Any, Optional
@@ -7,6 +8,8 @@ from bs4 import BeautifulSoup
 from app.core.config import settings
 from app.core.database import get_db
 from app.models.schemas import DocumentCreate
+
+_log = logging.getLogger(__name__)
 
 
 class FSSScraper:
@@ -45,7 +48,7 @@ class FSSScraper:
     async def fetch_board(self, board_path: str) -> List[Dict[str, Any]]:
         """Fetch and parse FSS board page."""
         url = f"{self.base_url}{board_path}"
-        print(f"Fetching FSS board: {url}")
+        _log.debug("Fetching FSS board: %s", url)
         
         documents = []
         
@@ -101,20 +104,20 @@ class FSSScraper:
                     documents.append(doc)
                     
                 except Exception as row_err:
-                    print(f"Error parsing row: {row_err}")
+                    _log.debug("Error parsing row: %s", row_err)
                     continue
-            
-            print(f"Parsed {len(documents)} documents from FSS board")
+
+            _log.debug("Parsed %s documents from FSS board", len(documents))
             return documents
-            
+
         except Exception as e:
-            print(f"Error fetching FSS board {board_path}: {e}")
+            _log.warning("Error fetching FSS board %s: %s", board_path, e)
             return []
     
     async def collect_all(self, job_id: Optional[str] = None) -> Dict[str, Any]:
         """Collect all FSS boards."""
         if not settings.ENABLE_FSS_SCRAPING:
-            print("FSS scraping is disabled")
+            _log.debug("FSS scraping is disabled")
             return {"total_new": 0, "message": "FSS scraping disabled"}
         
         results = {
@@ -139,10 +142,10 @@ class FSSScraper:
                     "active": True
                 }).execute()
                 source_uuid = new_source.data[0]["source_id"]
-                print(f"Created FSS source with ID: {source_uuid}")
-                
+                _log.info("Created FSS source with ID: %s", source_uuid)
+
         except Exception as e:
-            print(f"Error getting/creating FSS source: {e}")
+            _log.warning("Error getting/creating FSS source: %s", e)
             return {"error": str(e)}
         
         for board_path in settings.FSS_BOARDS:
@@ -186,12 +189,12 @@ class FSSScraper:
                         board_result["new"] += 1
                         results["total_new"] += 1
                     except Exception as ins_err:
-                        print(f"Error inserting FSS document: {ins_err}")
+                        _log.warning("Error inserting FSS document: %s", ins_err)
                 
                 results["boards"][board_id] = board_result
                 
             except Exception as e:
-                print(f"Error collecting FSS board {board_path}: {e}")
+                _log.warning("Error collecting FSS board %s: %s", board_path, e)
                 results["errors"].append({"board": board_path, "error": str(e)})
 
         try:

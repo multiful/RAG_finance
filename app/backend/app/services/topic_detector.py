@@ -154,9 +154,13 @@ class TopicDetector:
                 })
             else:
                 if len(cluster) > 1:
-                    print(f"DEBUG: Discarded cluster of size {len(cluster)} (min_size={min_cluster_size})")
-        
-        print(f"Detected {len(clusters)} clusters.")
+                    _log.debug(
+                        "Discarded cluster of size %s (min_size=%s)",
+                        len(cluster),
+                        min_cluster_size,
+                    )
+
+        _log.debug("Detected %s clusters.", len(clusters))
         return clusters
     
     async def calculate_surge_score(

@@ -108,6 +108,23 @@ async def get_latest_evaluation():
         return {"has_evaluation": False, "error": str(e)}
 
 
+@router.get("/golden-retrieval")
+async def golden_retrieval_benchmark(
+    sample_size: int = Query(12, ge=1, le=50, description="골든셋 상위 N건"),
+):
+    """
+    골든셋(`golden_dataset.py`) 질문으로 **검색(리트리벌)만** 평가합니다.
+    상위 k개 청크에 `expected_citations_keywords`가 모두 포함되는 비율로 근거 검색 품질을 추정합니다.
+    RAGAS 전체 평가보다 가볍고, 인덱스·하이브리드·HyDE 튜닝 확인에 적합합니다.
+    """
+    try:
+        from app.evaluation.golden_benchmark import run_golden_retrieval_benchmark
+        return await run_golden_retrieval_benchmark(sample_size)
+    except Exception as e:
+        logging.exception("golden-retrieval benchmark failed")
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
+
 def _norm_agent_citation(c: dict) -> dict:
     pub = c.get("published_at")
     if hasattr(pub, "isoformat"):
