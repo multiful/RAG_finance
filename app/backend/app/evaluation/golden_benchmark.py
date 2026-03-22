@@ -5,7 +5,11 @@ from typing import Any, Dict, List
 
 from app.core.config import settings
 from app.evaluation.golden_dataset import GOLDEN_DATASET, GoldenQuestion
-from app.services.rag_service import RAGService, hybrid_weights_for_query
+from app.services.rag_service import (
+    RAGService,
+    hybrid_weights_for_query,
+    expand_regulatory_query_for_retrieval,
+)
 
 
 def _keywords_hit(blob: str, keywords: List[str]) -> bool:
@@ -36,14 +40,15 @@ async def run_golden_retrieval_benchmark(sample_size: int = 12) -> Dict[str, Any
     r10_hits = 0
 
     for g in subset:
-        if getattr(settings, "ENABLE_QUERY_HYDE", True):
-            expanded = await rag._expand_query_hyde(g.question)
+        lex = expand_regulatory_query_for_retrieval(g.question)
+        if getattr(settings, "ENABLE_QUERY_HYDE", False):
+            expanded = await rag._expand_query_hyde(lex)
         else:
-            expanded = g.question
+            expanded = lex
         q_emb = await rag._get_embedding(expanded)
-        vw, kw = hybrid_weights_for_query(g.question)
+        vw, kw = hybrid_weights_for_query(lex)
         results = await rag.vector_store.hybrid_search(
-            query=g.question,
+            query=lex,
             query_embedding=q_emb,
             top_k=settings.TOP_K_RETRIEVAL,
             vector_weight=vw,

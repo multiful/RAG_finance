@@ -30,6 +30,7 @@ _REGULATORY_QUERY_HINTS = (
     "시행령", "시행규칙", "고시", "지침", "규정", "조문",
     "FSC", "FSS", "BIS", "FSB", "ESG", "스테이블코인", "가상자산", "STO",
     "DSR", "LCR", "K-ICS", "IFRS", "내부통제", "자본시장법", "금융소비자",
+    "금융소비자보호", "샌드박스", "공매도", "스트레스", "투자권유", "AML",
 )
 
 # 질문에만 등장하고 상위 검색 청크에 없으면 '부실기업 퇴출' vs '가상자산' 같은 오검색으로
@@ -52,6 +53,43 @@ def hybrid_weights_for_query(question: str) -> Tuple[float, float]:
         # 조문·고시명 등 키워드 매칭 강화(근거 검색 정확도)
         return (min(vw, 0.58), max(kw, 0.42))
     return (vw, kw)
+
+
+# 골든셋·규제 QA: 약어·제도명이 짧을 때 BM25·임베딩이 동일 본문을 찾도록 검색어 보강 (룰 기반, 비용 없음)
+_RETRIEVAL_QUERY_EXPANSIONS: Tuple[Tuple[str, str], ...] = (
+    ("K-ICS", "신지급여력 IFRS17 보험 지급여력"),
+    ("DSR", "총부채원리금상환비율 가계대출 가계부채"),
+    ("DTI", "총부채상환비율 이자상환"),
+    ("LCR", "유동성커버리지비율 은행 유동성 100%"),
+    ("AML", "자금세탁방지 고객확인 의심거래보고 STR"),
+    ("금융소비자보호법", "금소법 6대 판매원칙 적합성 적정성 설명의무"),
+    ("금융소비자보호", "금소법 판매규제"),
+    ("자본시장법", "투자권유 설명의무 중요사항"),
+    ("샌드박스", "금융혁신 규제특례 시범"),
+    ("금융감독원", "금감원 검사 감독 현장"),
+    ("금융위원회", "금융위 정책 제도"),
+    ("공매도", "차입공매도 무차입 자본시장"),
+    ("가상자산", "가상자산이용자보호법 이용자 보호 특금법"),
+    ("스트레스 테스트", "스트레스테스트 거시경제 시나리오"),
+    ("스트레스", "스트레스테스트 은행 자본"),
+)
+
+
+def expand_regulatory_query_for_retrieval(query: str) -> str:
+    """질문에 약어·제도 키워드가 있으면 검색(키워드+임베딩 입력)에 동의어를 덧붙인다."""
+    q = (query or "").strip()
+    if not q:
+        return q
+    extras: List[str] = []
+    for needle, addition in _RETRIEVAL_QUERY_EXPANSIONS:
+        if needle in q:
+            extras.append(addition)
+    if not extras:
+        return q
+    tail = " ".join(extras)
+    if tail in q:
+        return q
+    return f"{q} {tail}"
 
 
 class RAGService:
@@ -469,24 +507,28 @@ NO [해당 문서에는 가계대출 금리에 대한 직접적인 언급이 없
     async def answer_question(self, request: QARequest) -> QAResponse:
         """Main RAG pipeline: HyDE -> Hybrid Search -> Rerank -> LLM -> Parse."""
         start_time = datetime.now(timezone.utc)
-        
+        raw_question = (request.question or "").strip()
+
+        # 0) 규제 약어·제도명 보강 — BM25·임베딩 공통 입력(기존: BM25만 원문 집어 골든셋 리콜 저하)
+        lexical_for_retrieval = expand_regulatory_query_for_retrieval(raw_question)
+
         # 1. HyDE Query Expansion (비활성 시 질문만 임베딩 — 지연·비용 절감)
-        if getattr(settings, "ENABLE_QUERY_HYDE", True):
-            expanded_query = await self._expand_query_hyde(request.question)
+        if getattr(settings, "ENABLE_QUERY_HYDE", False):
+            expanded_query = await self._expand_query_hyde(lexical_for_retrieval)
         else:
-            expanded_query = request.question
-        
+            expanded_query = lexical_for_retrieval
+
         # 2. Get query embedding
         query_embedding = await self._get_embedding(expanded_query)
-        
-        # 3. Hybrid Search (RRF)
+
+        # 3. Hybrid Search (RRF) — 키워드 채널은 보강된 문자열 사용
         filters = {}
         if request.date_from:
             filters["date_from"] = request.date_from.isoformat()
-        
-        vw, kw = self._hybrid_weights_for_query(request.question)
+
+        vw, kw = self._hybrid_weights_for_query(lexical_for_retrieval)
         search_results = await self.vector_store.hybrid_search(
-            query=request.question,
+            query=lexical_for_retrieval,
             query_embedding=query_embedding,
             top_k=settings.TOP_K_RETRIEVAL,
             vector_weight=vw,
@@ -494,11 +536,11 @@ NO [해당 문서에는 가계대출 금리에 대한 직접적인 언급이 없
             similarity_threshold=getattr(settings, "HYBRID_SIMILARITY_THRESHOLD", 0.3),
             filters=filters,
         )
-        
+
         # 4. Optional Reranking
         if settings.ENABLE_RERANKING:
             reranked_results = await self.vector_store.rerank(
-                query=request.question,
+                query=lexical_for_retrieval,
                 results=search_results,
                 top_k=settings.TOP_K_RERANK
             )

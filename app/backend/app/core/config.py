@@ -76,7 +76,8 @@ class Settings(BaseSettings):
     CHUNK_SIZE: int = 800
     CHUNK_OVERLAP: int = 120  # 재귀 청킹 시 문맥 연속성
     # 검색·리랭크: 후보는 넉넉히, 리랭크는 sentence-transformers 필요(Railway 슬림은 false 권장)
-    TOP_K_RETRIEVAL: int = 20
+    # 골든셋·규제 QA 리콜: 후보를 넉넉히(리랭크 전)
+    TOP_K_RETRIEVAL: int = 24
     TOP_K_RERANK: int = 10
     ENABLE_RERANKING: bool = False
     RERANK_MODEL: str = "cross-encoder/ms-marco-MiniLM-L-6-v2"
@@ -84,7 +85,8 @@ class Settings(BaseSettings):
     ENABLE_QUERY_HYDE: bool = False
     # true: 유사도·어휘 겹침 충족 시 답변가능성 LLM 생략(요청당 1회 절감)
     ENABLE_FAST_ANSWERABILITY: bool = True
-    FAST_ANSWERABILITY_MIN_OVERLAP: float = 0.18
+    # 골든 정확도: 어휘만 겹치고 주제가 다른 오검색에서 빠른 통과 억제
+    FAST_ANSWERABILITY_MIN_OVERLAP: float = 0.22
     # -1: 유사도 기반 생략 비활성화(정확도 우선). 0 이상이면 상위 청크 유사도가 이 값 이상일 때만 생략
     ANSWERABILITY_FAST_PATH_MIN_SIM: float = -1.0
     # Hybrid Search 가중치 (금융 용어 정확도: 키워드 비중 올리면 용어 매칭 강화)
