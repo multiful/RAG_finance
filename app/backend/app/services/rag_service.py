@@ -32,6 +32,13 @@ _REGULATORY_QUERY_HINTS = (
     "DSR", "LCR", "K-ICS", "IFRS", "내부통제", "자본시장법", "금융소비자",
 )
 
+# 질문에만 등장하고 상위 검색 청크에 없으면 '부실기업 퇴출' vs '가상자산' 같은 오검색으로
+# 어휘 겹침(금융위·규제 등)만으로 빠른 통과하는 것을 막기 위한 주제 키워드
+_TOPIC_SPECIFIC_QUERY_TERMS = (
+    "가상자산", "가상 자산", "VASP", "특금법", "스테이블코인", "스테이블 코인",
+    "토큰증권", "STO", "보안토큰", "디지털자산", "디지털 자산",
+)
+
 
 def hybrid_weights_for_query(question: str) -> Tuple[float, float]:
     """규제·금융 키워드가 있으면 BM25 비중을 높여 조문·고시명 등 키워드 매칭을 강화."""
@@ -204,8 +211,14 @@ NO [해당 문서에는 가계대출 금리에 대한 직접적인 언급이 없
                 reason = content.replace("NO", "").strip() or "검색된 문서에 질문과 관련된 구체적인 정책 내용이 포함되어 있지 않습니다."
                 return False, reason, 0.0
         
-        except Exception:
-            return True, "", 0.5
+        except Exception as ex:
+            # 검증 실패 시 '통과'하면 오검색·환각 답변이 그대로 나가므로 보수적으로 거부
+            _log.warning("Answerability LLM check failed: %s", ex)
+            return (
+                False,
+                "근거 적합성 자동 검증을 완료하지 못했습니다. 질문을 더 구체화하거나 잠시 후 다시 시도해 주세요.",
+                0.0,
+            )
 
     def _safe_published_at(self, raw: Any) -> datetime:
         """published_at 문자열/None을 datetime으로 안전 변환."""

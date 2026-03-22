@@ -140,3 +140,27 @@ app/backend/pytest.ini
 *.dylib
 *.spec
 *.msi
+
+# -----------------------------
+# 비밀·자격증명 (예시만 커밋: railway.env.example 등)
+# -----------------------------
+*.pem
+*.pkey
+id_rsa
+id_rsa.pub
+*.keystore
+*credentials*.json
+service-account*.json
+google-credentials.json
+railway.env
+app/backend/railway.env
+.env.production
+.env.development.local
+
+# -----------------------------
+# 평가·실험 산출물 (로컬 로그만, 소스 .py 는 커밋)
+# -----------------------------
+**/ragas_output/
+**/evaluation_artifacts/
+*.eval.jsonl
+golden_run_*.json
