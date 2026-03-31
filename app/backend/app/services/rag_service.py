@@ -1,4 +1,6 @@
 """RAG (Retrieval Augmented Generation) service."""
+import asyncio
+import hashlib
 import logging
 import openai
 from typing import List, Dict, Any, Optional, Tuple
@@ -10,6 +12,8 @@ from app.core.config import settings
 from app.core.database import get_db
 from app.core.redis import get_redis
 from app.services.vector_store import get_vector_store
+from fastapi.encoders import jsonable_encoder
+
 from app.models.schemas import (
     QARequest, QAResponse, Citation, IndustryType,
     ChunkResponse, ChecklistItem
@@ -22,6 +26,14 @@ def _qa_llm_model() -> str:
     """RAG 질의(HyDE·답변가능성·최종 답변) 전용 모델. OPENAI_MODEL_QA 미설정 시 OPENAI_MODEL."""
     q = (getattr(settings, "OPENAI_MODEL_QA", None) or "").strip()
     return q if q else settings.OPENAI_MODEL
+
+
+def _chat_completion_limit_kwargs(model: str, limit: int) -> dict:
+    """gpt-5.x 등은 max_tokens 미지원 → max_completion_tokens (OpenAI API 오류 방지)."""
+    m = (model or "").strip().lower()
+    if m.startswith("gpt-5"):
+        return {"max_completion_tokens": limit}
+    return {"max_tokens": limit}
 
 
 # 규제·금융 키워드가 있으면 BM25/키워드 채널 비중을 소폭 올려 조문·고시명 등 정확 매칭 강화
@@ -90,6 +102,25 @@ def expand_regulatory_query_for_retrieval(query: str) -> str:
     if tail in q:
         return q
     return f"{q} {tail}"
+
+
+def _qa_response_cache_key(request: QARequest) -> str:
+    """질문·컴플라이언스·날짜 필터 기준 캐시 키 (HyDE는 경로가 달라 캐시 사용 안 함)."""
+    parts = [
+        (request.question or "").strip(),
+        str(request.compliance_mode),
+        request.date_from.isoformat() if request.date_from else "",
+    ]
+    h = hashlib.sha256("|".join(parts).encode("utf-8")).hexdigest()[:32]
+    return f"qa:resp:v1:{h}"
+
+
+def _qa_logs_insert_safe(db: Any, payload: Dict[str, Any]) -> None:
+    """qa_logs 비동기 삽입용 동기 래퍼(스레드에서 실행, 예외는 로그만)."""
+    try:
+        db.table("qa_logs").insert(payload).execute()
+    except Exception as e:
+        _log.debug("qa_logs insert skipped or failed: %s", e)
 
 
 class RAGService:
@@ -237,7 +268,7 @@ NO [해당 문서에는 가계대출 금리에 대한 직접적인 언급이 없
                 model=_qa_llm_model(),
                 messages=[{"role": "user", "content": check_prompt}],
                 temperature=0,
-                max_tokens=140
+                **_chat_completion_limit_kwargs(_qa_llm_model(), 140),
             )
             
             content = response.choices[0].message.content.strip().upper()
@@ -326,7 +357,7 @@ NO [해당 문서에는 가계대출 금리에 대한 직접적인 언급이 없
                 ],
                 response_format={"type": "json_object"},
                 temperature=0.1,
-                max_tokens=2400,
+                **_chat_completion_limit_kwargs(_qa_llm_model(), 2400),
             )
             raw = response.choices[0].message.content or "{}"
             data = json.loads(raw)
@@ -343,21 +374,13 @@ NO [해당 문서에는 가계대출 금리에 대한 직접적인 언급이 없
                 "checklist": []
             }
 
-    async def _calculate_scores(
+    def _calculate_scores_impl(
         self,
         answer: str,
         chunks: List[Dict[str, Any]],
         consistency_score: float
     ) -> tuple[float, float, float]:
-        """Enhanced grounding and confidence score calculation.
-        
-        Features:
-        - Sentence-level grounding analysis
-        - Hallucination detection
-        - Uncertainty quantification
-        
-        Returns (grounding_score, confidence_score, citation_coverage).
-        """
+        """동기 점수 계산(정규식·문장 분석). 이벤트 루프 블로킹 방지용 to_thread에서 호출."""
         # 1. Calculate Citation Coverage (supports both [1] and [출처 1] formats)
         citations_found = set(re.findall(r'\[(?:출처\s*)?(\d+)\]', answer))
         unique_citations = len(citations_found)
@@ -417,6 +440,20 @@ NO [해당 문서에는 가계대출 금리에 대한 직접적인 언급이 없
             confidence = min(100.0, confidence + 5)
         
         return round(grounding, 1), round(confidence, 1), round(citation_coverage, 2)
+
+    async def _calculate_scores(
+        self,
+        answer: str,
+        chunks: List[Dict[str, Any]],
+        consistency_score: float
+    ) -> tuple[float, float, float]:
+        """Enhanced grounding and confidence score calculation (CPU 작업은 스레드로 분리)."""
+        return await asyncio.to_thread(
+            self._calculate_scores_impl,
+            answer,
+            chunks,
+            consistency_score,
+        )
     
     def _analyze_sentence_grounding(
         self,
@@ -506,10 +543,27 @@ NO [해당 문서에는 가계대출 금리에 대한 직접적인 언급이 없
         
         return min(1.0, hallucination_ratio)
 
+
     async def answer_question(self, request: QARequest) -> QAResponse:
         """Main RAG pipeline: HyDE -> Hybrid Search -> Rerank -> LLM -> Parse."""
         start_time = datetime.now(timezone.utc)
         raw_question = (request.question or "").strip()
+
+        use_cache = (
+            getattr(settings, "ENABLE_QA_RESPONSE_CACHE", True)
+            and not request.include_retrieval_contexts
+            and not getattr(settings, "ENABLE_QUERY_HYDE", False)
+        )
+        if use_cache:
+            try:
+                key = _qa_response_cache_key(request)
+                raw_cached = self.redis.get(key)
+                if raw_cached:
+                    if isinstance(raw_cached, (bytes, bytearray)):
+                        raw_cached = raw_cached.decode("utf-8")
+                    return QAResponse.model_validate_json(raw_cached)
+            except Exception as e:
+                _log.debug("qa response cache get skipped: %s", e)
 
         # 0) 규제 약어·제도명 보강 — BM25·임베딩 공통 입력(기존: BM25만 원문 집어 골든셋 리콜 저하)
         lexical_for_retrieval = expand_regulatory_query_for_retrieval(raw_question)
@@ -625,27 +679,9 @@ NO [해당 문서에는 가계대출 금리에 대한 직접적인 언급이 없
             for chunk in reranked_chunks
         ]
         
-        # 9. Logging with quality metrics
-        try:
-            from fastapi.encoders import jsonable_encoder
-            latency_ms = int((datetime.now(timezone.utc) - start_time).total_seconds() * 1000)
-            # confidence 컬럼은 스키마에 없을 수 있음(PGRST204) — 핵심 필드만 삽입
-            self.db.table("qa_logs").insert(jsonable_encoder({
-                "user_query": request.question,
-                "retrieved_chunk_ids": [chunk["chunk_id"] for chunk in reranked_chunks],
-                "answer": structured_data["answer"],
-                "citations": citations,
-                "latency_ms": latency_ms,
-                "response_time_ms": latency_ms,
-                "groundedness_score": grounding_score / 100.0,
-                "citation_coverage": coverage,
-                "status": "success",
-                "created_at": datetime.now(timezone.utc).isoformat()
-            })).execute()
-        except Exception as log_err:
-            _log.debug("qa_logs insert skipped or failed: %s", log_err)
-
-        return QAResponse(
+        # 9. 응답 조립 + 캐시 + qa_logs(백그라운드로 지연 최소화)
+        latency_ms = int((datetime.now(timezone.utc) - start_time).total_seconds() * 1000)
+        final = QAResponse(
             answer=structured_data["answer"],
             summary=structured_data["summary"],
             industry_impact=structured_data["industry_impact"],
@@ -662,6 +698,32 @@ NO [해당 문서에는 가계대출 금리에 대한 직접적인 언급이 없
                 else None
             ),
         )
+        if use_cache:
+            try:
+                ttl = max(30, int(getattr(settings, "QA_CACHE_TTL_SECONDS", 180)))
+                self.redis.setex(
+                    _qa_response_cache_key(request),
+                    ttl,
+                    final.model_dump_json(),
+                )
+            except Exception as e:
+                _log.debug("qa response cache set skipped: %s", e)
+
+        log_payload = jsonable_encoder({
+            "user_query": request.question,
+            "retrieved_chunk_ids": [chunk["chunk_id"] for chunk in reranked_chunks],
+            "answer": structured_data["answer"],
+            "citations": citations,
+            "latency_ms": latency_ms,
+            "response_time_ms": latency_ms,
+            "groundedness_score": grounding_score / 100.0,
+            "citation_coverage": coverage,
+            "status": "success",
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        })
+        asyncio.create_task(asyncio.to_thread(_qa_logs_insert_safe, self.db, log_payload))
+
+        return final
 
     async def stream_answer(self, request: QARequest):
         """Stream RAG answer (minimal implementation using non-streaming logic for stability)."""

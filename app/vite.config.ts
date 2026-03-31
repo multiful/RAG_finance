@@ -23,6 +23,9 @@ export default defineConfig(({ mode }) => {
           target: `http://127.0.0.1:${apiPort}`,
           changeOrigin: true,
           secure: false,
+          // RAG /qa 등 장시간 응답 시 프록시 타임아웃 방지(기본 60s 초과 가능)
+          timeout: 180_000,
+          proxyTimeout: 180_000,
         },
         '/health': {
           target: `http://127.0.0.1:${apiPort}`,

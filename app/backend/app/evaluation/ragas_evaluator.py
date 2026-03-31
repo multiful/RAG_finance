@@ -21,6 +21,17 @@ from app.core.config import settings
 from app.core.database import get_db
 
 
+def _ragas_run_config():
+    """Ragas 병렬·타임아웃: 고 RPM 모델도 LLM 지연 시 Job 단위 TimeoutError 완화."""
+    from ragas import RunConfig
+
+    return RunConfig(
+        timeout=int(getattr(settings, "RAGAS_RUN_TIMEOUT", 300)),
+        max_workers=int(getattr(settings, "RAGAS_MAX_WORKERS", 4)),
+        max_retries=int(getattr(settings, "RAGAS_MAX_RETRIES", 10)),
+    )
+
+
 def _load_ragas_eval_deps():
     """ragas/datasets는 평가 API 호출 시에만 로드 (슬림 프로덕션)."""
     from datasets import Dataset
@@ -157,6 +168,7 @@ class RagasEvaluator:
                     metrics=metrics_list,
                     llm=self.llm,
                     embeddings=self.embeddings,
+                    run_config=_ragas_run_config(),
                 )
 
             result = await asyncio.to_thread(_run_single_ragas)
@@ -289,6 +301,7 @@ class RagasEvaluator:
                 metrics=metrics_batch,
                 llm=self.llm,
                 embeddings=self.embeddings,
+                run_config=_ragas_run_config(),
             )
 
         try:

@@ -21,8 +21,8 @@ class Settings(BaseSettings):
     # OpenAI — 일반 기능은 mini, RAG 질의는 OPENAI_MODEL_QA로 분리(정확도·근거 우선)
     OPENAI_API_KEY: str = ""
     OPENAI_MODEL: str = "gpt-4o-mini"
-    # RAG HyDE·답변가능성·최종 답변 전용. 비우면 OPENAI_MODEL(gpt-4o-mini 등)과 동일 — 비용·지연 최우선 시 비움 유지
-    OPENAI_MODEL_QA: str = ""
+    # RAG HyDE·답변가능성·최종 답변. 기본 gpt-5.1(고품질·TPM 여유). 비용·지연 우선이면 mini 또는 비움(OPENAI_MODEL과 동일)
+    OPENAI_MODEL_QA: str = "gpt-5.1"
     OPENAI_MODEL_CLASSIFICATION: str = ""  # 비우면 OPENAI_MODEL 사용. 분류만 정확도 올리려면 gpt-4o 등 설정
     OPENAI_EMBEDDING_MODEL: str = "text-embedding-3-small"
     
@@ -32,6 +32,10 @@ class Settings(BaseSettings):
     LANGSMITH_PROJECT: str = "fsc-policy-rag"
     # Railway 등 프로덕션: 키 없으면 false 권장(오버헤드·로그 감소). LangSmith 쓰면 true + LANGSMITH_API_KEY
     LANGCHAIN_TRACING_V2: bool = False
+    
+    # QA 성공 응답 Redis 캐시 (HyDE 비활성·근거 본문 미포함 요청만). 문서 갱신 직후 TTL 내 오래된 답 가능
+    ENABLE_QA_RESPONSE_CACHE: bool = True
+    QA_CACHE_TTL_SECONDS: int = 180
     
     # LlamaParse
     LLAMAPARSE_API_KEY: str = ""
@@ -72,9 +76,9 @@ class Settings(BaseSettings):
     # Vector DB
     VECTOR_DIMENSION: int = 1536
     
-    # Processing
-    CHUNK_SIZE: int = 800
-    CHUNK_OVERLAP: int = 120  # 재귀 청킹 시 문맥 연속성
+    # Processing — 규제·한글 장문: 조문 단위 문맥을 더 담도록 문자 수 기준 상향(재인덱싱 후 반영)
+    CHUNK_SIZE: int = 1100
+    CHUNK_OVERLAP: int = 165  # 약 15% 오버랩, 재귀 분할 경계에서 문장 연속성 유지
     # 검색·리랭크: 후보는 넉넉히, 리랭크는 sentence-transformers 필요(Railway 슬림은 false 권장)
     # 골든셋·규제 QA 리콜: 후보를 넉넉히(리랭크 전)
     TOP_K_RETRIEVAL: int = 30
@@ -112,8 +116,12 @@ class Settings(BaseSettings):
     
     # Ragas Evaluation (골든 기본 12문항과 정합)
     RAGAS_TEST_SIZE: int = 12
-    # Ragas 메트릭 채점 전용 LLM (비우면 OPENAI_MODEL 사용). 골든 벤치마크 시 .env에 RAGAS_EVAL_MODEL=gpt-4o 권장.
-    RAGAS_EVAL_MODEL: str = ""
+    # Ragas 채점 전용(비우면 OPENAI_MODEL). gpt-5.1 권장 — 저지연 평가만 필요하면 gpt-5-mini 등으로 교체
+    RAGAS_EVAL_MODEL: str = "gpt-5.1"
+    # Ragas RunConfig: 고동시성+느린 채점 시 TimeoutError 방지(이전 gpt-4o 평가 이슈 대응)
+    RAGAS_RUN_TIMEOUT: int = 300
+    RAGAS_MAX_WORKERS: int = 4
+    RAGAS_MAX_RETRIES: int = 10
     
     # Notifications
     SLACK_WEBHOOK_URL: str = ""

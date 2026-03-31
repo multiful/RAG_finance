@@ -482,27 +482,34 @@ async def answer_question(request: QARequest):
         start_time = datetime.now()
         
         response = await rag_service.answer_question(request)
-        
-        # Trace with LangSmith
+        latency_ms = int((datetime.now() - start_time).total_seconds() * 1000)
+
+        # LangSmith는 동기 HTTP라 응답 전송 후 스레드에서 실행(지연·타임아웃 완화)
         if tracer.is_enabled():
-            latency_ms = int((datetime.now() - start_time).total_seconds() * 1000)
-            tracer.trace_rag_pipeline(
-                query=request.question,
-                query_type="qa",
-                retrieved_chunks=[
-                    {
-                        "chunk_id": c.chunk_id,
-                        "document_title": c.document_title,
-                        "snippet": c.snippet,
-                        "url": c.url
-                    }
-                    for c in response.citations
-                ],
-                answer=response.answer,
-                confidence=response.confidence,
-                latency_ms=latency_ms
-            )
-        
+
+            def _trace_langsmith() -> None:
+                try:
+                    tracer.trace_rag_pipeline(
+                        query=request.question,
+                        query_type="qa",
+                        retrieved_chunks=[
+                            {
+                                "chunk_id": c.chunk_id,
+                                "document_title": c.document_title,
+                                "snippet": c.snippet,
+                                "url": c.url,
+                            }
+                            for c in response.citations
+                        ],
+                        answer=response.answer,
+                        confidence=response.confidence,
+                        latency_ms=latency_ms,
+                    )
+                except Exception as ex:
+                    logging.getLogger(__name__).debug("LangSmith trace failed: %s", ex)
+
+            asyncio.create_task(asyncio.to_thread(_trace_langsmith))
+
         return response
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
