@@ -1,3 +1,9 @@
+# ======================================================================
+# FSC Policy RAG System | 모듈: app.services.fss_scraper
+# 최종 수정일: 2026-04-07
+# 연관 문서: SYSTEM_ARCHITECTURE.md, RAG_PIPELINE.md, DIRECTORY_SPEC.md
+# ======================================================================
+
 """Financial Supervisory Service (FSS) web scraper."""
 import hashlib
 import logging

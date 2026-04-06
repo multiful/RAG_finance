@@ -1,3 +1,9 @@
+# ======================================================================
+# FSC Policy RAG System | 모듈: app.core.config
+# 최종 수정일: 2026-04-07
+# 연관 문서: SYSTEM_ARCHITECTURE.md, RAG_PIPELINE.md, DIRECTORY_SPEC.md
+# ======================================================================
+
 """Application configuration."""
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from typing import List, Optional, Dict

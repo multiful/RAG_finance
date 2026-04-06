@@ -1,5 +1,13 @@
 # FSC Policy RAG System - Architecture
 
+> **파일명**: ARCHITECTURE.md  
+> **최종 수정일**: 2026-04-07  
+> **문서 해시**: SHA256:9a9134040a02c65eecab3a42859b19c52cd3def79a45af0d64f0405939b07ffb  
+> **문서 역할**: Phase A/B 다이어그램·컴포넌트 시각 요약  
+> **문서 우선순위**: 11  
+> **연관 문서**: SYSTEM_ARCHITECTURE.md, BACKEND_ADVANCED.md, RAG_PIPELINE.md  
+> **참조 규칙**: 다이어그램의 컴포넌트 이름·흐름이 바뀌면 본 문서와 SYSTEM_ARCHITECTURE.md를 함께 맞춘다.
+
 ## Phase A/B 아키텍처 개요
 
 ```
@@ -14,7 +22,7 @@
 │                              │                                              │
 │    ┌──────────┐    ┌─────────┴────────┐    ┌──────────┐    ┌──────────┐   │
 │    │ Collector│───▶│     Parser       │───▶│ Chunker  │───▶│ Embedder │   │
-│    │ (RSS)    │    │ (LlamaParse API) │    │(LangChain│    │ (OpenAI) │   │
+│    │ (RSS)    │    │(LlamaParse/로컬) │    │(재귀분할)│    │ (OpenAI) │   │
 │    └──────────┘    └──────────────────┘    └──────────┘    └────┬─────┘   │
 │         │                    │                    │               │        │
 │         ▼                    ▼                    ▼               ▼        │

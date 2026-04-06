@@ -1,3 +1,9 @@
+# ======================================================================
+# FSC Policy RAG System | 모듈: app.models.schemas
+# 최종 수정일: 2026-04-07
+# 연관 문서: SYSTEM_ARCHITECTURE.md, RAG_PIPELINE.md, DIRECTORY_SPEC.md
+# ======================================================================
+
 """Pydantic models for API requests and responses."""
 from pydantic import BaseModel, Field
 from typing import List, Optional, Dict, Any

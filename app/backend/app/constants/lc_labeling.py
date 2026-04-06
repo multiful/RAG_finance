@@ -1,3 +1,9 @@
+# ======================================================================
+# FSC Policy RAG System | 모듈: app.constants.lc_labeling
+# 최종 수정일: 2026-04-07
+# 연관 문서: SYSTEM_ARCHITECTURE.md, RAG_PIPELINE.md, DIRECTORY_SPEC.md
+# ======================================================================
+
 """
 Local Coverage (LC) 라벨링 기준 및 분석 대상 법령 (KAI 문서 page_16).
 

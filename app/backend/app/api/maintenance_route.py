@@ -1,3 +1,9 @@
+# ======================================================================
+# FSC Policy RAG System | 모듈: app.api.maintenance_route
+# 최종 수정일: 2026-04-07
+# 연관 문서: SYSTEM_ARCHITECTURE.md, RAG_PIPELINE.md, DIRECTORY_SPEC.md
+# ======================================================================
+
 """유지보수·스케줄 작업 트리거 API."""
 import logging
 from datetime import datetime

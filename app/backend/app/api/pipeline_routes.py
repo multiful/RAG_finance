@@ -1,3 +1,9 @@
+# ======================================================================
+# FSC Policy RAG System | 모듈: app.api.pipeline_routes
+# 최종 수정일: 2026-04-07
+# 연관 문서: SYSTEM_ARCHITECTURE.md, RAG_PIPELINE.md, DIRECTORY_SPEC.md
+# ======================================================================
+
 """Pipeline API Routes - Phase A/B Architecture."""
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Query
 from typing import Optional

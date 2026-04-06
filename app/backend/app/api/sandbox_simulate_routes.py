@@ -1,3 +1,9 @@
+# ======================================================================
+# FSC Policy RAG System | 모듈: app.api.sandbox_simulate_routes
+# 최종 수정일: 2026-04-07
+# 연관 문서: SYSTEM_ARCHITECTURE.md, RAG_PIPELINE.md, DIRECTORY_SPEC.md
+# ======================================================================
+
 """샌드박스 시나리오 시뮬레이션 API (방안 B). 동일 입력 시 Redis 캐시 반환."""
 import hashlib
 import json

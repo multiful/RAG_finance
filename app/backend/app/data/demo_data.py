@@ -1,3 +1,9 @@
+# ======================================================================
+# FSC Policy RAG System | 모듈: app.data.demo_data
+# 최종 수정일: 2026-04-07
+# 연관 문서: SYSTEM_ARCHITECTURE.md, RAG_PIPELINE.md, DIRECTORY_SPEC.md
+# ======================================================================
+
 """데모/샘플 데이터 — DB 오류 시에만 API 폴백으로 사용. 정상 시에는 항상 실제 DB/수집 데이터 사용."""
 from datetime import datetime, timedelta, timezone
 from typing import List, Dict, Any

@@ -1,3 +1,9 @@
+# ======================================================================
+# FSC Policy RAG System | 모듈: app.core.cache_helper
+# 최종 수정일: 2026-04-07
+# 연관 문서: SYSTEM_ARCHITECTURE.md, RAG_PIPELINE.md, DIRECTORY_SPEC.md
+# ======================================================================
+
 """Redis 캐시 헬퍼: TTL 기반 get/set (Gap Map·Analytics 요약 등)."""
 import json
 from typing import Any, Optional

@@ -1,3 +1,9 @@
+# ======================================================================
+# FSC Policy RAG System | 모듈: app.constants.kai_targets
+# 최종 수정일: 2026-04-07
+# 연관 문서: SYSTEM_ARCHITECTURE.md, RAG_PIPELINE.md, DIRECTORY_SPEC.md
+# ======================================================================
+
 """
 KAI(핵심 성과 지표) 목표치 — competition 문서 page_29 (파일럿 검증 계획) 기준.
 

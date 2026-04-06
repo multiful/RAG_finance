@@ -1,3 +1,9 @@
+# ======================================================================
+# FSC Policy RAG System | 모듈: app.constants.sandbox_checklist_template
+# 최종 수정일: 2026-04-07
+# 연관 문서: SYSTEM_ARCHITECTURE.md, RAG_PIPELINE.md, DIRECTORY_SPEC.md
+# ======================================================================
+
 """
 KAI 문서(page_20, page_22) 기반 Sandbox Risk-Based Checklist 템플릿.
 

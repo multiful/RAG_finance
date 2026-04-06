@@ -1,3 +1,9 @@
+# ======================================================================
+# FSC Policy RAG System | 모듈: app.services.ragas_evaluator
+# 최종 수정일: 2026-04-07
+# 연관 문서: SYSTEM_ARCHITECTURE.md, RAG_PIPELINE.md, DIRECTORY_SPEC.md
+# ======================================================================
+
 """
 RAGAS Evaluation Service - RAG 품질 자동 평가 시스템
 공모전 제출용 정량적 성능 지표 생성

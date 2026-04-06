@@ -1,0 +1,26 @@
+{
+  "id": "parse-example-001",
+  "file_path": "data/golden/parse/fixtures/PLACE_YOUR.pdf",
+  "file_type": "pdf",
+  "notes": "실제 PDF 경로로 바꾸고 앵커는 해당 문서 본문에서 검증 가능한 짧은 문자열로 채운다.",
+  "reading_order_anchors": [
+    "제1장",
+    "제1조",
+    "제2조"
+  ],
+  "table_gold": [
+    {
+      "min_rows": 3,
+      "min_cols": 2,
+      "header_substrings": ["구분", "금액"]
+    }
+  ],
+  "structure_checks": [
+    {
+      "must_appear_before": ["시행일", "부칙"]
+    }
+  ],
+  "chunk_quality_unit_groups": [
+    ["제1조", "같은 조문 안 문장 앵커1", "같은 조문 안 문장 앵커2"]
+  ]
+}

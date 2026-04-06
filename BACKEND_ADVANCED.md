@@ -1,5 +1,13 @@
 # FSC Policy RAG System - Backend Advanced Features
 
+> **파일명**: BACKEND_ADVANCED.md  
+> **최종 수정일**: 2026-04-07  
+> **문서 해시**: SHA256:f9f910b2fb18806ff163ceeb2dfedb6a698f48e16ed54ee020942b06fbcaa8ea  
+> **문서 역할**: LangGraph·LlamaParse·Ragas·LangSmith 등 고급 백엔드 기능 설명  
+> **문서 우선순위**: 12  
+> **연관 문서**: ARCHITECTURE.md, SYSTEM_ARCHITECTURE.md, RAG_PIPELINE.md, API_SPEC.md  
+> **참조 규칙**: 고급 API·옵션 의존성을 바꿀 때 본 문서를 갱신한다.
+
 ## 🚀 고도화된 백엔드 아키텍처
 
 ### 추가된 프레임워크

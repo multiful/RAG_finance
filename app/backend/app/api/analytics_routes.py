@@ -1,3 +1,9 @@
+# ======================================================================
+# FSC Policy RAG System | 모듈: app.api.analytics_routes
+# 최종 수정일: 2026-04-07
+# 연관 문서: SYSTEM_ARCHITECTURE.md, RAG_PIPELINE.md, DIRECTORY_SPEC.md
+# ======================================================================
+
 """Analytics API routes for data analysis and visualization."""
 from fastapi import APIRouter, HTTPException, Query
 from typing import List, Optional, Dict, Any

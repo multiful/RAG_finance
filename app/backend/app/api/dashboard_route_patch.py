@@ -1,3 +1,9 @@
+# ======================================================================
+# FSC Policy RAG System | 모듈: app.api.dashboard_route_patch
+# 최종 수정일: 2026-04-07
+# 연관 문서: SYSTEM_ARCHITECTURE.md, RAG_PIPELINE.md, DIRECTORY_SPEC.md
+# ======================================================================
+
 @router.get("/dashboard/quality")
 async def get_quality_metrics(days: int = Query(7, ge=1, le=30)):
     """Get real-time quality metrics from evaluation pipeline."""

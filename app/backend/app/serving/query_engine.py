@@ -1,3 +1,9 @@
+# ======================================================================
+# FSC Policy RAG System | 모듈: app.serving.query_engine
+# 최종 수정일: 2026-04-07
+# 연관 문서: SYSTEM_ARCHITECTURE.md, RAG_PIPELINE.md, DIRECTORY_SPEC.md
+# ======================================================================
+
 """Phase B: 서빙 서비스 (FastAPI + Redis)
 
 Pipeline: Request → Cache → Reasoning → Retrieval → Reranker → Generation & Guardrail

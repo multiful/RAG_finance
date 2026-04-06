@@ -1,3 +1,9 @@
+# ======================================================================
+# FSC Policy RAG System | 모듈: app.services.international_rss_collector
+# 최종 수정일: 2026-04-07
+# 연관 문서: SYSTEM_ARCHITECTURE.md, RAG_PIPELINE.md, DIRECTORY_SPEC.md
+# ======================================================================
+
 """
 국제기구 RSS 수집기 (FSB, BIS, IMF 등).
 금융위원회 RSS와 동일하게 documents/sources 테이블에 저장 → 기존 RAG·파이프라인 그대로 사용.

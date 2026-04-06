@@ -1,3 +1,9 @@
+# ======================================================================
+# FSC Policy RAG System | 모듈: app.pipeline.ingestion
+# 최종 수정일: 2026-04-07
+# 연관 문서: SYSTEM_ARCHITECTURE.md, RAG_PIPELINE.md, DIRECTORY_SPEC.md
+# ======================================================================
+
 """Phase A: 데이터 인제스천 파이프라인 (LLM Ops)
 
 Pipeline: Collector → Parser → Chunker → Embedder → Supabase(pgvector)

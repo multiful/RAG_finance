@@ -1,3 +1,9 @@
+# ======================================================================
+# FSC Policy RAG System | 모듈: app.chunking.recursive_split
+# 최종 수정일: 2026-04-07
+# 연관 문서: SYSTEM_ARCHITECTURE.md, RAG_PIPELINE.md, DIRECTORY_SPEC.md
+# ======================================================================
+
 """문맥 보존 재귀 청킹 — 규제 문서(한글·조문·표)에 맞춘 구분자 우선순위."""
 from __future__ import annotations
 

@@ -1,3 +1,9 @@
+# ======================================================================
+# FSC Policy RAG System | 모듈: app.parsers.llama_parser
+# 최종 수정일: 2026-04-07
+# 연관 문서: SYSTEM_ARCHITECTURE.md, RAG_PIPELINE.md, DIRECTORY_SPEC.md
+# ======================================================================
+
 """LlamaParse integration for advanced document parsing.
 
 Handles: HWP, PDF with tables, images, and complex layouts.
@@ -138,20 +144,65 @@ class LlamaDocumentParser:
         return tables
     
     async def _fallback_pdf_parse(self, file_path: str) -> Dict[str, Any]:
-        """Fallback PDF parser using pdfplumber."""
+        """Fallback: pdfplumber(표·레이아웃) + PyMuPDF(한글·CID 폰트 등 보조 추출)."""
         import pdfplumber
-        
-        text_parts = []
-        tables = []
-        
-        with pdfplumber.open(file_path) as pdf:
+
+        text_parts: List[str] = []
+        tables: List[Dict[str, Any]] = []
+        page_count = 0
+        used_pymupdf_pages = 0
+
+        # 페이지별 PyMuPDF 텍스트 (pdfplumber가 비었을 때만 사용)
+        fitz_text_by_page: Dict[int, str] = {}
+        try:
+            import fitz  # PyMuPDF
+
+            doc = fitz.open(file_path)
+            try:
+                for idx in range(len(doc)):
+                    raw = doc[idx].get_text("text") or ""
+                    t = raw.strip()
+                    if t:
+                        fitz_text_by_page[idx + 1] = t
+            finally:
+                doc.close()
+        except Exception as e:
+            _log.debug("PyMuPDF 보조 로드 실패(무시 가능): %s", e)
+
+        try:
+            pdf_ctx = pdfplumber.open(file_path)
+        except Exception as e:
+            _log.warning("pdfplumber 파일 열기 실패, PyMuPDF 단독 폴백: %s", e)
+            if not fitz_text_by_page:
+                raise
+            text_parts = [
+                f"## Page {p}\n\n{t}" for p, t in sorted(fitz_text_by_page.items())
+            ]
+            return {
+                "text": "\n\n".join(text_parts),
+                "pages": text_parts,
+                "tables": [],
+                "metadata": {
+                    "total_pages": len(fitz_text_by_page),
+                    "file_type": "pdf",
+                    "parser": "pymupdf",
+                    "pymupdf_assisted_pages": len(fitz_text_by_page),
+                },
+            }
+
+        with pdf_ctx as pdf:
+            page_count = len(pdf.pages)
             for i, page in enumerate(pdf.pages):
-                # Extract text
-                page_text = page.extract_text()
+                page_no = i + 1
+                page_text = (page.extract_text() or "").strip()
+                alt = fitz_text_by_page.get(page_no, "")
+                # 국내 PDF: pdfplumber만 빈 문자열인 경우가 많아 PyMuPDF로 보강
+                if len(page_text) < 8 and len(alt) > len(page_text):
+                    page_text = alt
+                    used_pymupdf_pages += 1
                 if page_text:
-                    text_parts.append(f"## Page {i+1}\n\n{page_text}")
-                
-                # Extract tables
+                    text_parts.append(f"## Page {page_no}\n\n{page_text}")
+
                 page_tables = page.extract_tables()
                 for table in page_tables:
                     if table and len(table) > 1:
@@ -161,18 +212,28 @@ class LlamaDocumentParser:
                             "rows": table[1:] if len(table) > 1 else [],
                             "row_count": len(table) - 1 if table else 0,
                             "column_count": len(table[0]) if table else 0,
-                            "page": i + 1
+                            "page": page_no,
                         })
-        
+
+        parser_label = "pdfplumber"
+        if used_pymupdf_pages > 0:
+            parser_label = "pdfplumber+pymupdf"
+            _log.info(
+                "PDF 폴백: PyMuPDF로 %s/%s 페이지 텍스트 보강 (한글·폰트 이슈 대응)",
+                used_pymupdf_pages,
+                page_count,
+            )
+
         return {
             "text": "\n\n".join(text_parts),
             "pages": text_parts,
             "tables": tables,
             "metadata": {
-                "total_pages": len(pdf.pages),
+                "total_pages": page_count,
                 "file_type": "pdf",
-                "parser": "pdfplumber"
-            }
+                "parser": parser_label,
+                "pymupdf_assisted_pages": used_pymupdf_pages,
+            },
         }
     
     async def _fallback_hwp_parse(self, file_path: str) -> Dict[str, Any]:

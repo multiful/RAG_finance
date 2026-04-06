@@ -1,3 +1,9 @@
+# ======================================================================
+# FSC Policy RAG System | 모듈: app.services.sandbox_simulator_service
+# 최종 수정일: 2026-04-07
+# 연관 문서: SYSTEM_ARCHITECTURE.md, RAG_PIPELINE.md, DIRECTORY_SPEC.md
+# ======================================================================
+
 """
 샌드박스 시나리오 시뮬레이션 (방안 B).
 Gap Map 사각지대 + 체크리스트 약점을 입력으로, RAG(국제·국내 문서) 참조해

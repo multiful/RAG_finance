@@ -1,5 +1,13 @@
 ## FSC Policy RAG System
 
+> **파일명**: README.md  
+> **최종 수정일**: 2026-04-07  
+> **문서 해시**: SHA256:3d60abbb6c258b44b4ff2ba58d668d49f0584e9ad74e059c7c18afc21b71ad39  
+> **문서 역할**: 프로젝트 입구 — 설치, 실행, 배포, 문서 읽는 순서 안내  
+> **문서 우선순위**: 0  
+> **연관 문서**: CHANGE_CONTROL.md, PRD.md, RUN.md, DIRECTORY_SPEC.md, ROOT_DOC_GUIDE.md  
+> **참조 규칙**: 빠른 실행만 필요하면 RUN.md; 구조는 DIRECTORY_SPEC.md; 제품 범위는 PRD.md를 본다.
+
 금융위원회 정책·보도자료 문서를 대상으로 하는 RAG(Retrieval-Augmented Generation) 시스템입니다.  
 RSS 기반 수집 → 문서 파싱 → 벡터 인덱싱 → 하이브리드 검색 → 근거가 명시된 답변까지 한 번에 제공하는 것을 목표로 합니다.
 
@@ -18,8 +26,8 @@ RSS 기반 수집 → 문서 파싱 → 벡터 인덱싱 → 하이브리드 검
 ### Phase A: 데이터 인제스천 (LLM Ops)
 
 - **수집**: 금융위 RSS, FSS 스크래핑, 국제기구(FSB, BIS) RSS 수집
-- **파싱**: LlamaParse로 PDF/HWP를 마크다운 구조로 변환
-- **청킹**: 문맥 보존 청킹(청크 크기 800, 오버랩 100) 및 업권 메타데이터 태깅
+- **파싱**: LlamaParse(옵션) 또는 로컬 pdfplumber+PyMuPDF 폴백으로 PDF/HWP 텍스트 추출
+- **청킹**: 문맥 보존 재귀 분할(`CHUNK_SIZE`·`CHUNK_OVERLAP`, 기본 1100·165) 및 업권 메타데이터 태깅
 - **임베딩 저장**: OpenAI `text-embedding-3-small` → Supabase(PostgreSQL + `pgvector`)
 
 ### Phase B: 서빙 서비스 (FastAPI + Redis)
