@@ -1,7 +1,8 @@
 # ======================================================================
 # FSC Policy RAG System | 모듈: app.scheduler
 # 최종 수정일: 2026-04-07
-# 연관 문서: SYSTEM_ARCHITECTURE.md, RAG_PIPELINE.md, DIRECTORY_SPEC.md
+# 연관 문서: CHANGE_CONTROL.md, ROOT_DOC_GUIDE.md, SYSTEM_ARCHITECTURE.md, RAG_PIPELINE.md, DIRECTORY_SPEC.md
+# 참조 규칙: 루트 MD 계약과 충돌 시 CHANGE_CONTROL.md §5 우선.
 # ======================================================================
 
 """경량 일일 수집 스케줄러. 외부 cron/디펜던시 없이 asyncio만 사용 (디스크/용량 절약)."""

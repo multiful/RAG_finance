@@ -1,4 +1,11 @@
-"""Download 5 Korean regulatory PDFs (FSS 공지) into data/golden/parse/fixtures/."""
+# ======================================================================
+# FSC Policy RAG System | 스크립트: scripts/_download_kr_reg_pdfs.py
+# 최종 수정일: 2026-04-07
+# 연관 문서: CHANGE_CONTROL.md, ROOT_DOC_GUIDE.md, data/golden/parse/README.md
+# 참조 규칙: 루트 MD 계약과 충돌 시 CHANGE_CONTROL.md §5 우선.
+# ======================================================================
+
+"""레거시: FSS 공지 5건 시도. 신규는 `download_kr_pdf_fixtures.py` 사용."""
 from __future__ import annotations
 
 import re

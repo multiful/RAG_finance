@@ -1,4 +1,11 @@
 #!/usr/bin/env python3
+# ======================================================================
+# FSC Policy RAG System | 스크립트: scripts/inject_python_metadata.py
+# 최종 수정일: 2026-04-07
+# 연관 문서: CHANGE_CONTROL.md, ROOT_DOC_GUIDE.md, DIRECTORY_SPEC.md
+# 참조 규칙: 루트 MD 계약과 충돌 시 CHANGE_CONTROL.md §5 우선.
+# ======================================================================
+
 """app/backend/app/**/*.py 파일 상단에 FSC Policy RAG 모듈 메타 주석을 삽입한다.
 
 이미 `FSC Policy RAG System | 모듈:` 마커가 있으면 건너뛴다.

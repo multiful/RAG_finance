@@ -1,7 +1,8 @@
 # ======================================================================
 # FSC Policy RAG System | 모듈: app.parsers.llama_parser
 # 최종 수정일: 2026-04-07
-# 연관 문서: SYSTEM_ARCHITECTURE.md, RAG_PIPELINE.md, DIRECTORY_SPEC.md
+# 연관 문서: CHANGE_CONTROL.md, ROOT_DOC_GUIDE.md, SYSTEM_ARCHITECTURE.md, RAG_PIPELINE.md, DIRECTORY_SPEC.md
+# 참조 규칙: 루트 MD 계약과 충돌 시 CHANGE_CONTROL.md §5 우선.
 # ======================================================================
 
 """LlamaParse integration for advanced document parsing.
@@ -339,15 +340,18 @@ class TableAwareChunker:
     
     def _table_to_text(self, table: Dict[str, Any]) -> str:
         """Convert table to text representation."""
+        def _cell_str(x: Any) -> str:
+            return "" if x is None else str(x)
+
         lines = []
         headers = table.get("headers", [])
         rows = table.get("rows", [])
-        
+
         if headers:
-            lines.append(" | ".join(headers))
-        
+            lines.append(" | ".join(_cell_str(h) for h in headers))
+
         for row in rows:
-            lines.append(" | ".join(str(cell) for cell in row))
+            lines.append(" | ".join(_cell_str(cell) for cell in row))
         
         return "\n".join(lines)
 

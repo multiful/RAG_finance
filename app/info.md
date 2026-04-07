@@ -1,3 +1,15 @@
+# app/info.md
+
+> **파일명**: app/info.md  
+> **최종 수정일**: 2026-04-07  
+> **문서 해시**: SHA256:7dca10ef4f11f9e64a840c8d576f882944de7b3ccd431c2bf4cfd8b01314eb6a  
+> **문서 역할**: 프론트(scaffold) 스택·구성 요약  
+> **문서 우선순위**: 96  
+> **연관 문서**: CHANGE_CONTROL.md, ROOT_DOC_GUIDE.md, ../README.md, DIRECTORY_SPEC.md  
+> **참조 규칙**: Vite·Tailwind·컴포넌트 구조 변경 시 본 문서를 갱신한다.
+
+---
+
 Using Node.js 20, Tailwind CSS v3.4.19, and Vite v7.2.4
 
 Tailwind CSS has been set up with the shadcn theme

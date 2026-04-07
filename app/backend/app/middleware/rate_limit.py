@@ -1,7 +1,8 @@
 # ======================================================================
 # FSC Policy RAG System | 모듈: app.middleware.rate_limit
 # 최종 수정일: 2026-04-07
-# 연관 문서: SYSTEM_ARCHITECTURE.md, RAG_PIPELINE.md, DIRECTORY_SPEC.md
+# 연관 문서: CHANGE_CONTROL.md, ROOT_DOC_GUIDE.md, SYSTEM_ARCHITECTURE.md, RAG_PIPELINE.md, DIRECTORY_SPEC.md
+# 참조 규칙: 루트 MD 계약과 충돌 시 CHANGE_CONTROL.md §5 우선.
 # ======================================================================
 
 """QA·시뮬레이션 등 엔드포인트용 Redis 기반 rate limit (분당 N회)."""

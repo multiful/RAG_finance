@@ -1,3 +1,10 @@
+# ======================================================================
+# FSC Policy RAG System | 스크립트: scripts/_probe_fss_pdf.py
+# 최종 수정일: 2026-04-07
+# 연관 문서: CHANGE_CONTROL.md, ROOT_DOC_GUIDE.md, scripts/_download_kr_reg_pdfs.py
+# 참조 규칙: 루트 MD 계약과 충돌 시 CHANGE_CONTROL.md §5 우선.
+# ======================================================================
+
 import re
 import requests
 

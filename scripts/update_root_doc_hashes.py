@@ -1,5 +1,12 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
+# ======================================================================
+# FSC Policy RAG System | 스크립트: scripts/update_root_doc_hashes.py
+# 최종 수정일: 2026-04-07
+# 연관 문서: CHANGE_CONTROL.md, ROOT_DOC_GUIDE.md, HASH_INCREMENTAL_BUILD_GUIDE.md
+# 참조 규칙: 루트 MD 계약과 충돌 시 CHANGE_CONTROL.md §5 우선.
+# ======================================================================
+
 """Markdown **문서 해시** SHA-256 갱신. 기본=루트 `*.md`, `--all-md`=전체(제외 디렉터리 제외)."""
 
 from __future__ import annotations

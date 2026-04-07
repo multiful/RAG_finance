@@ -1,0 +1,190 @@
+{
+  "metrics": [
+    {
+      "file": "kr_01.pdf",
+      "page_count": 152,
+      "text_layer_ratio": 0.9605,
+      "chars_per_page": 858.2,
+      "image_area_ratio": 0.2044,
+      "multi_column_score": 0.9163,
+      "table_density": 0.1053,
+      "heading_pattern_score": 1.0,
+      "parse_fail_rate": 0.0395,
+      "ocr_confidence": null
+    },
+    {
+      "file": "kr_02.pdf",
+      "page_count": 5,
+      "text_layer_ratio": 1.0,
+      "chars_per_page": 786.8,
+      "image_area_ratio": 0.0025,
+      "multi_column_score": 0.9577,
+      "table_density": 0.6,
+      "heading_pattern_score": 1.0,
+      "parse_fail_rate": 0.0,
+      "ocr_confidence": null
+    },
+    {
+      "file": "kr_03.pdf",
+      "page_count": 2,
+      "text_layer_ratio": 1.0,
+      "chars_per_page": 809.5,
+      "image_area_ratio": 0.0059,
+      "multi_column_score": 0.9828,
+      "table_density": 0.5,
+      "heading_pattern_score": 1.0,
+      "parse_fail_rate": 0.0,
+      "ocr_confidence": null
+    },
+    {
+      "file": "kr_04.pdf",
+      "page_count": 7,
+      "text_layer_ratio": 1.0,
+      "chars_per_page": 706.4,
+      "image_area_ratio": 0.002,
+      "multi_column_score": 0.9746,
+      "table_density": 0.4286,
+      "heading_pattern_score": 1.0,
+      "parse_fail_rate": 0.0,
+      "ocr_confidence": null
+    },
+    {
+      "file": "kr_05.pdf",
+      "page_count": 2,
+      "text_layer_ratio": 1.0,
+      "chars_per_page": 1127.5,
+      "image_area_ratio": 0.0029,
+      "multi_column_score": 1.0,
+      "table_density": 0.5,
+      "heading_pattern_score": 1.0,
+      "parse_fail_rate": 0.0,
+      "ocr_confidence": null
+    },
+    {
+      "file": "kr_06.pdf",
+      "page_count": 3,
+      "text_layer_ratio": 1.0,
+      "chars_per_page": 871.7,
+      "image_area_ratio": 0.0044,
+      "multi_column_score": 0.951,
+      "table_density": 1.0,
+      "heading_pattern_score": 1.0,
+      "parse_fail_rate": 0.0,
+      "ocr_confidence": null
+    },
+    {
+      "file": "kr_07.pdf",
+      "page_count": 5,
+      "text_layer_ratio": 1.0,
+      "chars_per_page": 844.2,
+      "image_area_ratio": 0.0095,
+      "multi_column_score": 0.9606,
+      "table_density": 0.2,
+      "heading_pattern_score": 1.0,
+      "parse_fail_rate": 0.0,
+      "ocr_confidence": null
+    },
+    {
+      "file": "kr_08.pdf",
+      "page_count": 2,
+      "text_layer_ratio": 1.0,
+      "chars_per_page": 685.0,
+      "image_area_ratio": 0.0066,
+      "multi_column_score": 1.0,
+      "table_density": 1.5,
+      "heading_pattern_score": 1.0,
+      "parse_fail_rate": 0.0,
+      "ocr_confidence": null
+    }
+  ],
+  "golden_vs_pdfplumber": [
+    {
+      "id": "kr-pdf-01",
+      "reading_order_pass": true,
+      "table_preservation_pass": true,
+      "structure_check_pass": true,
+      "chunk_cohesion_pass": true,
+      "parser": "pdfplumber",
+      "text_len": 128437,
+      "table_count": 16,
+      "chunk_count": 4
+    },
+    {
+      "id": "kr-pdf-02",
+      "reading_order_pass": true,
+      "table_preservation_pass": true,
+      "structure_check_pass": true,
+      "chunk_cohesion_pass": true,
+      "parser": "pdfplumber",
+      "text_len": 3820,
+      "table_count": 3,
+      "chunk_count": 1
+    },
+    {
+      "id": "kr-pdf-03",
+      "reading_order_pass": true,
+      "table_preservation_pass": true,
+      "structure_check_pass": true,
+      "chunk_cohesion_pass": true,
+      "parser": "pdfplumber",
+      "text_len": 1564,
+      "table_count": 1,
+      "chunk_count": 1
+    },
+    {
+      "id": "kr-pdf-04",
+      "reading_order_pass": true,
+      "table_preservation_pass": true,
+      "structure_check_pass": true,
+      "chunk_cohesion_pass": true,
+      "parser": "pdfplumber",
+      "text_len": 5058,
+      "table_count": 3,
+      "chunk_count": 1
+    },
+    {
+      "id": "kr-pdf-05",
+      "reading_order_pass": false,
+      "table_preservation_pass": true,
+      "structure_check_pass": true,
+      "chunk_cohesion_pass": true,
+      "parser": "pdfplumber",
+      "text_len": 2197,
+      "table_count": 1,
+      "chunk_count": 1
+    },
+    {
+      "id": "kr-pdf-06",
+      "reading_order_pass": true,
+      "table_preservation_pass": true,
+      "structure_check_pass": true,
+      "chunk_cohesion_pass": true,
+      "parser": "pdfplumber",
+      "text_len": 2548,
+      "table_count": 3,
+      "chunk_count": 1
+    },
+    {
+      "id": "kr-pdf-07",
+      "reading_order_pass": true,
+      "table_preservation_pass": true,
+      "structure_check_pass": true,
+      "chunk_cohesion_pass": true,
+      "parser": "pdfplumber",
+      "text_len": 4118,
+      "table_count": 1,
+      "chunk_count": 1
+    },
+    {
+      "id": "kr-pdf-08",
+      "reading_order_pass": true,
+      "table_preservation_pass": true,
+      "structure_check_pass": true,
+      "chunk_cohesion_pass": true,
+      "parser": "pdfplumber",
+      "text_len": 1447,
+      "table_count": 3,
+      "chunk_count": 1
+    }
+  ]
+}

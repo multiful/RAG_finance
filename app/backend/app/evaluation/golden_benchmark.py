@@ -1,7 +1,8 @@
 # ======================================================================
 # FSC Policy RAG System | 모듈: app.evaluation.golden_benchmark
 # 최종 수정일: 2026-04-07
-# 연관 문서: SYSTEM_ARCHITECTURE.md, RAG_PIPELINE.md, DIRECTORY_SPEC.md
+# 연관 문서: CHANGE_CONTROL.md, ROOT_DOC_GUIDE.md, SYSTEM_ARCHITECTURE.md, RAG_PIPELINE.md, DIRECTORY_SPEC.md
+# 참조 규칙: 루트 MD 계약과 충돌 시 CHANGE_CONTROL.md §5 우선.
 # ======================================================================
 
 """골든셋 기반 검색·근거 품질 벤치마크 (RAGAS와 별도, 빠른 리트리벌 점검용)."""

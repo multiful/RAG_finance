@@ -2,7 +2,7 @@
 
 > **파일명**: data/golden/parse/README.md  
 > **최종 수정일**: 2026-04-07  
-> **문서 해시**: SHA256:0000000000000000000000000000000000000000000000000000000000000000  
+> **문서 해시**: SHA256:fd7e8850290f52dc29e9fe26ac6d785229bf71cbb1374729efdd630731256aec  
 > **문서 역할**: Parse 단계 골든셋·실행 안내 (Exp-1 평가)  
 > **문서 우선순위**: 93  
 > **연관 문서**: CHANGE_CONTROL.md, ROOT_DOC_GUIDE.md, EVALUATION_GUIDELINE.md, RAG_PIPELINE.md, app/evaluation/parse_golden.py  
@@ -21,6 +21,19 @@
 | `golden_parse.jsonl` | 한 줄 = JSON 한 객체(아래 스키마). 팀이 직접 채움. |
 | `fixtures/` | 평가용 PDF/HTML 등(저작권·비밀 주의). Git에 넣지 않을 수 있음 — `.gitignore` 권장. |
 | `example_item.json` | 스키마 예시(참고). |
+
+### 한국 PDF 샘플 자동 수집
+
+저장소 루트에서:
+
+```bash
+python scripts/download_kr_pdf_fixtures.py 8
+```
+
+- **기본(`--mode regulatory`)**: 국가법령정보센터 `flDownload`(행정규칙·안내 PDF) 1건 + 금융위 RSS **입법·정책(`0111`)·공고(`0114`)**에서 채용·공무원 공고를 제외하고 규제·금융 키워드로 정렬한 PDF. 부족 시 `0112`(금융소비자 유의)로 보완.
+- **`--mode general`**: 금융위 보도·공고 PDF + 한국은행 보도 + 금감원 목록의 PDF(이전 혼합 수집).
+
+`fixtures/`에 저장하고 `golden_parse.jsonl`을 덮어쓴다. 행정규칙 `flSeq` 목록은 `scripts/download_kr_pdf_fixtures.py` 상단 `_LAW_GO_KR_FL_SEQS`에서 확장할 수 있다.
 
 ## 스키마 요약 (`ParseGoldenItem`)
 
