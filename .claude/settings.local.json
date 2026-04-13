@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(wc -l \"/c/Users/rlaeh/OneDrive/바탕 화면/Projects/RAG_finance/\"*.sql)"
+    ]
+  }
+}
